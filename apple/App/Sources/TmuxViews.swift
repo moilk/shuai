@@ -27,6 +27,19 @@ struct BadgeView: View {
     }
 }
 
+/// Shown under a connected host until its tmux tree arrives (instead of an empty gap).
+struct TmuxLoadingRow: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text("Loading tmux\u{2026}").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.leading, 20)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tmux-loading")
+    }
+}
+
 /// Session -> windows -> panes (when a window has several) of one connected host, inline in the
 /// host list. Tapping selects it in tmux (and shows the host's terminal).
 struct TmuxHostTree: View {
@@ -80,6 +93,10 @@ struct TmuxHostTree: View {
                     .contextMenu {
                         Button("Split Right", systemImage: "rectangle.split.2x1") { select { try await actions.split(pane: pane.id, horizontal: true) } }
                         Button("Split Down", systemImage: "rectangle.split.1x2") { select { try await actions.split(pane: pane.id, horizontal: false) } }
+                        Button("Close Pane", systemImage: "xmark.square", role: .destructive) {
+                            model.selection = host.id
+                            actions.requestKillPane(pane.id)
+                        }
                     }
                 }
             }
@@ -126,6 +143,12 @@ struct TmuxHostTree: View {
             if let pane = window.activePaneID {
                 Button("Split Right", systemImage: "rectangle.split.2x1") { select { try await actions.split(pane: pane, horizontal: true) } }
                 Button("Split Down", systemImage: "rectangle.split.1x2") { select { try await actions.split(pane: pane, horizontal: false) } }
+            }
+            if let pane = window.activePaneID, window.paneCount > 1 {
+                Button("Close Pane", systemImage: "xmark.square", role: .destructive) {
+                    model.selection = host.id
+                    actions.requestKillPane(pane)
+                }
             }
             Button("Close Window", systemImage: "xmark.rectangle", role: .destructive) {
                 model.selection = host.id

@@ -78,8 +78,14 @@ struct HostListView: View {
                         Button("Edit", systemImage: "pencil") { model.editor = .edit(host) }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = host }
                     }
-                if let controller = model.sessions.existingController(for: host.id), controller.tmux.topology != nil {
-                    TmuxHostTree(host: host, controller: controller)
+                if let controller = model.sessions.existingController(for: host.id) {
+                    if controller.tmux.topology != nil {
+                        TmuxHostTree(host: host, controller: controller)
+                    } else if TmuxTree.showsLoadingPlaceholder(
+                        session: controller.state, tmuxEnabled: host.tmux.enabled && !controller.tmuxMissing, monitor: controller.tmux.state, hasTopology: false)
+                    {
+                        TmuxLoadingRow()
+                    }
                 }
             }
         }

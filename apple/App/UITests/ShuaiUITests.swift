@@ -117,4 +117,19 @@ final class ShuaiUITests: XCTestCase {
         field.typeText("claude\n")
         XCTAssertTrue(field.waitForNonExistence(timeout: 10))
     }
+
+    @MainActor
+    func testClosingAPaneFromItsContextMenuAsksFirst() throws {
+        let app = launchWithTmuxFixture()
+        let pane = app.buttons["tmux-pane-%1"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        pane.press(forDuration: 1.0)
+        let close = app.buttons["Close Pane"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "pane context menu offers Close Pane")
+        close.tap()
+        XCTAssertTrue(app.buttons["confirm-kill"].waitForExistence(timeout: 5), "closing asks for confirmation")
+        // nothing was sent (the fixture has no server); the pane is still listed
+        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        XCTAssertTrue(pane.exists)
+    }
 }

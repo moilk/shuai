@@ -92,6 +92,8 @@ public final class SessionController {
     @ObservationIgnored private var passwordCancelled = false
     /// tmux was not found on this host; later (re)connects open a plain shell right away.
     @ObservationIgnored private var tmuxUnavailable = false
+    /// tmux is missing on this host (plain shell fallback): no tmux tree will ever arrive.
+    public var tmuxMissing: Bool { tmuxUnavailable }
 
     private struct Cancelled: Error {}
 
