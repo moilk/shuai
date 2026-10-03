@@ -418,6 +418,26 @@ impl SshConnection {
         Ok(Arc::new(ShellStream { inner }))
     }
 
+    /// Runs `cmd` directly on a PTY (e.g. `tmux new -A -s NAME`) without a login shell, so
+    /// nothing is typed/echoed. Same stream type and semantics as `open_shell`.
+    pub async fn open_pty_exec(
+        &self,
+        command: String,
+        cols: u32,
+        rows: u32,
+        term: String,
+        env: Vec<FfiEnvVar>,
+    ) -> Result<Arc<ShellStream>, FfiSshError> {
+        let pty = PtyRequest {
+            term,
+            cols,
+            rows,
+            env: env.into_iter().map(|e| (e.name, e.value)).collect(),
+        };
+        let inner = self.session.open_pty_exec(pty, &command).await?;
+        Ok(Arc::new(ShellStream { inner }))
+    }
+
     /// Runs `cmd` to completion and collects its output.
     pub async fn exec(&self, cmd: String) -> Result<ExecResult, FfiSshError> {
         let o = self.session.exec(&cmd).await?;
