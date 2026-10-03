@@ -27,9 +27,18 @@ public protocol RemoteConnection: Sendable {
     func exec(_ command: String) async throws -> ExecResult
     /// Starts `command` on a fresh channel without a PTY; stdin stays open for `writeStdin`.
     func execStream(_ command: String) async throws -> RemoteExec
+    /// Writes `data` to `path` with `mode` (the agent installer).
+    func upload(_ data: Data, to path: String, mode: UInt32) async throws
     /// Resolves when the session ends.
     func closed() async -> CloseReason
     func disconnect() async
+}
+
+extension RemoteConnection {
+    /// Connections that cannot upload (local test doubles) fail the installer instead of silently doing nothing.
+    public func upload(_ data: Data, to path: String, mode: UInt32) async throws {
+        throw AgentInstallError.commandFailed("This connection cannot upload files.")
+    }
 }
 
 public protocol ConnectionFactory: Sendable {
@@ -61,6 +70,10 @@ final class LiveConnection: RemoteConnection {
     func exec(_ command: String) async throws -> ExecResult { try await connection.exec(command) }
     func execStream(_ command: String) async throws -> RemoteExec {
         LiveExec(try await connection.execStream(command))
+    }
+
+    func upload(_ data: Data, to path: String, mode: UInt32) async throws {
+        try await connection.upload(data, to: path, mode: mode)
     }
 
     func closed() async -> CloseReason { await connection.closed() }

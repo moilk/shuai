@@ -34,6 +34,10 @@ public final class SessionController {
     static let tmuxProbeBytes = 1024
     /// Fired after every successful attach (initial and reconnects).
     @ObservationIgnored public var onConnected: (() -> Void)?
+    /// The live connection as an `AgentRemote` (agent monitor, installer); nil while there is no transport.
+    public private(set) var agentRemote: AgentRemote?
+    /// Called with the remote after every successful attach and with nil when the transport goes away.
+    @ObservationIgnored public var onAgentRemoteChange: ((AgentRemote?) -> Void)?
 
     public var windowTitle: String { title.isEmpty ? profile.name : title }
 
@@ -394,6 +398,9 @@ public final class SessionController {
         lastReconnectError = nil
         state = .connected
         onConnected?()
+        let remote = ConnectionAgentRemote(conn)
+        agentRemote = remote
+        onAgentRemoteChange?(remote)
         if useTmux { startTmuxMonitor(on: conn) }
 
         if reconnecting { redrawNudge(gen: gen) }
@@ -564,6 +571,10 @@ public final class SessionController {
         let s = shell, c = connection
         shell = nil
         connection = nil
+        if agentRemote != nil {
+            agentRemote = nil
+            onAgentRemoteChange?(nil)
+        }
         await stopTmuxMonitor()
         await s?.close()
         await c?.disconnect()

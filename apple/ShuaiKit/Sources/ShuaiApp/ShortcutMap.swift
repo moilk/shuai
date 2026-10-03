@@ -76,6 +76,8 @@ public enum ShortcutAction: Hashable, Sendable {
     case selectPane(PaneDirection)
     case zoomPane
     case quickSwitcher
+    /// Jump to the next agent session that wants the user (UI-level, not a tmux command).
+    case nextAttention
 
     public var id: String {
         switch self {
@@ -90,6 +92,7 @@ public enum ShortcutAction: Hashable, Sendable {
         case .selectPane(let d): "selectPane.\(d.rawValue)"
         case .zoomPane: "zoomPane"
         case .quickSwitcher: "quickSwitcher"
+        case .nextAttention: "nextAttention"
         }
     }
 
@@ -109,7 +112,7 @@ public enum ShortcutAction: Hashable, Sendable {
 
     private static let simple: [ShortcutAction] = [
         .newWindow, .killWindow, .previousWindow, .nextWindow, .lastWindow, .splitRight, .splitDown, .zoomPane,
-        .quickSwitcher,
+        .quickSwitcher, .nextAttention,
     ]
 
     public var title: String {
@@ -125,6 +128,7 @@ public enum ShortcutAction: Hashable, Sendable {
         case .selectPane(let d): "Select Pane \(d.rawValue.capitalized)"
         case .zoomPane: "Zoom Pane"
         case .quickSwitcher: "Quick Switcher"
+        case .nextAttention: "Next Agent Needing Attention"
         }
     }
 }
@@ -170,6 +174,7 @@ public struct ShortcutMap: Hashable, Sendable, Codable {
             (.selectPane(.down), KeyChord(.downArrow, [.command, .option])),
             (.zoomPane, KeyChord(.returnKey, [.command, .shift])),
             (.quickSwitcher, KeyChord(.character("k"), [.command])),
+            (.nextAttention, KeyChord(.character("a"), [.command, .shift])),
         ]
         return ShortcutMap(b)
     }()

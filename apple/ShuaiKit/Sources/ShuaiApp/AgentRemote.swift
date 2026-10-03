@@ -67,6 +67,53 @@ public struct LiveAgentRemote: AgentRemote {
     }
 }
 
+/// The agent monitor/installer's view of a `RemoteConnection` (the session controller's connection).
+public struct ConnectionAgentRemote: AgentRemote {
+    private let connection: RemoteConnection
+    public init(_ connection: RemoteConnection) { self.connection = connection }
+
+    public func exec(_ command: String) async throws -> RemoteExecOutput {
+        let r = try await connection.exec(command)
+        return RemoteExecOutput(
+            stdout: String(decoding: r.stdout, as: UTF8.self), stderr: String(decoding: r.stderr, as: UTF8.self),
+            exitStatus: r.exitStatus.map(Int.init))
+    }
+
+    public func execStream(_ command: String) async throws -> AgentStream {
+        ConnectionAgentStream(try await connection.execStream(command))
+    }
+
+    public func upload(_ data: Data, to path: String, mode: UInt32) async throws {
+        try await connection.upload(data, to: path, mode: mode)
+    }
+}
+
+final class ConnectionAgentStream: AgentStream {
+    private let exec: RemoteExec
+    let events: AsyncStream<AgentStreamEvent>
+
+    init(_ exec: RemoteExec) {
+        self.exec = exec
+        events = AsyncStream { continuation in
+            let task = Task {
+                for await e in exec.events {
+                    switch e {
+                    case .stdout(let b): continuation.yield(.stdout(b))
+                    case .stderr(let b): continuation.yield(.stderr(b))
+                    case .exitStatus(let s): continuation.yield(.exited(Int(s)))
+                    case .exitSignal: continuation.yield(.exited(nil))
+                    case .closed: continuation.yield(.closed)
+                    }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    func close() async { await exec.close() }
+}
+
 final class LiveAgentStream: AgentStream {
     private let session: ExecSession
     let events: AsyncStream<AgentStreamEvent>
