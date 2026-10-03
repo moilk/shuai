@@ -36,15 +36,24 @@ impl Server {
             bin,
             children: vec![],
         };
-        s.base()
+        let out = s
+            .base()
             .args(["new-session", "-d", "-s", "main", "-x", "120", "-y", "40"])
-            .status()
+            .output()
             .unwrap();
+        assert!(
+            out.status.success(),
+            "tmux new-session failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         s
     }
     fn base(&self) -> Command {
         let mut c = Command::new(&self.bin);
-        c.env_remove("TMUX").args(["-L", SOCKET, "-f", "/dev/null"]);
+        // CI runners have no TERM; tmux needs one for its client side.
+        c.env_remove("TMUX")
+            .env("TERM", "xterm-256color")
+            .args(["-L", SOCKET, "-f", "/dev/null"]);
         c
     }
     fn run(&self, c: &TmuxCommand) -> String {
@@ -294,19 +303,33 @@ fn switch_client_moves_the_pty_client_not_the_control_client() {
                 .to_vec(),
         ));
         // a real PTY client (script allocates the pty); stdin stays open
+        // BSD script: `script -q FILE CMD...`; util-linux: `script -q -c CMD FILE`.
+        let attach = [
+            bin.as_str(),
+            "-L",
+            SOCKET,
+            "-f",
+            "/dev/null",
+            "attach",
+            "-t",
+            "=main:",
+        ];
+        let script_args: Vec<String> = if cfg!(target_os = "linux") {
+            vec![
+                "-q".into(),
+                "-c".into(),
+                attach.map(|a| format!("'{a}'")).join(" "),
+                "/dev/null".into(),
+            ]
+        } else {
+            ["-q", "/dev/null"]
+                .into_iter()
+                .chain(attach)
+                .map(String::from)
+                .collect()
+        };
         let pty = Command::new("/usr/bin/script")
-            .args([
-                "-q",
-                "/dev/null",
-                &bin,
-                "-L",
-                SOCKET,
-                "-f",
-                "/dev/null",
-                "attach",
-                "-t",
-                "=main:",
-            ])
+            .args(&script_args)
             .env_remove("TMUX")
             .env("TERM", "xterm-256color")
             .stdin(Stdio::piped())
