@@ -130,3 +130,16 @@ fn known_hosts_bad_key_line_is_malformed() {
         FfiKeyError::Malformed
     );
 }
+
+#[test]
+fn public_key_fingerprint_matches_generated_material() {
+    let k = generate_key(KeyAlg::Ed25519, "a".into()).unwrap();
+    assert_eq!(
+        public_key_fingerprint(k.public_line.clone()).unwrap(),
+        k.fingerprint
+    );
+    assert_eq!(
+        public_key_fingerprint("garbage".into()).unwrap_err(),
+        FfiKeyError::Malformed
+    );
+}
