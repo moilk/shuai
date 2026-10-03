@@ -2079,6 +2079,12 @@ dependencies = [
 [[package]]
 name = "shuai-agentkit"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "shuai-proto",
+ "shuai-tmux",
+]
 
 [[package]]
 name = "shuai-ffi"
