@@ -4,3 +4,33 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+
+[features]
+default = []
+# RSA key generation (3072-bit). Import/export/fingerprinting of RSA keys is always on.
+rsa-generate = []
+
+[dependencies]
+# Pinned to the exact version re-exported by russh 0.63.x as `russh::keys::ssh_key`.
+ssh-key = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+sha1 = { workspace = true }
+hmac = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+zeroize = "1"
+# PEM/DER key-format import. Versions match the ssh-key 0.7.0-rc.11 dependency tree (no duplicates).
+rsa = { version = "=0.10.0-rc.18", default-features = false, features = ["std", "encoding"] }
+p256 = { version = "0.14", default-features = false, features = ["std", "pkcs8"] }
+p384 = { version = "0.14", default-features = false, features = ["std", "pkcs8"] }
+ed25519-dalek = { version = "3", default-features = false, features = ["alloc", "pkcs8"] }
+pkcs8 = { version = "0.11", default-features = false, features = ["std", "encryption", "3des"] }
+# Legacy OpenSSL PEM encryption (EVP_BytesToKey with MD5 + AES/3DES-CBC).
+md5 = "0.8"
+cbc = "0.2"
+aes = "0.9"
+des = "0.9"
+
+[dev-dependencies]
+proptest = { workspace = true }
