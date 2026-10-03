@@ -61,6 +61,7 @@ public final class TmuxMonitor {
     @ObservationIgnored private let pollInterval: Duration
     @ObservationIgnored private let attachRetries: Int
     @ObservationIgnored private let attachRetryDelay: Duration
+    @ObservationIgnored private let attachProbeTimeout: Duration
 
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var conn: RemoteConnection?
@@ -97,7 +98,8 @@ public final class TmuxMonitor {
         sessionName: String,
         ptySize: @escaping @MainActor () -> (cols: UInt32, rows: UInt32) = { (80, 24) },
         debounce: Duration = .milliseconds(100), pollInterval: Duration = .seconds(2),
-        attachRetries: Int = 8, attachRetryDelay: Duration = .milliseconds(150)
+        attachRetries: Int = 8, attachRetryDelay: Duration = .milliseconds(150),
+        attachProbeTimeout: Duration = .seconds(5)
     ) {
         self.sessionName = sessionName
         self.ptySize = ptySize
@@ -105,6 +107,7 @@ public final class TmuxMonitor {
         self.pollInterval = pollInterval
         self.attachRetries = max(1, attachRetries)
         self.attachRetryDelay = attachRetryDelay
+        self.attachProbeTimeout = attachProbeTimeout
     }
 
     // MARK: - Lifecycle
@@ -176,13 +179,14 @@ public final class TmuxMonitor {
 
     private func startControl(gen: Int, connection: RemoteConnection) async {
         for attempt in 1 ... attachRetries {
-            guard gen == generation else { return }
+            // A cancelled start (connection torn down) must not keep retrying.
+            guard gen == generation, !Task.isCancelled else { return }
             do {
                 let ch = try await openChannel(connection)
                 guard gen == generation else { await closeChannel(ch); return }
                 do {
                     // Doubles as the attach probe: it only gets an answer once the session exists.
-                    let pid = try await run(tmuxDisplayMessage(format: "#{client_pid}"), on: ch)
+                    let pid = try await run(tmuxDisplayMessage(format: "#{client_pid}"), on: ch, timeout: attachProbeTimeout)
                     guard gen == generation else { await closeChannel(ch); return }
                     channel = ch
                     controlPid = Int(pid.first?.trimmingCharacters(in: .whitespaces) ?? "")
@@ -201,7 +205,7 @@ public final class TmuxMonitor {
             guard attempt < attachRetries else { break }
             try? await Task.sleep(for: attachRetryDelay)
         }
-        if gen == generation { state = .ended("Could not attach to tmux session \(sessionName).") }
+        if gen == generation, !Task.isCancelled { state = .ended("Could not attach to tmux session \(sessionName).") }
     }
 
     private func openChannel(_ connection: RemoteConnection) async throws -> Channel {
@@ -332,8 +336,20 @@ public final class TmuxMonitor {
         }
     }
 
-    private func run(_ command: FfiTmuxCommand, on ch: Channel) async throws -> [String] {
+    private struct ProbeTimeout: Error {}
+
+    /// With `timeout`, a channel that never answers fails the command (and every other pending one)
+    /// instead of waiting forever; the caller then closes the channel.
+    private func run(_ command: FfiTmuxCommand, on ch: Channel, timeout: Duration? = nil) async throws -> [String] {
         guard !ch.closed else { throw TmuxError.channelClosed }
+        let timer = timeout.map { limit in
+            Task { [weak self] in
+                try? await Task.sleep(for: limit)
+                guard !Task.isCancelled else { return }
+                self?.failPending(ch, ProbeTimeout())
+            }
+        }
+        defer { timer?.cancel() }
         // Registering the reply and queueing the line happen in one synchronous step, so
         // concurrent callers cannot reorder (replies are matched first-in-first-out).
         let sent = ch.controller.send(command: command)
