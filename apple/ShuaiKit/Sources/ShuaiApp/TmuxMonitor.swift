@@ -58,6 +58,8 @@ public final class TmuxMonitor {
 
     @ObservationIgnored private let ptySize: @MainActor () -> (cols: UInt32, rows: UInt32)
     @ObservationIgnored private let debounce: Duration
+    /// Debounce timer; injectable so tests can fire it by hand instead of racing the wall clock.
+    @ObservationIgnored private let debounceSleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private let pollInterval: Duration
     @ObservationIgnored private let attachRetries: Int
     @ObservationIgnored private let attachRetryDelay: Duration
@@ -97,8 +99,10 @@ public final class TmuxMonitor {
         sessionName: String,
         ptySize: @escaping @MainActor () -> (cols: UInt32, rows: UInt32) = { (80, 24) },
         debounce: Duration = .milliseconds(100), pollInterval: Duration = .seconds(2),
-        attachRetries: Int = 8, attachRetryDelay: Duration = .milliseconds(150)
+        attachRetries: Int = 8, attachRetryDelay: Duration = .milliseconds(150),
+        debounceSleep: (@Sendable (Duration) async throws -> Void)? = nil
     ) {
+        self.debounceSleep = debounceSleep ?? { try await Task.sleep(for: $0) }
         self.sessionName = sessionName
         self.ptySize = ptySize
         self.debounce = debounce
@@ -366,7 +370,7 @@ public final class TmuxMonitor {
         let gen = generation
         refreshTask = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(for: self.debounce)
+            try? await self.debounceSleep(self.debounce)
             guard !Task.isCancelled, gen == self.generation else { return }
             self.refreshTask = nil
             await self.refreshNow()
