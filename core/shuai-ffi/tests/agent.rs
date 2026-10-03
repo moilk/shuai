@@ -21,7 +21,10 @@ fn classify_watch_lines() {
         classify_watch_line(lines()[0].into()),
         FfiWatchLineKind::Event
     );
-    assert_eq!(classify_watch_line("garbage".into()), FfiWatchLineKind::Invalid);
+    assert_eq!(
+        classify_watch_line("garbage".into()),
+        FfiWatchLineKind::Invalid
+    );
 }
 
 #[test]
@@ -101,11 +104,14 @@ fn pane_badges_attention_and_next() {
     // Pane gone from a fresh topology: the session ends.
     let other = parse_topology(pane_text("%5")).unwrap();
     let ch = t.reconcile_with_live_panes(HOST.into(), other, 1_791_018_700_000);
-    assert!(
-        ch.iter()
-            .any(|c| matches!(c, FfiTrackerChange::SessionRemoved { .. }
-                | FfiTrackerChange::StateChanged { to: FfiSessionState::Ended, .. }))
-    );
+    assert!(ch.iter().any(|c| matches!(
+        c,
+        FfiTrackerChange::SessionRemoved { .. }
+            | FfiTrackerChange::StateChanged {
+                to: FfiSessionState::Ended,
+                ..
+            }
+    )));
     assert_eq!(t.attention_count(), 0);
 }
 
@@ -139,14 +145,33 @@ fn claude_agents_json_reconcile() {
         1_791_018_700_000,
     );
     assert!(r.is_ok());
-    assert!(t.apply_claude_agents_json(HOST.into(), "{nope".into(), 0).is_err());
+    assert!(
+        t.apply_claude_agents_json(HOST.into(), "{nope".into(), 0)
+            .is_err()
+    );
 }
 
 fn pane_text(pane: &str) -> String {
     let us = '\u{1f}'.to_string();
     [
-        "$0", "main", "1", "@1", "0", "zsh", "1", "*", pane, "0", "1", "claude", "/home/u", "123",
-        "/dev/pts/1", "title", "80", "24",
+        "$0",
+        "main",
+        "1",
+        "@1",
+        "0",
+        "zsh",
+        "1",
+        "*",
+        pane,
+        "0",
+        "1",
+        "claude",
+        "/home/u",
+        "123",
+        "/dev/pts/1",
+        "title",
+        "80",
+        "24",
     ]
     .join(&us)
         + "\n"
@@ -172,16 +197,22 @@ fn install_plan_for_fresh_host() {
     );
     let steps = install_plan(p.clone(), "0.1.0".into());
     assert!(matches!(&steps[0], FfiInstallStep::MakeDirs { path } if path == "~/.shuai/bin"));
-    assert!(matches!(&steps[1], FfiInstallStep::UploadAgent { target_triple, .. }
-        if target_triple == "aarch64-unknown-linux-musl"));
+    assert!(
+        matches!(&steps[1], FfiInstallStep::UploadAgent { target_triple, .. }
+        if target_triple == "aarch64-unknown-linux-musl")
+    );
     assert!(steps
         .iter()
         .any(|s| matches!(s, FfiInstallStep::InstallPluginViaCli { claude_path } if claude_path == "/c/claude")));
-    assert!(steps
-        .iter()
-        .any(|s| matches!(s, FfiInstallStep::AppendTmuxConf { .. })));
-    assert!(matches!(steps.last(), Some(FfiInstallStep::RunDoctor { agent_path })
-        if agent_path == "/home/u/.shuai/bin/shuai-agent"));
+    assert!(
+        steps
+            .iter()
+            .any(|s| matches!(s, FfiInstallStep::AppendTmuxConf { .. }))
+    );
+    assert!(
+        matches!(steps.last(), Some(FfiInstallStep::RunDoctor { agent_path })
+        if agent_path == "/home/u/.shuai/bin/shuai-agent")
+    );
     let unsupported = install_plan(
         FfiProbeResult {
             uname_s: "Plan9".into(),
@@ -201,7 +232,10 @@ fn install_plan_conflict_and_expand_tilde() {
     assert!(steps
         .iter()
         .any(|s| matches!(s, FfiInstallStep::CodexNotifyConflict { existing, .. } if existing.contains("notify"))));
-    assert_eq!(expand_tilde("~/.shuai/bin".into(), "/home/u".into()), "/home/u/.shuai/bin");
+    assert_eq!(
+        expand_tilde("~/.shuai/bin".into(), "/home/u".into()),
+        "/home/u/.shuai/bin"
+    );
     assert_eq!(expand_tilde("/abs".into(), "/home/u".into()), "/abs");
 }
 

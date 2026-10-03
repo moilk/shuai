@@ -2106,6 +2106,7 @@ name = "shuai-ffi"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "shuai-agentkit",
  "shuai-keys",
  "shuai-proto",
  "shuai-ssh",

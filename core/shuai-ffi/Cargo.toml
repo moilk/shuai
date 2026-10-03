@@ -20,6 +20,7 @@ shuai-proto.workspace = true
 shuai-keys = { path = "../shuai-keys" }
 shuai-ssh = { path = "../shuai-ssh" }
 shuai-tmux = { path = "../shuai-tmux" }
+shuai-agentkit = { path = "../shuai-agentkit" }
 shuai-testkit = { path = "../shuai-testkit", optional = true }
 tokio.workspace = true
 async-trait.workspace = true
