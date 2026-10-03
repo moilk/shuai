@@ -45,13 +45,23 @@ public enum CodexConfigEditor {
         return nil
     }
 
+    /// Net `[` minus `]` outside strings and comments (basic `"..."` with escapes, literal `'...'`).
     private static func bracketDepth(_ s: Substring) -> Int {
         var d = 0
-        var inString = false
+        var quote: Character?
+        var escaped = false
         for c in s {
-            if c == "\"" { inString.toggle() }
-            if inString { continue }
-            if c == "[" { d += 1 } else if c == "]" { d -= 1 }
+            if let q = quote {
+                if escaped { escaped = false } else if c == "\\" && q == "\"" { escaped = true } else if c == q { quote = nil }
+                continue
+            }
+            switch c {
+            case "\"", "'": quote = c
+            case "#": return d
+            case "[": d += 1
+            case "]": d -= 1
+            default: break
+            }
         }
         return d
     }

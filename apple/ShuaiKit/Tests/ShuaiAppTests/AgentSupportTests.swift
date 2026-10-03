@@ -59,6 +59,16 @@ struct ShellAndCodexTests {
         #expect(table == "notify = [\"n\"]\n[tui]\nnotify = 1\n")
     }
 
+    @Test func bracketsInCommentsAndEscapedQuotesDoNotConfuseTheRange() {
+        let comment = CodexConfigEditor.settingNotify(in: "notify = [\"x\"] # see [docs\nmodel = 1\n", argv: ["n"])
+        #expect(comment == "notify = [\"n\"]\nmodel = 1\n")
+        let escaped = CodexConfigEditor.settingNotify(in: "notify = [\"a\\\"b]\"]\nmodel = 1\n", argv: ["n"])
+        #expect(escaped == "notify = [\"n\"]\nmodel = 1\n")
+        // Literal (single-quoted) strings may contain brackets and quotes.
+        let literal = CodexConfigEditor.settingNotify(in: "notify = ['a\"[b']\nmodel = 1\n", argv: ["n"])
+        #expect(literal == "notify = [\"n\"]\nmodel = 1\n")
+    }
+
     @Test func removeNotifyOnlyIfOurs() {
         let ours = "notify = [\"/h/.shuai/bin/shuai-agent\", \"codex-notify\"]\nmodel = 1\n"
         #expect(CodexConfigEditor.removingShuaiNotify(from: ours) == "model = 1\n")
@@ -168,12 +178,13 @@ struct PermissionPreviewTests {
 
     @Test func hugeInputsAreCapped() {
         let huge = String(repeating: "x", count: 2_000_000)
-        let cmd = PermissionPreview.make(toolName: "Bash", inputJSON: "{\"command\":\"\(huge)\"}")
+        let big = String(repeating: "x", count: 200_000)
+        let cmd = PermissionPreview.make(toolName: "Bash", inputJSON: "{\"command\":\"\(big)\"}")
         #expect(cmd.kind == .command)
         #expect(cmd.primary.count <= PermissionPreview.maxPrimaryChars + 1)
         #expect(cmd.truncated)
 
-        let write = PermissionPreview.make(toolName: "Write", inputJSON: "{\"file_path\":\"/x\",\"content\":\"\(huge)\"}")
+        let write = PermissionPreview.make(toolName: "Write", inputJSON: "{\"file_path\":\"/x\",\"content\":\"\(big)\"}")
         #expect(write.diff.allSatisfy { if case .added(let s) = $0 { s.count <= PermissionPreview.maxLineChars + 1 } else { false } })
         #expect(write.truncated)
 

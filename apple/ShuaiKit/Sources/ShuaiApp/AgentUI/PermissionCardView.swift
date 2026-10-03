@@ -2,7 +2,8 @@ import SwiftUI
 import ShuaiCore
 
 /// A pending tool-permission request: tool, input preview, Allow / Deny with an optional message.
-/// Keyboard: ⌘↩ allows, ⌘⌫ denies.
+/// Keyboard: ⌘↩ allows, ⌘⌫ denies (both disabled while the message field has focus: ⌘⌫ is
+/// "delete to line start" there). Tool input is untrusted: rendered verbatim (no markdown, no links).
 public struct PermissionCardView: View {
     public let item: PendingPermissionItem
     public var answering: AnswerState?
@@ -10,6 +11,7 @@ public struct PermissionCardView: View {
     public var onRespond: (_ allow: Bool, _ message: String?) -> Void
 
     @State private var message = ""
+    @FocusState private var typing: Bool
 
     public init(
         item: PendingPermissionItem, answering: AnswerState? = nil, errorMessage: String? = nil,
@@ -30,13 +32,14 @@ public struct PermissionCardView: View {
             HStack {
                 Label(item.request.toolName, systemImage: "lock.shield").font(.headline)
                 Spacer()
-                if let cwd = item.session.cwd { Text(cwd).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if let cwd = item.session.cwd { Text(verbatim: cwd).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
             previewBody
             TextField("Message to Claude (optional)", text: $message)
                 .textFieldStyle(.roundedBorder)
+                .focused($typing)
                 .disabled(answering != nil)
-            if let errorMessage { Text(errorMessage).font(.caption).foregroundStyle(.red) }
+            if let errorMessage { Text(verbatim: errorMessage).font(.caption).foregroundStyle(.red) }
             HStack {
                 if let answering {
                     ProgressView().controlSize(.small)
@@ -44,9 +47,9 @@ public struct PermissionCardView: View {
                 }
                 Spacer()
                 Button("Deny", role: .destructive) { onRespond(false, trimmedMessage) }
-                    .keyboardShortcut(.delete, modifiers: .command)
+                    .keyboardShortcut(typing ? nil : KeyboardShortcut(.delete, modifiers: .command))
                 Button("Allow") { onRespond(true, trimmedMessage) }
-                    .keyboardShortcut(.return, modifiers: .command)
+                    .keyboardShortcut(typing ? nil : KeyboardShortcut(.return, modifiers: .command))
                     .buttonStyle(.borderedProminent)
             }
             .disabled(answering != nil)
@@ -65,23 +68,23 @@ public struct PermissionCardView: View {
         let p = preview
         switch p.kind {
         case .command:
-            Text(p.primary).font(.system(.callout, design: .monospaced))
+            Text(verbatim: p.primary).font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled).padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         case .edit, .write:
             VStack(alignment: .leading, spacing: 4) {
-                Text(p.primary).font(.system(.callout, design: .monospaced)).fontWeight(.semibold)
+                Text(verbatim: p.primary).font(.system(.callout, design: .monospaced)).fontWeight(.semibold)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(p.diff.enumerated()), id: \.offset) { _, line in diffRow(line) }
                     }
                 }
                 .frame(maxHeight: 160)
-                if p.truncated { Text("...").font(.caption).foregroundStyle(.secondary) }
+                if p.truncated { Text(verbatim: "...").font(.caption).foregroundStyle(.secondary) }
             }
         case .other:
-            Text(p.primary).font(.system(.callout, design: .monospaced)).lineLimit(6)
+            Text(verbatim: p.primary).font(.system(.callout, design: .monospaced)).lineLimit(6)
         }
     }
 
@@ -90,7 +93,7 @@ public struct PermissionCardView: View {
         case .added(let s): ("+", s, .green)
         case .removed(let s): ("-", s, .red)
         }
-        return Text("\(sign) \(text)").font(.system(.caption, design: .monospaced))
+        return Text(verbatim: "\(sign) \(text)").font(.system(.caption, design: .monospaced))
             .foregroundStyle(color).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
