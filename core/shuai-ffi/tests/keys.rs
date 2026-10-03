@@ -152,3 +152,41 @@ fn key_material_debug_never_prints_the_private_pem() {
     assert!(!dbg.contains(m.private_pem.lines().nth(1).unwrap()), "{dbg}");
     assert!(dbg.contains(&m.fingerprint));
 }
+
+#[test]
+fn known_hosts_replace_swaps_the_key_and_keeps_other_hosts() {
+    let a = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
+    let b = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
+    let other = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
+    let text = known_hosts_add(String::new(), "h".into(), 22, a.public_line.clone(), false).unwrap();
+    let text = known_hosts_add(text, "other".into(), 22, other.public_line.clone(), false).unwrap();
+    let text = known_hosts_replace(text, "h".into(), 22, b.public_line.clone(), false).unwrap();
+    let check = |t: &str, host: &str, line: &str| {
+        known_hosts_check(t.into(), host.into(), 22, line.into()).unwrap()
+    };
+    assert_eq!(check(&text, "h", &b.public_line), FfiHostKeyStatus::Trusted);
+    assert!(!matches!(
+        check(&text, "h", &a.public_line),
+        FfiHostKeyStatus::Trusted
+    ));
+    assert_eq!(
+        check(&text, "other", &other.public_line),
+        FfiHostKeyStatus::Trusted
+    );
+}
+
+#[test]
+fn known_hosts_replace_never_edits_wildcard_or_multi_host_lines() {
+    let a = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
+    let b = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
+    let text = format!("*.example.com,other {}\n", a.public_line);
+    let out = known_hosts_replace(
+        text.clone(),
+        "x.example.com".into(),
+        22,
+        b.public_line,
+        false,
+    )
+    .unwrap();
+    assert!(out.starts_with(&text), "{out}");
+}
