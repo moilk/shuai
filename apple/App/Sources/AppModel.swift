@@ -31,6 +31,15 @@ final class AppModel {
     var editor: HostEditorTarget?
     var showSettings = false
     var showKeys = false
+    /// Sidebar visibility (the window tab strip shows while the sidebar is collapsed).
+    var columnVisibility: NavigationSplitViewVisibility = .all
+    /// Hardware shortcuts delivered while the terminal has focus.
+    var shortcuts: ShortcutMap = .defaults
+    /// Per-pane badges (agent state in M5); none for now.
+    var badges: any PaneBadgeProvider = NoPaneBadges()
+    /// The open ⌘K sheet, if any.
+    var quickSwitcher: QuickSwitcherModel?
+    @ObservationIgnored private var switcherHistory = QuickSwitcherHistory()
 
     @ObservationIgnored private(set) var engines: [UUID: GhosttyEngine] = [:]
     @ObservationIgnored private var pathMonitor: NWPathMonitor?
@@ -78,6 +87,63 @@ final class AppModel {
     func engine(for host: HostProfile) -> GhosttyEngine? {
         _ = sessions.controller(for: host)
         return engineBox.engines[host.id]
+    }
+
+    // MARK: tmux shortcuts and quick switcher
+
+    /// A shortcut fired in `host`'s terminal.
+    func handleShortcut(id: String, host: HostProfile) {
+        guard let action = ShortcutAction(id: id) else { return }
+        if action == .quickSwitcher { openQuickSwitcher(); return }
+        let controller = sessions.controller(for: host)
+        switch controller.tmux.state {
+        case .live, .polling: break
+        default: return // no tmux on this host / not connected: the key does nothing
+        }
+        let actions = controller.tmuxActions
+        Task { await actions.run { try await actions.perform(action) } }
+    }
+
+    func openQuickSwitcher() {
+        guard quickSwitcher == nil else { return }
+        let items = SwitcherItem.build(hosts: sessions.switcherSnapshots(for: hosts.hosts))
+        quickSwitcher = QuickSwitcherModel(items: items, badges: badges, history: switcherHistory)
+    }
+
+    func closeQuickSwitcher(activated: Bool) {
+        if let q = quickSwitcher { switcherHistory = q.history }
+        quickSwitcher = nil
+    }
+
+    /// Selects the item's host (connecting it if needed) and navigates its tmux there.
+    func jump(to item: SwitcherItem) async {
+        guard let host = hosts.host(id: item.hostID) else { return }
+        selection = host.id
+        let controller = sessions.controller(for: host)
+        switch controller.state {
+        case .idle, .failed, .disconnected: await controller.connect()
+        default: break
+        }
+        if item.kind != .host {
+            // A freshly connected host needs a moment until the control channel delivers its tree.
+            _ = await waitForTmux(controller)
+            let actions = controller.tmuxActions
+            await actions.run { try await actions.jump(to: item) }
+        }
+        _ = engineBox.engines[host.id]?.view.acquireProgrammaticFocus()
+    }
+
+    private func waitForTmux(_ controller: SessionController) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(6)
+        while ContinuousClock.now < deadline {
+            switch controller.tmux.state {
+            case .live where controller.tmux.topology != nil: return true
+            case .polling where controller.tmux.topology != nil: return true
+            case .unavailable, .ended, .stopped: return false
+            default: try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        return false
     }
 
     func delete(_ host: HostProfile) {

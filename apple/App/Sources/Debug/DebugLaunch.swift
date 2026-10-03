@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import ShuaiApp
+import ShuaiCore
 
 /// DEBUG-only launch arguments for scripted simulator runs (never compiled into Release):
 ///
@@ -31,6 +32,7 @@ enum DebugLaunch {
 
     @MainActor
     static func applyIfRequested(model: AppModel) async {
+        applyTmuxFixtureIfRequested(model: model)
         guard let path = value(of: "-debugHostFile") else { return }
         do {
             let file = try JSONDecoder().decode(HostFile.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
@@ -51,6 +53,29 @@ enum DebugLaunch {
         } catch {
             NSLog("[debug] -debugHostFile failed: \(error)")
         }
+    }
+
+    /// `-debugTmuxFixture`: a host whose tmux tree is a made-up topology (no server involved), for UI tests.
+    @MainActor
+    static func applyTmuxFixtureIfRequested(model: AppModel) {
+        guard args.contains("-debugTmuxFixture") else { return }
+        var profile = HostProfile(name: "fixture-host", host: "example.invalid", username: "alice")
+        profile.tmux = TmuxPrefs(enabled: true, sessionName: "main")
+        if model.hosts.host(id: profile.id) == nil { try? model.hosts.add(profile) }
+        func pane(_ id: String, _ i: UInt32, _ active: Bool, _ cmd: String) -> FfiTmuxPane {
+            FfiTmuxPane(id: id, index: i, active: active, currentCommand: cmd, currentPath: "/work/app", pid: 1, tty: "", title: "", width: 80, height: 24)
+        }
+        let main = FfiTmuxSession(id: "$0", name: "main", attached: 1, windows: [
+            FfiTmuxWindow(id: "@0", index: 1, name: "shell", active: false, flags: "-", panes: [pane("%0", 0, true, "zsh")]),
+            FfiTmuxWindow(id: "@1", index: 2, name: "claude", active: true, flags: "*", panes: [
+                pane("%1", 0, false, "claude"), pane("%2", 1, true, "vim"),
+            ]),
+        ])
+        let other = FfiTmuxSession(id: "$1", name: "scratch", attached: 0, windows: [
+            FfiTmuxWindow(id: "@5", index: 0, name: "logs", active: true, flags: "*", panes: [pane("%5", 0, true, "tail")]),
+        ])
+        model.sessions.controller(for: profile).tmux.debugSeed(topology: FfiTopology(sessions: [main, other]), viewedSessionID: "$0")
+        model.selection = profile.id
     }
 
     @MainActor

@@ -403,6 +403,15 @@ public final class TmuxMonitor {
         viewedSessionID = tty.flatMap { t in clients.first { $0.tty == t }?.sessionId }
     }
 
+    #if DEBUG
+    /// UI tests / previews: shows `topology` without any connection.
+    public func debugSeed(topology: FfiTopology, viewedSessionID: String?) {
+        self.topology = topology
+        self.viewedSessionID = viewedSessionID
+        changeCount += 1
+    }
+    #endif
+
     /// Forgets the PTY client (it was not found any more): the next refresh picks again.
     func clearPtyClient() { ptyClientTty = nil }
 }

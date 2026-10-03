@@ -58,8 +58,8 @@ public final class TerminalView: UITerminalView {
     override public var keyCommands: [UIKeyCommand]? {
         let own = keyBindings.map { b -> UIKeyCommand in
             let c = UIKeyCommand(
-                input: b.input, modifierFlags: UIKeyModifierFlags(rawValue: b.modifiers),
-                action: #selector(performKeyBinding(_:)), propertyList: b.id)
+                title: "", action: #selector(performKeyBinding(_:)), input: b.input,
+                modifierFlags: UIKeyModifierFlags(rawValue: b.modifiers), propertyList: b.id)
             c.wantsPriorityOverSystemBehavior = true
             return c
         }

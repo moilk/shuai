@@ -40,6 +40,13 @@ private struct TerminalSessionView: View {
 
             overlay
             VStack {
+                if let error = controller.tmuxActions.lastError {
+                    NoticeView(text: error) { controller.tmuxActions.lastError = nil }
+                        .task(id: error) {
+                            try? await Task.sleep(for: .seconds(5))
+                            controller.tmuxActions.lastError = nil
+                        }
+                }
                 if let notice = controller.notice {
                     NoticeView(text: notice) { controller.dismissNotice() }
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -53,6 +60,27 @@ private struct TerminalSessionView: View {
             .padding()
             .animation(.snappy, value: controller.banner)
             .animation(.snappy, value: controller.notice)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if model.columnVisibility == .detailOnly, controller.tmux.topology != nil {
+                WindowTabStrip(host: host, controller: controller)
+            }
+        }
+        .onAppear { bindShortcuts() }
+        .onChange(of: model.shortcuts) { _, _ in bindShortcuts() }
+        .confirmationDialog(
+            controller.tmuxActions.pendingConfirmation?.title ?? "", isPresented: Binding(
+                get: { controller.tmuxActions.pendingConfirmation != nil },
+                set: { if !$0 { controller.tmuxActions.cancelPending() } }),
+            titleVisibility: .visible
+        ) {
+            Button("Close", role: .destructive) {
+                let actions = controller.tmuxActions
+                Task { await actions.run { try await actions.confirmPending() } }
+            }
+            .accessibilityIdentifier("confirm-kill")
+        } message: {
+            Text(controller.tmuxActions.pendingConfirmation?.message ?? "")
         }
         .navigationTitle(controller.windowTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -92,6 +120,15 @@ private struct TerminalSessionView: View {
         .task(id: controller.pendingPrompt) { await DebugLaunch.autoAnswer(controller: controller) }
         .task(id: controller.state) { await DebugLaunch.sendAfterConnect(controller: controller) }
         #endif
+    }
+
+    /// Delivers the shortcut map to the terminal view as key commands (first-responder only).
+    private func bindShortcuts() {
+        engine.view.keyBindings = model.shortcuts.terminalBindings
+        engine.view.onKeyBinding = { [weak model] id in
+            guard let model else { return }
+            model.handleShortcut(id: id, host: host)
+        }
     }
 
     private var clipboardTitle: String {

@@ -19,6 +19,8 @@ public enum TmuxTree {
         public var active: Bool
         public var zoomed: Bool
         public var paneCount: Int
+        /// The pane keystrokes go to (split/zoom of this window act on it).
+        public var activePaneID: String?
         /// Only filled when the window has more than one pane.
         public var panes: [PaneRow]
         public var badge: PaneBadge?
@@ -61,7 +63,8 @@ public enum TmuxTree {
                 : []
             return WindowRow(
                 id: w.id, index: Int(w.index), name: w.name, title: "\(w.index): \(w.name)", active: w.active,
-                zoomed: w.flags.contains("Z"), paneCount: w.panes.count, panes: panes,
+                zoomed: w.flags.contains("Z"), paneCount: w.panes.count,
+                activePaneID: (w.panes.first(where: \.active) ?? w.panes.first)?.id, panes: panes,
                 badge: PaneBadge.aggregate(panes: paneIDs, host: host, provider: badges))
         }
     }
