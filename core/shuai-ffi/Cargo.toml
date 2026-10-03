@@ -1,0 +1,13 @@
+[package]
+name = "shuai-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+uniffi.workspace = true
+shuai-proto.workspace = true

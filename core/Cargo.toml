@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = [
+    "shuai-proto", "shuai-keys", "shuai-ssh", "shuai-tmux",
+    "shuai-agentkit", "shuai-ffi", "shuai-agent", "uniffi-bindgen",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/moilk/shuai"
+publish = false
+
+[workspace.dependencies]
+uniffi = "0.32.2"
+shuai-proto = { path = "shuai-proto" }
