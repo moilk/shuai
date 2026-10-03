@@ -4,6 +4,10 @@
 //! [`ReconnectPolicy::transition`] and performs the returned [`ReconnectAction`].
 //! Whenever the state changes, any previously scheduled retry timer must be cancelled
 //! by the driver.
+//!
+//! The driver measures how long each session stayed up and reports it in
+//! [`ReconnectEvent::Dropped`]; the policy uses it to tell a stable connection (immediate
+//! reconnect, attempt counter reset) from a flapping one (backoff continues).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,8 +44,13 @@ pub enum ReconnectState {
         /// Attempt number, from 1.
         attempt: u32,
     },
-    /// Session is up.
-    Connected,
+    /// Session is up. `attempt` is the attempt number that produced it within the current
+    /// failure streak; it only resets once a connection proves stable (see
+    /// [`ReconnectPolicy::stable_after`]).
+    Connected {
+        /// Attempt number that established this connection.
+        attempt: u32,
+    },
     /// Waiting `delay` before the next attempt; `attempt` is the one that just failed.
     Backoff {
         /// The attempt that just failed.
@@ -63,8 +72,11 @@ pub enum ReconnectEvent {
     ConnectOk,
     /// The in-flight attempt failed.
     ConnectFailed(FailureKind),
-    /// An established session dropped.
-    Dropped,
+    /// An established session dropped after being up for `uptime`.
+    Dropped {
+        /// How long the session had been connected.
+        uptime: Duration,
+    },
     /// The backoff timer elapsed.
     BackoffElapsed,
     /// The device's network path changed.
@@ -82,6 +94,8 @@ pub enum ReconnectAction {
     None,
     /// Start a connection attempt now (cancelling any pending retry timer).
     StartConnect,
+    /// Abort the in-flight attempt and start a fresh one (the network path changed under it).
+    RestartConnect,
     /// Fire [`ReconnectEvent::BackoffElapsed`] after this delay.
     ScheduleRetry(Duration),
     /// Abort any in-flight attempt or pending timer.
@@ -135,7 +149,15 @@ pub struct ReconnectPolicy {
     pub base: Duration,
     /// Upper bound on any delay.
     pub cap: Duration,
-    /// Give up after this many failed attempts; `None` retries forever.
+    /// A connection that stayed up at least this long counts as stable: when it drops, the
+    /// attempt counter resets and the reconnect is immediate. Shorter-lived connections are
+    /// treated like failed attempts (backoff, attempt budget), which prevents a tight loop
+    /// against a server that accepts and then drops.
+    pub stable_after: Duration,
+    /// Lower bound on the delay after a quick drop (applied after jitter, still `<= cap`).
+    pub min_drop_delay: Duration,
+    /// Give up after this many failed attempts; `None` retries forever. `Some(0)` allows a
+    /// single attempt per explicit connect and never retries.
     pub max_attempts: Option<u32>,
     jitter: Arc<dyn Jitter>,
 }
@@ -151,6 +173,8 @@ impl ReconnectPolicy {
         Self {
             base: Duration::from_secs(1),
             cap: Duration::from_secs(30),
+            stable_after: Duration::from_secs(10),
+            min_drop_delay: Duration::from_secs(1),
             max_attempts: None,
             jitter,
         }
@@ -162,6 +186,14 @@ impl ReconnectPolicy {
         self.base.saturating_mul(1u32 << exp.min(31)).min(self.cap)
     }
 
+    /// Delay before retrying after `attempt` failed (or quickly dropped), with jitter.
+    fn backoff_delay(&self, attempt: u32, at_least: Duration) -> Duration {
+        self.jitter
+            .apply(self.nominal_delay(attempt))
+            .max(at_least)
+            .min(self.cap)
+    }
+
     /// Computes the next state and action for `event` in `state`.
     pub fn transition(&self, state: &ReconnectState, event: ReconnectEvent) -> Transition {
         use ReconnectAction as A;
@@ -169,24 +201,37 @@ impl ReconnectPolicy {
         use ReconnectState as S;
         let go = |state, action| Transition { state, action };
         let stay = go(*state, A::None);
+        // Failure of attempt `attempt` (connect failure or quick drop): back off or give up.
+        let fail = |attempt: u32, retriable: bool, at_least: Duration| {
+            let exhausted = self.max_attempts.is_some_and(|m| attempt >= m);
+            if !retriable || exhausted {
+                go(S::GaveUp, A::None)
+            } else {
+                let delay = self.backoff_delay(attempt, at_least);
+                go(S::Backoff { attempt, delay }, A::ScheduleRetry(delay))
+            }
+        };
         match (*state, event) {
             (S::Idle | S::GaveUp, E::Connect) => go(S::Connecting { attempt: 1 }, A::StartConnect),
             (S::GaveUp, E::UserCancel) => go(S::Idle, A::None),
-            (S::Connecting { .. } | S::Connected | S::Backoff { .. }, E::UserCancel) => {
+            (S::Connecting { .. } | S::Connected { .. } | S::Backoff { .. }, E::UserCancel) => {
                 go(S::Idle, A::Cancel)
             }
-            (S::Connecting { .. }, E::ConnectOk) => go(S::Connected, A::None),
+            (S::Connecting { attempt }, E::ConnectOk) => go(S::Connected { attempt }, A::None),
             (S::Connecting { attempt }, E::ConnectFailed(kind)) => {
-                let exhausted = self.max_attempts.is_some_and(|m| attempt >= m);
-                if !kind.is_retriable() || exhausted {
-                    go(S::GaveUp, A::None)
-                } else {
-                    let delay = self.jitter.apply(self.nominal_delay(attempt)).min(self.cap);
-                    go(S::Backoff { attempt, delay }, A::ScheduleRetry(delay))
-                }
+                fail(attempt, kind.is_retriable(), Duration::ZERO)
             }
-            (S::Connected, E::Dropped) => go(S::Connecting { attempt: 1 }, A::StartConnect),
-            (S::Backoff { attempt, .. }, E::BackoffElapsed) => go(
+            (S::Connecting { .. }, E::NetworkChanged | E::AppForegrounded) => {
+                go(S::Connecting { attempt: 1 }, A::RestartConnect)
+            }
+            (S::Connected { .. }, E::Dropped { uptime }) if uptime >= self.stable_after => {
+                go(S::Connecting { attempt: 1 }, A::StartConnect)
+            }
+            (S::Connected { attempt }, E::Dropped { .. }) => {
+                fail(attempt, true, self.min_drop_delay)
+            }
+            // Explicit "retry now" while waiting; the failure streak continues.
+            (S::Backoff { attempt, .. }, E::BackoffElapsed | E::Connect) => go(
                 S::Connecting {
                     attempt: attempt.saturating_add(1),
                 },
@@ -703,7 +748,8 @@ mod tests {
                     // Delays never exceed the cap.
                     if let A::ScheduleRetry(d) = tr.action {
                         prop_assert!(d <= policy.cap, "{d:?}");
-                        prop_assert!(matches!(tr.state, S::Backoff { delay, .. } if delay == d));
+                        let ok = matches!(tr.state, S::Backoff { delay, .. } if delay == d);
+                        prop_assert!(ok);
                     }
                     if let S::Backoff { delay, attempt } = tr.state {
                         prop_assert!(delay <= policy.cap);
@@ -717,13 +763,15 @@ mod tests {
                             _ => prop_assert_eq!(tr.state, S::GaveUp),
                         }
                     }
-                    // Never start (or restart) an attempt while connected.
-                    if matches!(state, S::Connected { .. }) {
+                    // Never start (or restart) an attempt while connected, except in response
+                    // to the connection itself dropping.
+                    if matches!(state, S::Connected { .. }) && !matches!(e, E::Dropped { .. }) {
                         prop_assert!(!matches!(tr.action, A::StartConnect | A::RestartConnect));
                     }
                     // Actions and resulting states agree.
                     if matches!(tr.action, A::StartConnect | A::RestartConnect) {
-                        prop_assert!(matches!(tr.state, S::Connecting { .. }));
+                        let ok = matches!(tr.state, S::Connecting { .. });
+                        prop_assert!(ok);
                     }
                     if let S::Connecting { attempt } = tr.state {
                         prop_assert!(attempt >= 1);
