@@ -408,3 +408,96 @@ async fn upload_failure_is_reported() {
         .unwrap_err();
     assert!(matches!(err, FfiSshError::Protocol { .. }), "{err:?}");
 }
+
+#[test]
+fn upload_command_places_double_dash_before_path_and_masks_mode() {
+    assert_eq!(
+        upload_command("-x".into(), 0o100755),
+        "cat > '-x' && chmod 755 -- '-x'"
+    );
+}
+
+/// Runs the generated command in a real `sh` with hostile paths: no injection, exact content.
+#[test]
+fn upload_command_is_injection_safe_in_a_real_shell() {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::{Command, Stdio};
+
+    let dir = tempfile::tempdir().unwrap();
+    let names = [
+        "plain",
+        "with space",
+        "it's",
+        "semi;touch pwned",
+        "dollar$HOME",
+        "sub$(touch pwned)",
+        "tick`touch pwned`",
+        "amp&&touch pwned",
+        "-dash",
+        "star*",
+        "new\nline",
+        "quote\"d",
+        "back\\slash",
+    ];
+    for name in names {
+        let cmd = upload_command(name.into(), 0o640);
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .current_dir(dir.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(name.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "{name:?}: {out:?}");
+        let p = dir.path().join(name);
+        assert_eq!(std::fs::read(&p).unwrap(), name.as_bytes(), "{name:?}");
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o7777,
+            0o640,
+            "{name:?}"
+        );
+    }
+    assert!(!dir.path().join("pwned").exists(), "command injection");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), names.len());
+}
+
+#[tokio::test]
+async fn upload_4mb_is_chunked_and_terminated_with_eof() {
+    let server = start(ServerOpts::default()).await;
+    let conn = connect(&server).await;
+    let data: Vec<u8> = (0..4 * 1024 * 1024u32).map(|i| (i % 253) as u8).collect();
+    conn.upload(data.clone(), "/tmp/big".into(), 0o600)
+        .await
+        .unwrap();
+    let uploads = server.log.uploads.lock().unwrap();
+    assert_eq!(uploads[0].1.len(), data.len());
+    assert!(uploads[0].1 == data);
+}
+
+#[tokio::test]
+async fn upload_failure_before_stdin_is_consumed_keeps_remote_diagnostics() {
+    let server = start(ServerOpts::default()).await;
+    let conn = connect(&server).await;
+    let data = vec![7u8; 4 * 1024 * 1024];
+    let err = conn
+        .upload(data, "/readonly/x".into(), 0o644)
+        .await
+        .unwrap_err();
+    match err {
+        FfiSshError::Protocol { message } => {
+            assert!(message.contains("permission denied"), "{message}");
+            assert!(message.contains("Some(1)"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+}

@@ -143,3 +143,12 @@ fn public_key_fingerprint_matches_generated_material() {
         FfiKeyError::Malformed
     );
 }
+
+#[test]
+fn key_material_debug_never_prints_the_private_pem() {
+    let m = generate_key(KeyAlg::Ed25519, "t".into()).unwrap();
+    let dbg = format!("{m:?}");
+    assert!(!dbg.contains("PRIVATE KEY"), "{dbg}");
+    assert!(!dbg.contains(m.private_pem.lines().nth(1).unwrap()), "{dbg}");
+    assert!(dbg.contains(&m.fingerprint));
+}

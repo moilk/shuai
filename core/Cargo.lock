@@ -2110,6 +2110,7 @@ dependencies = [
  "shuai-ssh",
  "shuai-testkit",
  "shuai-tmux",
+ "tempfile",
  "thiserror",
  "tokio",
  "uniffi",
