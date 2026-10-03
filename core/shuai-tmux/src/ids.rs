@@ -22,15 +22,19 @@ macro_rules! id_type {
         pub struct $name(pub u32);
 
         impl fmt::Display for $name {
-            fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                todo!()
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}{}", $sigil, self.0)
             }
         }
 
         impl FromStr for $name {
             type Err = ParseIdError;
-            fn from_str(_s: &str) -> Result<Self, Self::Err> {
-                todo!()
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                s.strip_prefix($sigil)
+                    .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                    .and_then(|n| n.parse().ok())
+                    .map($name)
+                    .ok_or_else(|| ParseIdError(s.to_string()))
             }
         }
     };

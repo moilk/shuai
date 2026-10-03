@@ -335,7 +335,7 @@ fn unknown_lines_are_forwarded() {
 fn dcs_wrapper_for_cc_mode() {
     let mut p = ControlParser::new();
     let ev = p.push(b"\x1bP1000p%begin 1 2 0\n%end 1 2 0\n%sessions-changed\n%exit\n\x1b\\");
-    assert_eq!(ev.len(), 3 + 0);
+    assert_eq!(ev.len(), 3);
     assert!(matches!(ev[0], E::Reply(_)));
     assert_eq!(ev[1], E::SessionsChanged);
     assert_eq!(ev[2], E::Exit { reason: None });

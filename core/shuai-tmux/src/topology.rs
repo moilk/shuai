@@ -127,7 +127,161 @@ pub enum TopologyChange {
 impl TmuxTopology {
     /// Changes needed to go from `self` to `new`: removals first, then additions, then
     /// modifications, each in tree order.
-    pub fn diff(&self, _new: &TmuxTopology) -> Vec<TopologyChange> {
-        todo!()
+    pub fn diff(&self, new: &TmuxTopology) -> Vec<TopologyChange> {
+        let mut d = Diff::default();
+        diff_sessions(&self.sessions, &new.sessions, &mut d);
+        let mut out = d.removed;
+        out.extend(d.added);
+        out.extend(d.modified);
+        out
+    }
+}
+
+#[derive(Default)]
+struct Diff {
+    removed: Vec<TopologyChange>,
+    added: Vec<TopologyChange>,
+    modified: Vec<TopologyChange>,
+}
+
+fn diff_sessions(old: &[TmuxSession], new: &[TmuxSession], d: &mut Diff) {
+    for o in old {
+        if !new.iter().any(|n| n.id == o.id) {
+            d.removed.push(TopologyChange::SessionRemoved { id: o.id });
+        }
+    }
+    for n in new {
+        match old.iter().find(|o| o.id == n.id) {
+            None => d.added.push(TopologyChange::SessionAdded {
+                id: n.id,
+                name: n.name.clone(),
+            }),
+            Some(o) => {
+                if o.name != n.name {
+                    d.modified.push(TopologyChange::SessionRenamed {
+                        id: n.id,
+                        old: o.name.clone(),
+                        new: n.name.clone(),
+                    });
+                }
+                if o.attached != n.attached {
+                    d.modified.push(TopologyChange::SessionAttachedChanged {
+                        id: n.id,
+                        attached: n.attached,
+                    });
+                }
+                diff_windows(n.id, &o.windows, &n.windows, d);
+            }
+        }
+    }
+}
+
+fn diff_windows(session: SessionId, old: &[TmuxWindow], new: &[TmuxWindow], d: &mut Diff) {
+    for o in old {
+        if !new.iter().any(|n| n.id == o.id) {
+            d.removed.push(TopologyChange::WindowRemoved {
+                session,
+                window: o.id,
+            });
+        }
+    }
+    for n in new {
+        match old.iter().find(|o| o.id == n.id) {
+            None => d.added.push(TopologyChange::WindowAdded {
+                session,
+                window: n.id,
+                index: n.index,
+                name: n.name.clone(),
+            }),
+            Some(o) => {
+                if o.name != n.name {
+                    d.modified.push(TopologyChange::WindowRenamed {
+                        session,
+                        window: n.id,
+                        old: o.name.clone(),
+                        new: n.name.clone(),
+                    });
+                }
+                if o.index != n.index {
+                    d.modified.push(TopologyChange::WindowIndexChanged {
+                        session,
+                        window: n.id,
+                        old: o.index,
+                        new: n.index,
+                    });
+                }
+                if n.active && !o.active {
+                    d.modified.push(TopologyChange::ActiveWindowChanged {
+                        session,
+                        window: n.id,
+                    });
+                }
+                diff_panes(session, n.id, &o.panes, &n.panes, d);
+            }
+        }
+    }
+}
+
+fn diff_panes(
+    session: SessionId,
+    window: WindowId,
+    old: &[TmuxPane],
+    new: &[TmuxPane],
+    d: &mut Diff,
+) {
+    for o in old {
+        if !new.iter().any(|n| n.id == o.id) {
+            d.removed.push(TopologyChange::PaneRemoved {
+                session,
+                window,
+                pane: o.id,
+            });
+        }
+    }
+    for n in new {
+        let Some(o) = old.iter().find(|o| o.id == n.id) else {
+            d.added.push(TopologyChange::PaneAdded {
+                session,
+                window,
+                pane: n.id,
+            });
+            continue;
+        };
+        let pane = n.id;
+        if n.active && !o.active {
+            d.modified.push(TopologyChange::ActivePaneChanged {
+                session,
+                window,
+                pane,
+            });
+        }
+        if o.current_command != n.current_command {
+            d.modified.push(TopologyChange::PaneCommandChanged {
+                pane,
+                old: o.current_command.clone(),
+                new: n.current_command.clone(),
+            });
+        }
+        if o.current_path != n.current_path {
+            d.modified.push(TopologyChange::PanePathChanged {
+                pane,
+                old: o.current_path.clone(),
+                new: n.current_path.clone(),
+            });
+        }
+        if o.title != n.title {
+            d.modified.push(TopologyChange::PaneTitleChanged {
+                pane,
+                old: o.title.clone(),
+                new: n.title.clone(),
+            });
+        }
+        if (o.width, o.height) != (n.width, n.height) {
+            d.modified.push(TopologyChange::PaneResized {
+                pane,
+                width: n.width,
+                height: n.height,
+            });
+        }
     }
 }

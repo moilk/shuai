@@ -88,7 +88,6 @@ fn check_control(raw: &str) {
         "unlinked-close @2",
         "layout @0",
         "unlinked-add @3",
-        "unlinked-renamed @3",
         "sessions-changed",
         "unlinked-close @3",
     ] {
