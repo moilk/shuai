@@ -195,6 +195,12 @@ public final class AgentHub: PaneAgentInfoProvider {
         return targets.first { $0.key == key }
     }
 
+    /// The user is looking at `paneID` of `profileID`: its agent session counts as seen.
+    public func markSeen(profileID: UUID, paneID: String) {
+        guard let m = monitors[profileID], let s = m.sessions.first(where: { $0.tmuxPane == paneID }) else { return }
+        m.markSeen(FfiSessionKey(host: s.host, sessionId: s.sessionId))
+    }
+
     /// The session `key` (e.g. of a banner) as a jump target, whatever its state.
     public func target(for key: FfiSessionKey) -> AttentionTarget? {
         guard let id = profileID(for: key),

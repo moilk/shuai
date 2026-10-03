@@ -31,6 +31,16 @@ public struct BannerContent: Equatable, Sendable {
     }
 }
 
+extension FfiTrackerChange {
+    /// The session this change is about.
+    public var sessionKey: FfiSessionKey {
+        switch self {
+        case .sessionAdded(let key), .sessionRemoved(let key), .permissionCleared(let key): key
+        case .stateChanged(let key, _, _), .permissionRequested(let key, _): key
+        }
+    }
+}
+
 /// A local notification the app may post when it is not in the foreground.
 public struct LocalNotificationContent: Equatable, Sendable {
     /// Same identifier for the same session: a newer transition replaces the older notification.
