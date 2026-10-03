@@ -17,8 +17,9 @@ final class EngineHarness {
     var clipboardRequests: [ClipboardRequest] = []
     var resizes: [TerminalGridSize] = []
 
-    init(cols: Int = 100, rows: Int = 30) async {
-        engine = GhosttyEngine(resizeDebounce: 0.01)
+    init(cols: Int = 100, rows: Int = 30, resizeDebounce: TimeInterval = 0.01,
+         theme: TerminalTheme = .default, scrollbackLines: Int = ScrollbackPolicy.defaultLines) async {
+        engine = GhosttyEngine(resizeDebounce: resizeDebounce, theme: theme, scrollbackLines: scrollbackLines)
         window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1200, height: 900))
         window.rootViewController = UIViewController()
         let root = window.rootViewController!.view!
