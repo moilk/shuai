@@ -46,6 +46,31 @@ public final class TerminalView: UITerminalView {
         }
     }
 
+    // MARK: - App shortcuts
+
+    /// Shortcuts delivered as priority key commands while this view is first responder (the app's
+    /// tmux window shortcuts). Replaced wholesale.
+    public var keyBindings: [TerminalKeyBinding] = []
+
+    /// Called with the binding's id when one of `keyBindings` fires.
+    public var onKeyBinding: ((String) -> Void)?
+
+    override public var keyCommands: [UIKeyCommand]? {
+        let own = keyBindings.map { b -> UIKeyCommand in
+            let c = UIKeyCommand(
+                input: b.input, modifierFlags: UIKeyModifierFlags(rawValue: b.modifiers),
+                action: #selector(performKeyBinding(_:)), propertyList: b.id)
+            c.wantsPriorityOverSystemBehavior = true
+            return c
+        }
+        return (super.keyCommands ?? []) + own
+    }
+
+    @objc public func performKeyBinding(_ command: UIKeyCommand) {
+        guard let id = command.propertyList as? String else { return }
+        onKeyBinding?(id)
+    }
+
     // MARK: - Hardware Option as Alt
 
     override public func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
