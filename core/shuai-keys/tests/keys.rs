@@ -1,0 +1,426 @@
+use proptest::prelude::*;
+use shuai_keys::*;
+use std::fs;
+use std::path::PathBuf;
+
+fn fx(name: &str) -> String {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name);
+    fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+}
+
+/// Expected fingerprint as captured from `ssh-keygen -lf` for the key with this comment.
+fn expected_fp(comment: &str) -> String {
+    for line in fx("fingerprints.txt").lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts[2] == comment {
+            return parts[1].to_string();
+        }
+    }
+    panic!("no fingerprint for {comment}");
+}
+
+const PASS: &str = "shuai-test-pass";
+
+#[test]
+fn generate_ed25519() {
+    let k = generate(KeyAlgorithm::Ed25519, "me@ipad").unwrap();
+    assert_eq!(k.algorithm().as_str(), "ssh-ed25519");
+    assert_eq!(k.comment().as_str().unwrap(), "me@ipad");
+}
+
+#[test]
+fn generate_ecdsa_p256() {
+    let k = generate(KeyAlgorithm::EcdsaP256, "c").unwrap();
+    assert_eq!(k.algorithm().as_str(), "ecdsa-sha2-nistp256");
+}
+
+#[cfg(feature = "rsa-generate")]
+#[test]
+fn generate_rsa() {
+    let k = generate(KeyAlgorithm::Rsa, "c").unwrap();
+    assert_eq!(k.algorithm().as_str(), "ssh-rsa");
+}
+
+#[cfg(not(feature = "rsa-generate"))]
+#[test]
+fn generate_rsa_unsupported_without_feature() {
+    assert!(matches!(
+        generate(KeyAlgorithm::Rsa, "c"),
+        Err(KeyError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn generated_keys_are_distinct() {
+    let a = generate(KeyAlgorithm::Ed25519, "").unwrap();
+    let b = generate(KeyAlgorithm::Ed25519, "").unwrap();
+    assert_ne!(a.public_key().key_data(), b.public_key().key_data());
+}
+
+#[test]
+fn import_plain_ed25519_matches_ssh_keygen_fingerprint() {
+    let k = import_private_key(&fx("test_ed25519_plain"), None).unwrap();
+    assert_eq!(
+        fingerprint(k.public_key()),
+        expected_fp("shuai-test-ed25519")
+    );
+}
+
+#[test]
+fn import_plain_ecdsa_and_rsa_match_fingerprints() {
+    let k = import_private_key(&fx("test_ecdsa_plain"), None).unwrap();
+    assert_eq!(fingerprint(k.public_key()), expected_fp("shuai-test-ecdsa"));
+    let k = import_private_key(&fx("test_rsa_plain"), None).unwrap();
+    assert_eq!(fingerprint(k.public_key()), expected_fp("shuai-test-rsa"));
+}
+
+#[test]
+fn import_encrypted_ed25519_with_passphrase() {
+    let k = import_private_key(&fx("test_ed25519_enc"), Some(PASS)).unwrap();
+    assert_eq!(
+        fingerprint(k.public_key()),
+        expected_fp("shuai-test-ed25519-enc")
+    );
+}
+
+#[test]
+fn import_encrypted_ecdsa_and_rsa() {
+    let k = import_private_key(&fx("test_ecdsa_enc"), Some(PASS)).unwrap();
+    assert_eq!(
+        fingerprint(k.public_key()),
+        expected_fp("shuai-test-ecdsa-enc")
+    );
+    let k = import_private_key(&fx("test_rsa_enc"), Some(PASS)).unwrap();
+    assert_eq!(
+        fingerprint(k.public_key()),
+        expected_fp("shuai-test-rsa-enc")
+    );
+}
+
+#[test]
+fn encrypted_without_passphrase_needs_passphrase() {
+    assert_eq!(
+        import_private_key(&fx("test_ed25519_enc"), None).unwrap_err(),
+        KeyError::NeedsPassphrase
+    );
+}
+
+#[test]
+fn encrypted_with_wrong_passphrase() {
+    assert_eq!(
+        import_private_key(&fx("test_ed25519_enc"), Some("nope")).unwrap_err(),
+        KeyError::WrongPassphrase
+    );
+}
+
+#[test]
+fn passphrase_on_plain_key_is_ignored() {
+    assert!(import_private_key(&fx("test_ed25519_plain"), Some("x")).is_ok());
+}
+
+#[test]
+fn garbage_is_malformed() {
+    for s in [
+        "",
+        "hello",
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n",
+    ] {
+        assert_eq!(
+            import_private_key(s, None).unwrap_err(),
+            KeyError::Malformed,
+            "{s:?}"
+        );
+    }
+}
+
+fn pem_fp(name: &str) -> String {
+    for line in fx("pem_fingerprints.txt").lines() {
+        let mut p = line.split_whitespace();
+        if p.next() == Some(name) {
+            return p.next().unwrap().to_string();
+        }
+    }
+    panic!("no pem fingerprint for {name}");
+}
+
+/// Imports fixture `name` and checks the fingerprint equals what `ssh-keygen`/openssl gave.
+fn check_pem(name: &str, pass: Option<&str>, alg: &str) {
+    let k = import_private_key(&fx(name), pass).unwrap_or_else(|e| panic!("{name}: {e}"));
+    assert_eq!(k.algorithm().as_str(), alg, "{name}");
+    assert_eq!(fingerprint(k.public_key()), pem_fp(name), "{name}");
+}
+
+#[test]
+fn pkcs1_rsa_plain() {
+    check_pem("test_rsa_pkcs1", None, "ssh-rsa");
+    check_pem("test_rsa_legacy_pem", None, "ssh-rsa");
+}
+
+#[test]
+fn pkcs1_rsa_legacy_encrypted() {
+    for n in ["test_rsa_pkcs1_aes128", "test_rsa_pkcs1_des3"] {
+        check_pem(n, Some(PASS), "ssh-rsa");
+        assert_eq!(
+            import_private_key(&fx(n), None).unwrap_err(),
+            KeyError::NeedsPassphrase
+        );
+        assert_eq!(
+            import_private_key(&fx(n), Some("wrong")).unwrap_err(),
+            KeyError::WrongPassphrase
+        );
+    }
+}
+
+#[test]
+fn pkcs8_plain() {
+    check_pem("test_rsa_pkcs8", None, "ssh-rsa");
+    check_pem("test_ed25519_pkcs8", None, "ssh-ed25519");
+    check_pem("test_p256_pkcs8", None, "ecdsa-sha2-nistp256");
+    check_pem("test_p384_pkcs8", None, "ecdsa-sha2-nistp384");
+}
+
+#[test]
+fn pkcs8_encrypted() {
+    for (n, alg) in [
+        ("test_rsa_pkcs8_enc", "ssh-rsa"),
+        ("test_rsa_pkcs8_enc_sha256", "ssh-rsa"),
+        ("test_ed25519_pkcs8_enc", "ssh-ed25519"),
+    ] {
+        check_pem(n, Some(PASS), alg);
+        assert_eq!(
+            import_private_key(&fx(n), None).unwrap_err(),
+            KeyError::NeedsPassphrase
+        );
+        assert_eq!(
+            import_private_key(&fx(n), Some("wrong")).unwrap_err(),
+            KeyError::WrongPassphrase
+        );
+    }
+}
+
+#[test]
+fn pkcs8_scrypt_encrypted() {
+    check_pem("test_p256_pkcs8_scrypt", Some(PASS), "ecdsa-sha2-nistp256");
+    assert_eq!(
+        import_private_key(&fx("test_p256_pkcs8_scrypt"), Some("nope")).unwrap_err(),
+        KeyError::WrongPassphrase
+    );
+}
+
+/// Local-only check against a real key: `SHUAI_TEST_KEY=path [SHUAI_TEST_PASS=..] cargo test
+/// -- --ignored real_key`; compare the printed-nothing assertion with `ssh-keygen -lf` via
+/// `SHUAI_TEST_FP`.
+#[test]
+#[ignore]
+fn real_key_from_env() {
+    let path = std::env::var("SHUAI_TEST_KEY").expect("SHUAI_TEST_KEY");
+    let pem = fs::read_to_string(path).unwrap();
+    let pass = std::env::var("SHUAI_TEST_PASS").ok();
+    let k = import_private_key(&pem, pass.as_deref()).unwrap();
+    if let Ok(fp) = std::env::var("SHUAI_TEST_FP") {
+        assert_eq!(fingerprint(k.public_key()), fp);
+    }
+}
+
+#[test]
+fn sec1_ec() {
+    check_pem("test_p256_sec1", None, "ecdsa-sha2-nistp256");
+    check_pem("test_p384_sec1", None, "ecdsa-sha2-nistp384");
+    check_pem("test_p256_sec1_aes128", Some(PASS), "ecdsa-sha2-nistp256");
+}
+
+#[test]
+fn pem_import_tolerates_crlf_and_leading_whitespace() {
+    let crlf = format!("\n  {}", fx("test_rsa_pkcs1").replace('\n', "\r\n"));
+    let k = import_private_key(&crlf, None).unwrap();
+    assert_eq!(fingerprint(k.public_key()), pem_fp("test_rsa_pkcs1"));
+}
+
+#[test]
+fn truncated_pem_is_malformed_not_panic() {
+    for n in [
+        "test_rsa_pkcs1",
+        "test_rsa_pkcs8",
+        "test_p256_sec1",
+        "test_rsa_pkcs8_enc",
+    ] {
+        let full = fx(n);
+        let cut = &full[..full.len() / 2];
+        assert!(import_private_key(cut, Some(PASS)).is_err(), "{n}");
+        let mid = full.replacen("MI", "MJ", 1);
+        let _ = import_private_key(&mid, Some(PASS));
+    }
+}
+
+#[test]
+fn dsa_and_ppk_stay_unsupported() {
+    for s in [
+        "-----BEGIN DSA PRIVATE KEY-----\nAAAA\n-----END DSA PRIVATE KEY-----\n",
+        "PuTTY-User-Key-File-3: ssh-rsa\nEncryption: none\n",
+    ] {
+        assert!(matches!(
+            import_private_key(s, None),
+            Err(KeyError::Unsupported(_))
+        ));
+    }
+}
+
+proptest! {
+    #[test]
+    fn random_bytes_never_panic(bytes in proptest::collection::vec(any::<u8>(), 0..512)) {
+        let s = String::from_utf8_lossy(&bytes).into_owned();
+        let _ = import_private_key(&s, None);
+        let _ = import_private_key(&s, Some("p"));
+    }
+
+    #[test]
+    fn mutated_pem_never_panics(idx in 0usize..400, byte in any::<u8>()) {
+        let mut b = fx("test_ed25519_enc").into_bytes();
+        let i = idx % b.len();
+        b[i] = byte;
+        let s = String::from_utf8_lossy(&b).into_owned();
+        let _ = import_private_key(&s, Some(PASS));
+        let _ = import_private_key(&s, None);
+    }
+}
+
+#[test]
+fn export_unencrypted_roundtrip() {
+    let k = generate(KeyAlgorithm::Ed25519, "rt").unwrap();
+    let pem = export_private_key(&k, None).unwrap();
+    assert!(pem.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----"));
+    let k2 = import_private_key(&pem, None).unwrap();
+    assert_eq!(k.public_key().key_data(), k2.public_key().key_data());
+    assert_eq!(k2.comment().as_str().unwrap(), "rt");
+}
+
+#[test]
+fn export_encrypted_roundtrip() {
+    let k = generate(KeyAlgorithm::EcdsaP256, "rt").unwrap();
+    let pem = export_private_key(&k, Some("secret")).unwrap();
+    assert_eq!(
+        import_private_key(&pem, None).unwrap_err(),
+        KeyError::NeedsPassphrase
+    );
+    assert_eq!(
+        import_private_key(&pem, Some("bad")).unwrap_err(),
+        KeyError::WrongPassphrase
+    );
+    let k2 = import_private_key(&pem, Some("secret")).unwrap();
+    assert_eq!(k.public_key().key_data(), k2.public_key().key_data());
+}
+
+#[test]
+fn export_encrypted_is_readable_by_ssh_keygen() {
+    // Uses real ssh-keygen when present: `ssh-keygen -y -P secret -f key` must print the public key.
+    let dir = env!("CARGO_TARGET_TMPDIR");
+    let k = generate(KeyAlgorithm::Ed25519, "x").unwrap();
+    let pem = export_private_key(&k, Some("secret")).unwrap();
+    let path = PathBuf::from(dir).join("exported_enc_key");
+    fs::write(&path, pem).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let Ok(out) = std::process::Command::new("ssh-keygen")
+        .args(["-y", "-P", "secret", "-f"])
+        .arg(&path)
+        .output()
+    else {
+        return;
+    };
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let printed = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        printed.starts_with(
+            &authorized_keys_line(k.public_key())
+                .rsplit_once(' ')
+                .unwrap()
+                .0
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn authorized_keys_line_matches_pub_fixture() {
+    for n in ["test_ed25519_plain", "test_ecdsa_plain", "test_rsa_plain"] {
+        let k = import_private_key(&fx(n), None).unwrap();
+        assert_eq!(
+            authorized_keys_line(k.public_key()),
+            fx(&format!("{n}.pub")).trim()
+        );
+    }
+}
+
+#[test]
+fn fingerprint_has_openssh_format() {
+    let k = generate(KeyAlgorithm::Ed25519, "").unwrap();
+    let f = fingerprint(k.public_key());
+    assert!(f.starts_with("SHA256:"));
+    assert_eq!(f.len(), 7 + 43); // unpadded base64 of 32 bytes
+}
+
+#[test]
+fn randomart_has_box_shape() {
+    let k = import_private_key(&fx("test_ed25519_plain"), None).unwrap();
+    let art = randomart(k.public_key());
+    let lines: Vec<&str> = art.lines().collect();
+    assert_eq!(lines.len(), 11);
+    assert!(lines[0].starts_with("+--[ED25519 256]"));
+    assert_eq!(lines[10], "+----[SHA256]-----+");
+    assert!(lines.iter().all(|l| l.chars().count() == 19));
+}
+
+/// Rewrites the bcrypt rounds field of an encrypted OpenSSH key (a hostile-input DoS vector).
+fn with_rounds(pem: &str, rounds: u32) -> String {
+    use base64::Engine;
+    let b64: String = pem.lines().filter(|l| !l.starts_with("-----")).collect();
+    let mut blob = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+    let mut p = b"openssh-key-v1\0".len();
+    let rd =
+        |blob: &[u8], p: usize| u32::from_be_bytes(blob[p..p + 4].try_into().unwrap()) as usize;
+    for _ in 0..2 {
+        // ciphername, kdfname
+        p += 4 + rd(&blob, p);
+    }
+    p += 4; // kdfoptions length
+    p += 4 + rd(&blob, p); // salt
+    blob[p..p + 4].copy_from_slice(&rounds.to_be_bytes());
+    let enc = base64::engine::general_purpose::STANDARD.encode(blob);
+    format!("-----BEGIN OPENSSH PRIVATE KEY-----\n{enc}\n-----END OPENSSH PRIVATE KEY-----\n")
+}
+
+#[test]
+fn absurd_bcrypt_rounds_are_rejected_quickly() {
+    let evil = with_rounds(&fx("test_ed25519_enc"), u32::MAX);
+    assert!(matches!(
+        import_private_key(&evil, Some(PASS)),
+        Err(KeyError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn randomart_matches_ssh_keygen() {
+    for (n, art) in [
+        ("test_ed25519_plain", "randomart_ed25519.txt"),
+        ("test_ecdsa_plain", "randomart_ecdsa.txt"),
+        ("test_rsa_plain", "randomart_rsa.txt"),
+    ] {
+        let k = import_private_key(&fx(n), None).unwrap();
+        assert_eq!(
+            randomart(k.public_key()).trim_end(),
+            fx(art).trim_end(),
+            "{n}"
+        );
+    }
+}

@@ -1,0 +1,7 @@
+256 SHA256:I0G2MIy4OT3ZJ1fuDGg6UUXW3XhQ96ikDRrdsDYAS7Y shuai-test-ecdsa-enc (ECDSA)
+256 SHA256:J3ZjJPxaYOICn3sjn6dJ/AQeXRyMrFTP6ZM5kpDTI7g shuai-test-ecdsa (ECDSA)
+256 SHA256:PJBsZAweLZrfTmTusjzWpibFjkPtiSXLx4frD48QefI shuai-test-ed25519-enc (ED25519)
+256 SHA256:lGW+qu0ssJKNsxu9jcemc9wBkJ7ei8U5zJm3Qs06vJQ shuai-test-ed25519 (ED25519)
+3072 SHA256:xclX0w1JhCe0kelvzT60B9tpAmmXDIo2RbKHCtVsyCI shuai-test-rsa-enc (RSA)
+2048 SHA256:FAbTDQ8V8Y7UAzrijjjwSyI9REHXXyPaE1wlzjbYVn0 legacy (RSA)
+3072 SHA256:1XuUxmqsOhQZvvab6q6e55eAsgGIwbOa/blI0oXm38A shuai-test-rsa (RSA)

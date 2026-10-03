@@ -15,6 +15,18 @@ publish = false
 [workspace.dependencies]
 uniffi = "0.32.2"
 shuai-proto = { path = "shuai-proto" }
+# Exact pin: identical to the ssh-key re-exported by russh 0.63.x (`russh::keys::ssh_key`).
+ssh-key = { version = "=0.7.0-rc.11", default-features = false, features = ["std", "ecdsa", "ed25519", "p256", "p384", "p521", "rsa", "encryption", "getrandom", "rand_core"] }
+russh = "0.63.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+async-trait = "0.1"
+rand = "0.10"
+sha2 = "0.11"
+sha1 = "0.11"
+hmac = "0.13"
+base64 = "0.22"
+thiserror = "2"
+proptest = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
@@ -22,3 +34,7 @@ toml = "1"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 rustix = { version = "1", features = ["fs", "system"] }
 tempfile = "3"
+
+# Third-party crypto (bcrypt-pbkdf, rsa, ...) is unusably slow at opt-level 0 in tests.
+[profile.dev.package."*"]
+opt-level = 2
