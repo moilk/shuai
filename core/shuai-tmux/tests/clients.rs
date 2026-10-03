@@ -178,6 +178,15 @@ fn without_a_known_control_client_the_latest_candidate_wins() {
 }
 
 #[test]
+fn parse_clients_treats_empty_size_fields_as_zero() {
+    // seen on tmux 3.6: a control client may report empty sizes
+    let cs = parse_clients(&row("", "7", "main", "1", "5", "80", "")).unwrap();
+    assert_eq!((cs[0].width, cs[0].height), (80, 0));
+    let cs = parse_clients(&row("", "7", "main", "1", "5", "", "")).unwrap();
+    assert_eq!((cs[0].width, cs[0].height), (0, 0));
+}
+
+#[test]
 fn a_client_that_already_switched_away_is_found_by_the_any_session_variant() {
     let cs = vec![
         client("/dev/ttys002", 100, "other", false, 1000, 120, 40),
