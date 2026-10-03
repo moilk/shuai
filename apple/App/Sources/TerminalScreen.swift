@@ -24,7 +24,7 @@ private struct TerminalSessionView: View {
     let host: HostProfile
 
     private var useFloatingBar: Bool {
-        model.keyboard.isConnected || model.settings.accessoryBar == .floating
+        model.keyboard.placement(preferFloating: model.settings.accessoryBar == .floating) == .floating
     }
 
     private var topStack: some View {

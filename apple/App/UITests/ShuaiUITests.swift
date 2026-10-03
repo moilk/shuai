@@ -190,6 +190,33 @@ final class ShuaiUITests: XCTestCase {
         waitForExpectations(timeout: 10)
     }
 
+    /// With the software keyboard up the docked accessory bar is used (above the keyboard); the
+    /// floating bar must not appear over the terminal text.
+    @MainActor
+    func testSoftwareKeyboardShowsTheDockedBarAndNothingCoversTheFirstRow() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 12))
+        let terminal = app.descendants(matching: .any)["terminal-view"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "software keyboard is up")
+        let esc = app.buttons["Esc"].firstMatch
+        XCTAssertTrue(esc.waitForExistence(timeout: 10), "accessory bar present")
+        // Let any keyboard / bar re-layout settle, then check it stayed stable (no flip-flopping loop).
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(esc.exists)
+        XCTAssertGreaterThan(esc.frame.minY, terminal.frame.midY, "the bar sits at the bottom, not over the top rows")
+        XCTAssertLessThanOrEqual(esc.frame.maxY, keyboard.frame.maxY + 1)
+        // nothing but the terminal itself occupies the first row band
+        let firstRow = CGRect(x: terminal.frame.minX, y: terminal.frame.minY, width: terminal.frame.width, height: 20)
+        for b in app.buttons.allElementsBoundByIndex where b.frame.width > 0 && b.exists {
+            let l = b.label
+            if ["Esc", "Ctrl", "Alt", "Tab"].contains(l) {
+                XCTAssertFalse(b.frame.intersects(firstRow), "accessory key '\(l)' overlaps the first terminal row")
+            }
+        }
+    }
+
     @MainActor
     func testQuickSwitcherRanksTheWaitingSessionFirst() throws {
         let app = launchWithAgentFixture()

@@ -23,7 +23,8 @@ public final class TerminalView: UITerminalView {
 
     /// Show the docked bar over the software keyboard (default on).
     public var showsDockedAccessoryBar = true {
-        didSet { reloadInputViews() }
+        // Idempotent: reloading input views re-lays-out the keyboard, so only do it on a real change.
+        didSet { if oldValue != showsDockedAccessoryBar { reloadInputViews() } }
     }
 
     private var mirroringSticky = false
@@ -125,6 +126,12 @@ public final class TerminalView: UITerminalView {
 
     private func setFloatingBar(visible: Bool) {
         let bar = floatingAccessoryBar
+        if let container = superview as? TerminalContainerView {
+            // Hosted next to the terminal, not inside it (see `TerminalContainerView.setFloatingBar`).
+            floatingBarInstalled = true
+            container.setFloatingBar(bar, visible: visible)
+            return
+        }
         if !floatingBarInstalled {
             bar.translatesAutoresizingMaskIntoConstraints = false
             addSubview(bar)

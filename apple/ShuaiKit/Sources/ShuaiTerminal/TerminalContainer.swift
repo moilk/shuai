@@ -19,8 +19,44 @@ public final class TerminalContainerView: UIView {
             terminal.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
             terminal.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor),
             terminal.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor),
-            terminal.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor),
         ])
+        terminalBottomToKeyboard = terminal.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor)
+        terminalBottomToKeyboard.isActive = true
+    }
+
+    private var terminalBottomToKeyboard: NSLayoutConstraint!
+    private var terminalBottomToBar: NSLayoutConstraint?
+    private weak var hostedBar: UIView?
+
+    /// Hosts the compact floating bar as a sibling of the terminal (the terminal is a scroll view:
+    /// a subview of it scrolls away with the content). The bar sits on the keyboard layout guide and
+    /// the terminal's bottom moves above it while it is visible, so it never covers text.
+    func setFloatingBar(_ bar: UIView, visible: Bool) {
+        if hostedBar == nil {
+            hostedBar = bar
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(bar)
+            let width = bar.widthAnchor.constraint(equalToConstant: 780)
+            width.priority = .defaultHigh
+            NSLayoutConstraint.activate([
+                bar.centerXAnchor.constraint(equalTo: centerXAnchor),
+                bar.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor, constant: -8),
+                bar.heightAnchor.constraint(equalToConstant: 44),
+                bar.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -24),
+                width,
+            ])
+            terminalBottomToBar = terminal.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -4)
+        }
+        bar.isHidden = !visible
+        if visible {
+            guard terminalBottomToBar?.isActive != true else { return }
+            terminalBottomToKeyboard.isActive = false
+            terminalBottomToBar?.isActive = true
+        } else {
+            guard terminalBottomToKeyboard.isActive == false else { return }
+            terminalBottomToBar?.isActive = false
+            terminalBottomToKeyboard.isActive = true
+        }
     }
 
     @available(*, unavailable)
@@ -62,9 +98,7 @@ public struct TerminalContainerRepresentable: UIViewRepresentable {
         if view.showsFloatingAccessoryBar != showsFloatingAccessoryBar {
             view.showsFloatingAccessoryBar = showsFloatingAccessoryBar
         }
-        if view.showsDockedAccessoryBar != showsDockedAccessoryBar {
-            view.showsDockedAccessoryBar = showsDockedAccessoryBar
-        }
+        view.showsDockedAccessoryBar = showsDockedAccessoryBar
     }
 }
 #endif
