@@ -705,3 +705,75 @@ async fn exec_stream_ends_with_closed_reasons() {
     ));
     assert!(s.is_closed());
 }
+
+// ---------- stdin EOF, UTF-8 passthrough, bulk output ----------
+
+#[tokio::test]
+async fn exec_eof_ends_cat_like_command() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let ch = s.exec_stream("cat").await.unwrap();
+    ch.write_stdin(b"ping").await.unwrap();
+    assert_eq!(
+        timeout(T, ch.next()).await.unwrap(),
+        ExecEvent::Stdout(b"ping".to_vec())
+    );
+    ch.eof().await.unwrap();
+    assert_eq!(
+        timeout(T, ch.next()).await.unwrap(),
+        ExecEvent::ExitStatus(0)
+    );
+    assert_eq!(
+        timeout(T, ch.next()).await.unwrap(),
+        ExecEvent::Closed(CloseReason::Remote)
+    );
+}
+
+#[tokio::test]
+async fn split_multibyte_utf8_passes_through_byte_exact() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let ch = s.exec_stream("utf8").await.unwrap();
+    let mut chunks = Vec::new();
+    loop {
+        match timeout(T, ch.next()).await.unwrap() {
+            ExecEvent::Stdout(d) => chunks.push(d),
+            ExecEvent::Closed(_) => break,
+            _ => {}
+        }
+    }
+    // The raw chunks are untouched (no lossy decoding), even where they split a character.
+    assert_eq!(chunks.concat(), "a\u{4f60}z".as_bytes());
+    assert!(chunks.iter().any(|c| std::str::from_utf8(c).is_err()));
+}
+
+#[tokio::test]
+async fn twenty_mebibytes_of_output_is_read_without_stalling() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let ch = s.exec_stream("big").await.unwrap();
+    let mut total = 0usize;
+    let mut exit = None;
+    loop {
+        match timeout(Duration::from_secs(30), ch.next())
+            .await
+            .expect("stalled")
+        {
+            ExecEvent::Stdout(d) => total += d.len(),
+            ExecEvent::ExitStatus(c) => exit = Some(c),
+            ExecEvent::Closed(r) => {
+                assert_eq!(r, CloseReason::Remote);
+                break;
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(total, BIG_LEN);
+    assert_eq!(exit, Some(0));
+}
