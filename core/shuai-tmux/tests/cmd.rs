@@ -349,7 +349,7 @@ fn new_window_and_friends() {
     assert_eq!(cmd::select_window(&w).argv(), ["select-window", "-t", "@3"]);
     assert_eq!(
         cmd::rename_window(&w, "a#b").argv(),
-        ["rename-window", "-t", "@3", "a##b"]
+        ["rename-window", "-t", "@3", "--", "a##b"]
     );
     assert_eq!(
         cmd::select_pane(&Target::pane(PaneId(9))).argv(),

@@ -39,9 +39,15 @@ pub fn tmux_quote(s: &str) -> String {
     }
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
-    for c in s.chars() {
+    // tmux tilde-expands a word starting with `~` even when it is quoted
+    // (`"~"` -> $HOME); `\~` keeps it literal.
+    for (i, c) in s.chars().enumerate() {
         match c {
             '\\' | '"' | '$' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '~' if i == 0 => {
                 out.push('\\');
                 out.push(c);
             }

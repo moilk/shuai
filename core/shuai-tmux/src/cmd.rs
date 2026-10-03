@@ -159,8 +159,10 @@ pub fn kill_session(t: &Target) -> TmuxCommand {
     TmuxCommand::new(["kill-session"]).target(t)
 }
 pub fn rename_window(t: &Target, name: &str) -> TmuxCommand {
+    // `--` so a name starting with `-` is not parsed as a flag.
     TmuxCommand::new(["rename-window"])
         .target(t)
+        .arg("--")
         .arg(escape_format(name))
 }
 pub fn split_window(t: &Target, dir: Direction, cwd: Option<&str>) -> TmuxCommand {
