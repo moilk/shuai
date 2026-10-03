@@ -80,7 +80,13 @@ fn known_hosts_tofu_flow() {
     let b = generate_key(KeyAlg::Ed25519, "b".into()).unwrap();
     let text = String::new();
     assert_eq!(
-        known_hosts_check(text.clone(), "example.com".into(), 22, a.public_line.clone()).unwrap(),
+        known_hosts_check(
+            text.clone(),
+            "example.com".into(),
+            22,
+            a.public_line.clone()
+        )
+        .unwrap(),
         FfiHostKeyStatus::Unknown
     );
     let text =
@@ -88,10 +94,22 @@ fn known_hosts_tofu_flow() {
     assert!(text.ends_with('\n'));
     assert!(text.starts_with("example.com ssh-ed25519 "));
     assert_eq!(
-        known_hosts_check(text.clone(), "example.com".into(), 22, a.public_line.clone()).unwrap(),
+        known_hosts_check(
+            text.clone(),
+            "example.com".into(),
+            22,
+            a.public_line.clone()
+        )
+        .unwrap(),
         FfiHostKeyStatus::Trusted
     );
-    match known_hosts_check(text.clone(), "example.com".into(), 22, b.public_line.clone()).unwrap()
+    match known_hosts_check(
+        text.clone(),
+        "example.com".into(),
+        22,
+        b.public_line.clone(),
+    )
+    .unwrap()
     {
         FfiHostKeyStatus::Mismatch {
             expected_fingerprints,

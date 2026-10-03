@@ -1,6 +1,25 @@
-//! UniFFI export layer (thin).
+//! UniFFI export layer.
+//!
+//! Conventions (see CLAUDE.md): coarse session/stream-level API only; data crosses as
+//! records/enums (`#[derive(uniffi::Record/Enum)]`), stateful things as objects; errors are
+//! flat per-domain enums (`FfiKeyError`, `FfiSshError`, `FfiTmuxError`); platform
+//! integrations are `with_foreign` callback traits. Logic lives in the pure crates.
 
 uniffi::setup_scaffolding!();
+
+mod keys;
+mod reconnect;
+mod ssh;
+#[cfg(feature = "testkit")]
+mod testkit;
+mod tmux;
+
+pub use keys::*;
+pub use reconnect::*;
+pub use ssh::*;
+#[cfg(feature = "testkit")]
+pub use testkit::*;
+pub use tmux::*;
 
 #[uniffi::export]
 pub fn ping() -> String {

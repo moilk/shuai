@@ -46,6 +46,11 @@ impl TmuxCommand {
         self.arg("-t").arg(t.0.clone())
     }
 
+    /// Rebuilds a command from raw arguments (e.g. one that crossed the FFI boundary).
+    pub fn from_argv(argv: Vec<String>) -> Self {
+        Self { args: argv }
+    }
+
     /// Raw arguments (`["new-window", "-t", ...]`), for `exec`-style callers.
     pub fn argv(&self) -> &[String] {
         &self.args

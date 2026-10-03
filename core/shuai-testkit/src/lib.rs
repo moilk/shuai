@@ -4,7 +4,8 @@
 //! * auth: password (`alice`/`secret`), public keys from `authorized_keys`, and
 //!   keyboard-interactive (user `kbd`, answer `123456`).
 //! * pty shell: echoes input, answers window changes with `RESIZE <cols> <rows>`.
-//! * exec: `ok`, `fail`, `stream`, `drop` (see `exec_request`); shell input `HANG` freezes
+//! * exec: `cat > PATH ...` records an upload in `ServerLog::uploads` (`/readonly/` fails),
+//!   `ok`, `fail`, `stream`, `drop` (see `exec_request`); shell input `HANG` freezes
 //!   the connection (used for keepalive tests).
 
 use std::sync::{Arc, Mutex};
@@ -29,6 +30,8 @@ pub struct ServerLog {
     pub users: Mutex<Vec<String>>,
     /// Number of `channel_close` messages received from clients.
     pub closes: std::sync::atomic::AtomicUsize,
+    /// Completed `cat > PATH ...` uploads: (full exec command, stdin bytes).
+    pub uploads: Mutex<Vec<(String, Vec<u8>)>>,
 }
 
 #[derive(Clone, Default)]
@@ -68,6 +71,7 @@ pub async fn start(opts: ServerOpts) -> TestServer {
     let mut srv = Srv {
         opts,
         log: log.clone(),
+        pending: Default::default(),
     };
     let task = tokio::spawn(async move {
         let _ = srv.run_on_socket(config, &socket).await;
@@ -84,12 +88,16 @@ pub async fn start(opts: ServerOpts) -> TestServer {
 struct Srv {
     opts: ServerOpts,
     log: Arc<ServerLog>,
+    /// Per-connection in-flight uploads (`cat > ...` exec requests).
+    pending: std::collections::HashMap<ChannelId, (String, Vec<u8>)>,
 }
 
 impl russh::server::Server for Srv {
     type Handler = Self;
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self {
-        self.clone()
+        let mut c = self.clone();
+        c.pending.clear();
+        c
     }
 }
 
@@ -231,6 +239,10 @@ impl russh::server::Handler for Srv {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if let Some((_, buf)) = self.pending.get_mut(&channel) {
+            buf.extend_from_slice(data);
+            return Ok(());
+        }
         if data == b"HANG" {
             // Never answer anything again: blocks this connection's event loop.
             std::future::pending::<()>().await;
@@ -265,6 +277,9 @@ impl russh::server::Handler for Srv {
         channel: ChannelId,
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        if let Some((cmd, buf)) = self.pending.remove(&channel) {
+            self.log.uploads.lock().unwrap().push((cmd, buf));
+        }
         // `cat`-like exec: stdin EOF ends the command.
         session.exit_status_request(channel, 0)?;
         session.eof(channel)?;
@@ -292,6 +307,20 @@ impl russh::server::Handler for Srv {
         let cmd = String::from_utf8_lossy(data).to_string();
         session.channel_success(channel)?;
         let handle = session.handle();
+        if cmd.starts_with("cat > ") {
+            // Upload: collect stdin until EOF; paths under /readonly/ fail like a real shell would.
+            if cmd.contains("/readonly/") {
+                let _ = handle
+                    .extended_data(channel, 1, b"permission denied\n".to_vec())
+                    .await;
+                let _ = handle.exit_status_request(channel, 1).await;
+                let _ = handle.eof(channel).await;
+                let _ = handle.close(channel).await;
+            } else {
+                self.pending.insert(channel, (cmd, Vec::new()));
+            }
+            return Ok(());
+        }
         match cmd.as_str() {
             "ok" => {
                 let _ = handle.data(channel, b"fine\n".to_vec()).await;

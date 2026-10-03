@@ -74,14 +74,24 @@ fn builders_produce_all_three_forms() {
     let c = tmux_send_keys_literal("%2".into(), "a b".into()).unwrap();
     assert_eq!(&c.argv[..4], ["send-keys", "-t", "%2", "-l"]);
     assert_eq!(tmux_list_panes_all().argv[0], "list-panes");
-    assert_eq!(tmux_kill_window("@1".into()).unwrap().argv[0], "kill-window");
+    assert_eq!(
+        tmux_kill_window("@1".into()).unwrap().argv[0],
+        "kill-window"
+    );
     assert_eq!(
         tmux_new_window("main".into(), None, Some("x".into())).argv[0],
         "new-window"
     );
     let c = tmux_split_window("%1".into(), true, None).unwrap();
     assert!(c.argv.contains(&"-h".to_string()));
-    let c = tmux_new_session_attach("dev".into(), Some((100, 30)), None);
+    let c = tmux_new_session_attach(
+        "dev".into(),
+        Some(FfiSize {
+            cols: 100,
+            rows: 30,
+        }),
+        None,
+    );
     assert_eq!(&c.argv[..4], ["new-session", "-A", "-s", "dev"]);
 }
 

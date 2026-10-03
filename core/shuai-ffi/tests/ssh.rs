@@ -17,7 +17,10 @@ struct Verifier {
 #[async_trait::async_trait]
 impl HostKeyVerifierCallback for Verifier {
     async fn verify(&self, host: String, port: u16, public_key_line: String) -> bool {
-        self.seen.lock().unwrap().push((host, port, public_key_line));
+        self.seen
+            .lock()
+            .unwrap()
+            .push((host, port, public_key_line));
         self.accept
     }
 }
@@ -83,7 +86,10 @@ async fn password_connect_shell_round_trip_with_cjk() {
         .open_shell(80, 24, "xterm-256color".into(), vec![])
         .await
         .unwrap();
-    shell.write("echo 中文\n".as_bytes().to_vec()).await.unwrap();
+    shell
+        .write("echo 中文\n".as_bytes().to_vec())
+        .await
+        .unwrap();
     let out = read_until(&shell, "中文").await;
     assert!(out.contains("echo 中文"));
 }
@@ -93,10 +99,15 @@ async fn resize_reaches_server() {
     let server = start(ServerOpts::default()).await;
     let conn = connect(&server).await;
     let shell = conn
-        .open_shell(80, 24, "xterm".into(), vec![FfiEnvVar {
-            name: "LANG".into(),
-            value: "en_US.UTF-8".into(),
-        }])
+        .open_shell(
+            80,
+            24,
+            "xterm".into(),
+            vec![FfiEnvVar {
+                name: "LANG".into(),
+                value: "en_US.UTF-8".into(),
+            }],
+        )
         .await
         .unwrap();
     shell.resize(100, 30).await.unwrap();
@@ -203,7 +214,11 @@ async fn private_key_pem_auth() {
 async fn malformed_private_key_pem_is_reported() {
     let server = start(ServerOpts::default()).await;
     let err = SshConnection::connect(
-        config(&server, "bob", vec![FfiAuth::PrivateKeyPem { pem: "junk".into() }]),
+        config(
+            &server,
+            "bob",
+            vec![FfiAuth::PrivateKeyPem { pem: "junk".into() }],
+        ),
         accepting(),
     )
     .await
@@ -219,8 +234,8 @@ impl SignerCallback for Signer {
         shuai_keys::authorized_keys_line(self.0.public_key())
     }
     fn sign(&self, data: Vec<u8>) -> Option<Vec<u8>> {
-        use shuai_keys::ssh_key::Signature;
-        use shuai_keys::ssh_key::signature::Signer as _;
+        use shuai_ssh::keys::signature::Signer as _;
+        use shuai_ssh::keys::ssh_key::Signature;
         let sig: Signature = self.0.try_sign(&data).ok()?;
         let alg = sig.algorithm();
         let (alg, bytes) = (alg.as_str().as_bytes(), sig.as_bytes());
