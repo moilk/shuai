@@ -138,7 +138,32 @@ enum ShellOpen: Equatable {
     case ptyExec(command: String, cols: UInt32, rows: UInt32, term: String, env: [FfiEnvVar])
 }
 
+/// One-shot latch: `wait()` suspends until `open()` (immediately returns afterwards).
+final class Latch: @unchecked Sendable {
+    private let state = Locked<(opened: Bool, waiters: [CheckedContinuation<Void, Never>])>((false, []))
+    func wait() async {
+        await withCheckedContinuation { cont in
+            let ready = state.with { s -> Bool in
+                if s.opened { return true }
+                s.waiters.append(cont)
+                return false
+            }
+            if ready { cont.resume() }
+        }
+    }
+    func open() {
+        let w = state.with { s -> [CheckedContinuation<Void, Never>] in
+            s.opened = true
+            defer { s.waiters = [] }
+            return s.waiters
+        }
+        w.forEach { $0.resume() }
+    }
+}
+
 final class FakeConnection: RemoteConnection, @unchecked Sendable {
+    /// When set, every shell open after the first records itself and then waits for this latch.
+    let laterOpensGate = Locked<Latch?>(nil)
     private let shells = Locked<[FakeShell]>([FakeShell()])
     private let handedOut = Locked(0)
     /// The most recently opened shell (the pre-made first one before anything was opened).
@@ -176,7 +201,8 @@ final class FakeConnection: RemoteConnection, @unchecked Sendable {
 
     func openShell(cols: UInt32, rows: UInt32, term: String, env: [FfiEnvVar]) async throws -> RemoteShell {
         if let openError { throw openError }
-        opens.with { $0.append(.shell(cols: cols, rows: rows, term: term, env: env)) }
+        let n = opens.with { $0.append(.shell(cols: cols, rows: rows, term: term, env: env)); return $0.count }
+        if n > 1, let gate = laterOpensGate.get { await gate.wait() }
         return nextShell()
     }
 
@@ -191,7 +217,8 @@ final class FakeConnection: RemoteConnection, @unchecked Sendable {
 
     func openPtyExec(command: String, cols: UInt32, rows: UInt32, term: String, env: [FfiEnvVar]) async throws -> RemoteShell {
         if let openError { throw openError }
-        opens.with { $0.append(.ptyExec(command: command, cols: cols, rows: rows, term: term, env: env)) }
+        let n = opens.with { $0.append(.ptyExec(command: command, cols: cols, rows: rows, term: term, env: env)); return $0.count }
+        if n > 1, let gate = laterOpensGate.get { await gate.wait() }
         return nextShell()
     }
 
