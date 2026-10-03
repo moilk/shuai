@@ -208,6 +208,9 @@ pub fn new_window(session: &Target, cwd: Option<&str>, name: Option<&str>) -> Tm
 pub fn kill_window(t: &Target) -> TmuxCommand {
     TmuxCommand::new(["kill-window"]).target(t)
 }
+pub fn kill_pane(t: &Target) -> TmuxCommand {
+    TmuxCommand::new(["kill-pane"]).target(t)
+}
 pub fn kill_session(t: &Target) -> TmuxCommand {
     TmuxCommand::new(["kill-session"]).target(t)
 }

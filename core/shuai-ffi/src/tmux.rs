@@ -203,6 +203,11 @@ pub fn tmux_kill_window(window_id: String) -> Result<FfiTmuxCommand, FfiTmuxErro
 }
 
 #[uniffi::export]
+pub fn tmux_kill_pane(pane_id: String) -> Result<FfiTmuxCommand, FfiTmuxError> {
+    Ok(cmd::kill_pane(&pane_target(&pane_id)?).into())
+}
+
+#[uniffi::export]
 pub fn tmux_rename_window(window_id: String, name: String) -> Result<FfiTmuxCommand, FfiTmuxError> {
     Ok(cmd::rename_window(&window_target(&window_id)?, &name).into())
 }
