@@ -219,7 +219,7 @@ pub fn expand_tilde(path: &str, home: &str) -> String {
     }
 }
 
-fn sh_quote(s: &str) -> String {
+pub(crate) fn sh_quote(s: &str) -> String {
     if !s.is_empty()
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"/._-:@%+=,".contains(&b))

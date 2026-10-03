@@ -23,12 +23,12 @@ fn respond_command_quotes_everything() {
     );
     assert_eq!(
         respond_command("req_2", false, Some("it's no; rm -rf /")).unwrap(),
-        "~/.shuai/bin/shuai-agent respond req_2 deny --message 'it'\\''s no; rm -rf /'"
+        "~/.shuai/bin/shuai-agent respond req_2 deny --message='it'\\''s no; rm -rf /'"
     );
     // The command actually round-trips through a shell (printf stands in for the agent).
     let cmd = respond_command("r", false, Some("a'b $x `y`")).unwrap();
     let probe = cmd.replace("~/.shuai/bin/shuai-agent", "printf '%s|'");
-    assert_eq!(sh(&probe).1, "respond|r|deny|--message|a'b $x `y`|");
+    assert_eq!(sh(&probe).1, "respond|r|deny|--message=a'b $x `y`|");
 }
 
 #[test]

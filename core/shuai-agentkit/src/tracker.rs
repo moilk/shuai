@@ -59,6 +59,16 @@ pub struct PendingPermission {
 }
 
 impl PendingPermission {
+    /// The full tool input, for a richer card than [`input_preview`](Self::input_preview).
+    pub fn tool_input(&self) -> &Value {
+        &self.tool_input
+    }
+
+    /// Tool-use id of the request, when the hook payload had one.
+    pub fn tool_use_id(&self) -> Option<&str> {
+        self.tool_use_id.as_deref()
+    }
+
     fn matches_tool(&self, id: &Option<String>, name: &str, input: &Value) -> bool {
         match (&self.tool_use_id, id) {
             (Some(a), Some(b)) => a == b,
