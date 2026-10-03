@@ -10,6 +10,7 @@
 pub mod install;
 mod queries;
 mod reconcile;
+pub mod remote;
 mod tracker;
 
 pub use install::{InstallPlan, InstallStep, ProbeResult, parse_probe, probe_script};

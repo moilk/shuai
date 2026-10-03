@@ -139,7 +139,7 @@ impl Watcher {
         loop {
             let left = deadline.checked_duration_since(std::time::Instant::now())?;
             let v = self.next_line(left)?;
-            if v["type"] != "heartbeat" {
+            if v["type"] != "heartbeat" && v["type"] != "caught_up" {
                 return Some(v);
             }
         }

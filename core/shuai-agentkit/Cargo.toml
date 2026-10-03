@@ -9,7 +9,7 @@ publish.workspace = true
 shuai-proto.workspace = true
 shuai-tmux.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -45,6 +45,7 @@ fn watch_emits_heartbeats_and_touches_presence() {
     let w = Watcher::spawn(h.path(), &[]);
     let first = w.next_line(T).unwrap();
     assert_eq!(first, serde_json::json!({"type": "heartbeat"}));
+    assert_eq!(w.next_line(T).unwrap()["type"], "caught_up");
     assert!(w.next_line(T).unwrap()["type"] == "heartbeat");
     let m1 = std::fs::metadata(h.path().join("presence"))
         .unwrap()
@@ -129,4 +130,33 @@ fn watch_exits_when_stdout_closes() {
         std::thread::sleep(Duration::from_millis(50));
     };
     assert!(status.success());
+}
+
+#[test]
+fn watch_marks_end_of_replay_with_caught_up() {
+    let h = home();
+    for _ in 0..2 {
+        hook(h.path(), "Stop", &fixture("stop"), &[]);
+    }
+    let w = Watcher::spawn(h.path(), &[]);
+    let types: Vec<String> = (0..4)
+        .map(|_| w.next_line(T).unwrap())
+        .map(|v| v["type"].as_str().unwrap_or("event").to_string())
+        .collect();
+    // heartbeat (presence), replayed events (no "type" at top level), then the marker.
+    assert_eq!(types, ["heartbeat", "event", "event", "caught_up"]);
+    hook(h.path(), "Stop", &fixture("stop"), &[]);
+    assert_eq!(w.next_event(T).unwrap()["seq"], 3);
+}
+
+#[test]
+fn watch_since_beyond_the_agents_seq_means_state_was_wiped_and_replays_all() {
+    let h = home();
+    for _ in 0..2 {
+        hook(h.path(), "Stop", &fixture("stop"), &[]);
+    }
+    // The app remembers seq 500 from before the agent's state dir was wiped.
+    let w = Watcher::spawn(h.path(), &["--since", "500"]);
+    assert_eq!(w.next_event(T).unwrap()["seq"], 1);
+    assert_eq!(w.next_event(T).unwrap()["seq"], 2);
 }

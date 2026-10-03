@@ -329,6 +329,14 @@ fn watch_line_decodes_heartbeat_and_event() {
     assert!(WatchLine::decode("nope").is_err());
 }
 
+#[test]
+fn watch_line_decodes_caught_up_marker() {
+    assert_eq!(
+        WatchLine::decode(r#"{"type":"caught_up"}"#).unwrap(),
+        WatchLine::CaughtUp
+    );
+}
+
 /// Golden transcript recorded from real Claude Code 2.1.288 (see shuai-agent e2e).
 #[test]
 fn real_claude_transcript_decodes() {
