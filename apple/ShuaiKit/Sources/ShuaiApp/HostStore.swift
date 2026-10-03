@@ -34,29 +34,40 @@ public final class HostStore {
     public func host(id: UUID) -> HostProfile? { hosts.first { $0.id == id } }
 
     public func add(_ host: HostProfile) throws {
-        try guardWritable()
-        hosts.append(host)
-        try persist()
+        try mutate { $0.append(host) }
     }
 
     public func update(_ host: HostProfile) throws {
-        try guardWritable()
-        guard let i = hosts.firstIndex(where: { $0.id == host.id }) else { throw HostStoreError.notFound }
-        hosts[i] = host
-        try persist()
+        try mutate { hosts in
+            guard let i = hosts.firstIndex(where: { $0.id == host.id }) else { throw HostStoreError.notFound }
+            hosts[i] = host
+        }
     }
 
     public func delete(id: UUID) throws {
-        try guardWritable()
-        hosts.removeAll { $0.id == id }
-        try persist()
+        try mutate { $0.removeAll { $0.id == id } }
     }
 
     public func markConnected(id: UUID, at date: Date = Date()) throws {
+        try mutate { hosts in
+            guard let i = hosts.firstIndex(where: { $0.id == id }) else { throw HostStoreError.notFound }
+            hosts[i].lastConnectedAt = date
+        }
+    }
+
+    /// Applies `change`, writes the file, and restores the previous list if either fails, so the
+    /// in-memory list never runs ahead of what is on disk. Everything is main-actor serialized,
+    /// so concurrent callers cannot interleave a read-modify-write.
+    private func mutate(_ change: (inout [HostProfile]) throws -> Void) throws {
         try guardWritable()
-        guard let i = hosts.firstIndex(where: { $0.id == id }) else { throw HostStoreError.notFound }
-        hosts[i].lastConnectedAt = date
-        try persist()
+        let previous = hosts
+        do {
+            try change(&hosts)
+            try persist()
+        } catch {
+            hosts = previous
+            throw error
+        }
     }
 
     // MARK: - persistence
