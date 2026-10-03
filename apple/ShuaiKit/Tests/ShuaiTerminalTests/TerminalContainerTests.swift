@@ -44,5 +44,33 @@ struct TerminalContainerTests {
         container.terminal.showsDockedAccessoryBar = true
         #expect(container.terminal.inputAccessoryView === container.terminal.dockedAccessoryBar)
     }
+
+    @Test func floatingBarSitsAtTheBottomAndNeverOverlapsTheTerminal() {
+        let (_, container, _) = mount()
+        container.terminal.showsFloatingAccessoryBar = true
+        container.layoutIfNeeded()
+        let bar = container.terminal.floatingAccessoryBar
+        // Hosted by the container (a sibling), not inside the terminal's scrolling content.
+        #expect(bar.superview === container)
+        #expect(!bar.isHidden)
+        #expect(bar.frame.maxY <= container.bounds.height + 0.5)
+        #expect(bar.frame.minY > container.bounds.height / 2, "bar is at the bottom")
+        #expect(container.terminal.frame.maxY <= bar.frame.minY + 0.5, "terminal ends above the bar")
+        // hiding it gives the rows back
+        container.terminal.showsFloatingAccessoryBar = false
+        container.layoutIfNeeded()
+        #expect(container.terminal.frame.height > 700)
+    }
+
+    @Test func togglingTheBarsIsIdempotent() {
+        let (_, container, _) = mount()
+        container.terminal.showsFloatingAccessoryBar = true
+        container.terminal.showsFloatingAccessoryBar = true
+        container.layoutIfNeeded()
+        let h = container.terminal.frame.height
+        container.terminal.showsFloatingAccessoryBar = true
+        container.layoutIfNeeded()
+        #expect(container.terminal.frame.height == h)
+    }
 }
 #endif
