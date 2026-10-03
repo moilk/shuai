@@ -72,6 +72,8 @@ xcode-select may point at CommandLineTools. Always prefix Xcode commands with
 
 ## CI
 CI uses Xcode 26.6, older than the local Xcode 27. Avoid constructs only the newer compiler accepts (e.g. a single-expression closure whose value type mismatches `Void`: write `_ = expr`). Check new Swift against that when in doubt.
+CI's rust job runs on Ubuntu 24.04 with its stock tmux 3.4, so the real-tmux tests there cover the escaped-separator path.
+- tmux version compatibility: `-F` output is split with `shuai_tmux::parse::split_fields`, never `split(FIELD_SEP)` directly. tmux 3.2/3.3/3.6+ print the `\x1f` separator raw, 3.4/3.5 print it as the four characters `\037`; values are always escaped by tmux, so an unescaped `\037` is a separator. Fixtures: `core/shuai-tmux/tests/fixtures/listpanes-tmux*.txt`; run the real-tmux tests against a specific build with `SHUAI_TMUX_BIN=/path/to/tmux cargo test -p shuai-tmux --test real_tmux`.
 - PTY client targeting: with several clients on one session (laptop etc.) `TmuxMonitor` picks ours via `ClientProcessTree` (`ps -A -o pid= -o ppid=` on the host: the candidate sharing the deepest ancestor with the control client, both being children of our SSH connection), falling back to the Rust heuristic (size, age). The tty is sticky per `start`, forgotten on every restart. `PaneBadge`/`PaneBadgeProvider` live in `AgentHooks.swift` (M5); `PaneBadge.swift` only adds symbol/tint/priority. Kill window/pane always go through `TmuxActions.pendingConfirmation`.
 
 ## Agent integration in the app (M4+M5 wiring)
