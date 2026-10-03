@@ -19,6 +19,7 @@ fn probe() -> ProbeResult {
         agent_version: None,
         plugin_installed: false,
         codex_path: None,
+        ..Default::default()
     }
 }
 
