@@ -201,6 +201,30 @@ fn pkcs8_encrypted() {
 }
 
 #[test]
+fn pkcs8_scrypt_encrypted() {
+    check_pem("test_p256_pkcs8_scrypt", Some(PASS), "ecdsa-sha2-nistp256");
+    assert_eq!(
+        import_private_key(&fx("test_p256_pkcs8_scrypt"), Some("nope")).unwrap_err(),
+        KeyError::WrongPassphrase
+    );
+}
+
+/// Local-only check against a real key: `SHUAI_TEST_KEY=path [SHUAI_TEST_PASS=..] cargo test
+/// -- --ignored real_key`; compare the printed-nothing assertion with `ssh-keygen -lf` via
+/// `SHUAI_TEST_FP`.
+#[test]
+#[ignore]
+fn real_key_from_env() {
+    let path = std::env::var("SHUAI_TEST_KEY").expect("SHUAI_TEST_KEY");
+    let pem = fs::read_to_string(path).unwrap();
+    let pass = std::env::var("SHUAI_TEST_PASS").ok();
+    let k = import_private_key(&pem, pass.as_deref()).unwrap();
+    if let Ok(fp) = std::env::var("SHUAI_TEST_FP") {
+        assert_eq!(fingerprint(k.public_key()), fp);
+    }
+}
+
+#[test]
 fn sec1_ec() {
     check_pem("test_p256_sec1", None, "ecdsa-sha2-nistp256");
     check_pem("test_p384_sec1", None, "ecdsa-sha2-nistp384");

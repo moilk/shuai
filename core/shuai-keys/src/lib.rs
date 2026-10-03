@@ -7,6 +7,7 @@
 mod error;
 mod keys;
 mod known_hosts;
+mod pem_import;
 
 pub use error::KeyError;
 pub use keys::{

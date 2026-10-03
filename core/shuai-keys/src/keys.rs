@@ -45,18 +45,11 @@ pub fn generate(alg: KeyAlgorithm, comment: &str) -> Result<PrivateKey, KeyError
 
 /// PEM headers of formats we recognise but do not import.
 const UNSUPPORTED_PEM: &[(&str, &str)] = &[
-    (
-        "-----BEGIN RSA PRIVATE KEY-----",
-        "legacy PEM RSA key; convert with `ssh-keygen -p -m RFC4716` or re-export as OpenSSH",
-    ),
-    ("-----BEGIN EC PRIVATE KEY-----", "legacy PEM EC key"),
     ("-----BEGIN DSA PRIVATE KEY-----", "DSA keys"),
-    ("-----BEGIN PRIVATE KEY-----", "PKCS#8 keys"),
     (
-        "-----BEGIN ENCRYPTED PRIVATE KEY-----",
-        "encrypted PKCS#8 keys",
+        "PuTTY-User-Key-File",
+        "PuTTY .ppk keys (convert with puttygen to OpenSSH)",
     ),
-    ("PuTTY-User-Key-File", "PuTTY .ppk keys"),
 ];
 
 /// Upper bound on bcrypt-pbkdf rounds accepted on import (`ssh-keygen -a` defaults to 16).
@@ -64,7 +57,9 @@ const MAX_BCRYPT_ROUNDS: u32 = 1024;
 
 /// Parses an OpenSSH private key from PEM text, decrypting with `passphrase` if needed.
 ///
-/// A passphrase supplied for an unencrypted key is ignored. Legacy PEM and PKCS#8 keys yield
+/// Accepts OpenSSH, PKCS#1 (`RSA PRIVATE KEY`, also legacy OpenSSL `DEK-Info` encryption with
+/// AES-CBC / 3DES-CBC), PKCS#8 (plain and encrypted) and SEC1 (`EC PRIVATE KEY`) keys. A
+/// passphrase supplied for an unencrypted key is ignored. DSA and PuTTY `.ppk` keys yield
 /// [`KeyError::Unsupported`]. Never panics on arbitrary input.
 pub fn import_private_key(pem: &str, passphrase: Option<&str>) -> Result<PrivateKey, KeyError> {
     let trimmed = pem.trim_start();
@@ -72,6 +67,9 @@ pub fn import_private_key(pem: &str, passphrase: Option<&str>) -> Result<Private
         if trimmed.starts_with(header) {
             return Err(KeyError::Unsupported((*what).to_string()));
         }
+    }
+    if crate::pem_import::handles(pem) {
+        return crate::pem_import::import(pem, passphrase);
     }
     let key = PrivateKey::from_openssh(pem).map_err(|e| match e {
         ssh_key::Error::AlgorithmUnsupported { algorithm } => {
