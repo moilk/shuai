@@ -1,0 +1,43 @@
+name: EngineSpike
+options:
+  bundleIdPrefix: dev.shuai.spike
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+packages:
+  GhosttyKit:
+    url: https://github.com/Lakr233/libghostty-spm.git
+    from: 1.6.20261003
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    from: 1.20.0
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+    INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    TARGETED_DEVICE_FAMILY: "2"
+targets:
+  EngineSpike:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - path: ../../../fixtures/recordings/claude-cjk-120x40.out
+        buildPhase: resources
+      - path: ../../../fixtures/recordings/claude-cjk-120x40.tim
+        buildPhase: resources
+      - path: ../expected/pre-exit.out
+        buildPhase: resources
+    dependencies:
+      - package: GhosttyKit
+        product: GhosttyTerminal
+      - package: SwiftTerm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.shuai.spike.enginespike

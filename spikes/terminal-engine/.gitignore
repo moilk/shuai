@@ -1,0 +1,4 @@
+App/build/
+App/build-rel/
+App/EngineSpike.xcodeproj/
+App/*.xcworkspace

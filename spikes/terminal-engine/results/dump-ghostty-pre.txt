@@ -1,0 +1,40 @@
+
+  🤝 两者可以搭配使用：用 mosh 保证连接稳定，再在里面运行 tmux 管理窗口和会话。
+
+  已完成 ✅
+
+  我在 /home/ubuntu/shuai-rec/work/hello.py 创建了文件，内容是 print("你好世界")。运行 python3 hello.py 后输出：
+
+  你好世界
+
+✻ Crunched for 7s · done 8:23 AM
+
+❯ 读一下 hello.py 并把它改成打印当前时间，然后运行
+
+  Read 1 file
+
+● Write(hello.py)
+  ⎿  Added 3 lines, removed 1 line
+      1 -print("你好世界")
+      1 +from datetime import datetime
+      2 +
+      3 +print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+  Ran 1 shell command
+
+● 我读了 hello.py，原来只有一行 print("你好世界")。现在已经改成打印当前时间，运行后输出：
+
+  2026-10-03 08:24:04
+
+  新的代码如下：
+
+  from datetime import datetime
+
+  /exit                                           Exit the CLI
+  /context                                        Visualize current context usage as a colored grid
+  /usage-credits                                  Configure usage credits or request them from your admin when you hit
+                                                  a limit
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ /exit
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
