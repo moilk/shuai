@@ -79,13 +79,15 @@ public struct AccessoryBarModel: Sendable, Equatable {
     }
 
     /// Handles a tap. Modifier buttons toggle and return no strokes; other buttons return the strokes to send.
-    public mutating func press(_ button: AccessoryButton) -> [KeyStroke] {
+    public mutating func press(_ button: AccessoryButton, at now: Date = Date()) -> [KeyStroke] {
         switch button {
         case .ctrl:
-            ctrl = Self.next(ctrl)
+            ctrl = Self.next(ctrl, lastTap: lastCtrlTap, now: now)
+            lastCtrlTap = now
             return []
         case .alt:
-            alt = Self.next(alt)
+            alt = Self.next(alt, lastTap: lastAltTap, now: now)
+            lastAltTap = now
             return []
         case .claudeYes: return [KeyStroke(.character("1"))]
         case .claudeAlways: return [KeyStroke(.character("2"))]
@@ -120,10 +122,21 @@ public struct AccessoryBarModel: Sendable, Equatable {
         }
     }
 
-    private static func next(_ s: StickyState) -> StickyState {
+    /// Adopts state held elsewhere (the terminal view's own sticky tracking after a typed key spent it).
+    public mutating func sync(ctrl: StickyState, alt: StickyState) {
+        self.ctrl = ctrl
+        self.alt = alt
+    }
+
+    public static let doubleTapInterval: TimeInterval = 0.3
+    private var lastCtrlTap: Date = .distantPast
+    private var lastAltTap: Date = .distantPast
+
+    /// off -> one-shot; a second tap inside the double-tap window locks, a slower one cancels; locked -> off.
+    private static func next(_ s: StickyState, lastTap: Date, now: Date) -> StickyState {
         switch s {
         case .off: .oneShot
-        case .oneShot: .locked
+        case .oneShot: now.timeIntervalSince(lastTap) < doubleTapInterval ? .locked : .off
         case .locked: .off
         }
     }
