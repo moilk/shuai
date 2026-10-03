@@ -48,6 +48,9 @@ fn err<T>(m: &str) -> Result<T, LayoutError> {
     Err(LayoutError(m.to_string()))
 }
 
+/// Deepest accepted nesting (real layouts are a handful of levels).
+const MAX_DEPTH: usize = 64;
+
 struct Cursor<'a> {
     b: &'a [u8],
     i: usize,
@@ -75,7 +78,10 @@ impl Cursor<'_> {
             .and_then(|s| s.parse().ok())
             .map_or_else(|| err(&format!("expected number at {start}")), Ok)
     }
-    fn node(&mut self) -> Result<LayoutNode, LayoutError> {
+    fn node(&mut self, depth: usize) -> Result<LayoutNode, LayoutError> {
+        if depth > MAX_DEPTH {
+            return err("layout nested too deeply");
+        }
         let width = self.num()?;
         self.eat(b'x')?;
         let height = self.num()?;
@@ -91,10 +97,10 @@ impl Cursor<'_> {
             Some(open @ (b'{' | b'[')) => {
                 self.i += 1;
                 let close = if open == b'{' { b'}' } else { b']' };
-                let mut kids = vec![self.node()?];
+                let mut kids = vec![self.node(depth + 1)?];
                 while self.peek() == Some(b',') {
                     self.i += 1;
-                    kids.push(self.node()?);
+                    kids.push(self.node(depth + 1)?);
                 }
                 self.eat(close)?;
                 if open == b'{' {
@@ -138,7 +144,7 @@ impl Layout {
             b: body.as_bytes(),
             i: 0,
         };
-        let root = c.node()?;
+        let root = c.node(0)?;
         if c.i != body.len() {
             return err(&format!("trailing data at {}", c.i));
         }

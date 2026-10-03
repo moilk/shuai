@@ -135,7 +135,13 @@ pub struct ControlParser {
     buf: Vec<u8>,
     block: Option<Block>,
     tokens: VecDeque<u64>,
+    /// Inside an over-long line being dropped until its newline.
+    discarding: bool,
 }
+
+/// Longest line we buffer (a `%output` line is one screen update, far below this).
+/// Longer lines are dropped up to their newline, so a stuck peer cannot exhaust memory.
+pub const MAX_LINE: usize = 4 << 20;
 
 impl ControlParser {
     pub fn new() -> Self {
@@ -157,12 +163,19 @@ impl ControlParser {
             let end = start + off;
             let mut line = self.buf[start..end].to_vec();
             start = end + 1;
+            if std::mem::take(&mut self.discarding) || line.len() > MAX_LINE {
+                continue;
+            }
             if line.last() == Some(&b'\r') {
                 line.pop();
             }
             self.line(&line, &mut events);
         }
         self.buf.drain(..start);
+        if self.buf.len() > MAX_LINE {
+            self.buf.clear();
+            self.discarding = true;
+        }
         events
     }
 

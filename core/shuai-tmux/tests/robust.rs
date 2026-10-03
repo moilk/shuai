@@ -107,9 +107,23 @@ fn deeply_nested_layout_is_an_error_not_a_stack_overflow() {
 fn layout_shapes() {
     let l = Layout::parse("b25d,80x24,0,0,5").unwrap();
     assert_eq!(l.pane_ids(), vec![shuai_tmux::PaneId(5)]);
-    let l = Layout::parse("abcd,80x24,0,0{40x24,0,0[40x12,0,0,1,40x12,0,12,2],39x24,41,0,3}").unwrap();
+    let l =
+        Layout::parse("abcd,80x24,0,0{40x24,0,0[40x12,0,0,1,40x12,0,12,2],39x24,41,0,3}").unwrap();
     assert_eq!(l.pane_ids().len(), 3);
-    for bad in ["", ",", "abcd", "abcd,", "abcd,80x24", "abcd,80x24,0,0", "abcd,80x24,0,0{", "abcd,80x24,0,0{}", "abcd,80x24,0,0,5x", "zzzz,1x1,0,0,1", "abcd,99999999999x1,0,0,1", "abcd,1x1,0,0{1x1,0,0,1]"] {
+    for bad in [
+        "",
+        ",",
+        "abcd",
+        "abcd,",
+        "abcd,80x24",
+        "abcd,80x24,0,0",
+        "abcd,80x24,0,0{",
+        "abcd,80x24,0,0{}",
+        "abcd,80x24,0,0,5x",
+        "zzzz,1x1,0,0,1",
+        "abcd,99999999999x1,0,0,1",
+        "abcd,1x1,0,0{1x1,0,0,1]",
+    ] {
         assert!(Layout::parse(bad).is_err(), "{bad:?}");
     }
 }
