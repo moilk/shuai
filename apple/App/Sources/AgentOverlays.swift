@@ -82,7 +82,7 @@ struct PermissionCardStack: View {
                     .padding(10)
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(width: min(380, geo.size.width), height: geo.size.height * 0.55, alignment: .top)
+                .frame(width: min(380, geo.size.width), height: min(max(geo.size.height * 0.55, 340), geo.size.height * 0.95), alignment: .top)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             .allowsHitTesting(true)

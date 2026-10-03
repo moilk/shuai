@@ -205,7 +205,9 @@ final class ShuaiUITests: XCTestCase {
         // Let any keyboard / bar re-layout settle, then check it stayed stable (no flip-flopping loop).
         Thread.sleep(forTimeInterval: 2)
         XCTAssertTrue(esc.exists)
-        XCTAssertGreaterThan(esc.frame.minY, terminal.frame.midY, "the bar sits at the bottom, not over the top rows")
+        // docked bar: directly above the keyboard (the bar is a few rows tall), never at the top of the terminal
+        XCTAssertGreaterThanOrEqual(esc.frame.minY, keyboard.frame.minY - 200, "the bar sits right above the keyboard")
+        XCTAssertGreaterThan(esc.frame.minY, terminal.frame.minY + 200, "the bar is not over the top rows")
         XCTAssertLessThanOrEqual(esc.frame.maxY, keyboard.frame.maxY + 1)
         // nothing but the terminal itself occupies the first row band
         let firstRow = CGRect(x: terminal.frame.minX, y: terminal.frame.minY, width: terminal.frame.width, height: 20)
