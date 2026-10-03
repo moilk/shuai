@@ -70,10 +70,10 @@ struct AgentInstallModelTests {
         await m.inspect()
         await m.install()
         #expect(m.report?.conflicts.count == 1)
-        #expect(!remote.uploads.get.contains { $0.path.hasSuffix("config.toml") })
+        #expect(!remote.uploads.get.contains { $0.path.hasSuffix("config.toml.shuai-tmp") })
         m.codexResolution = .replace
         await m.install()
         #expect(m.report?.conflicts.isEmpty == true)
-        #expect(remote.uploads.get.contains { $0.path.hasSuffix("config.toml") })
+        #expect(remote.uploads.get.contains { $0.path.hasSuffix("config.toml.shuai-tmp") })
     }
 }
