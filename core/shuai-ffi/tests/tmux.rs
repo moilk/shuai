@@ -155,6 +155,11 @@ fn m4_builders() {
     );
     assert!(tmux_zoom_pane("@3".into()).is_err());
     assert_eq!(
+        tmux_kill_pane("%3".into()).unwrap().argv,
+        ["kill-pane", "-t", "%3"]
+    );
+    assert!(tmux_kill_pane("@3".into()).is_err());
+    assert_eq!(
         tmux_next_window("dev".into()).argv,
         ["next-window", "-t", "=dev:"]
     );
