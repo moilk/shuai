@@ -178,7 +178,13 @@ fn crlf_input_is_handled() {
 #[test]
 fn add_entry_plain_port_22() {
     let line = add_entry("example.org", 22, &ed(), false);
-    assert_eq!(line, format!("example.org {}", authorized_keys_line(&ed())));
+    assert_eq!(
+        line,
+        format!(
+            "example.org {}",
+            authorized_keys_line(&ed()).rsplit_once(' ').unwrap().0
+        )
+    );
 }
 
 #[test]

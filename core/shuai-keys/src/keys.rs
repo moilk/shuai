@@ -85,12 +85,12 @@ pub fn import_private_key(pem: &str, passphrase: Option<&str>) -> Result<Private
     }
     let pass = passphrase.ok_or(KeyError::NeedsPassphrase)?;
     // A hostile key file could request billions of bcrypt rounds and hang the app.
-    if let ssh_key::Kdf::Bcrypt { rounds, .. } = key.kdf() {
-        if *rounds > MAX_BCRYPT_ROUNDS {
-            return Err(KeyError::Unsupported(format!(
-                "bcrypt-pbkdf rounds {rounds} exceeds limit {MAX_BCRYPT_ROUNDS}"
-            )));
-        }
+    if let ssh_key::Kdf::Bcrypt { rounds, .. } = key.kdf()
+        && *rounds > MAX_BCRYPT_ROUNDS
+    {
+        return Err(KeyError::Unsupported(format!(
+            "bcrypt-pbkdf rounds {rounds} exceeds limit {MAX_BCRYPT_ROUNDS}"
+        )));
     }
     key.decrypt(pass).map_err(|e| match e {
         ssh_key::Error::AlgorithmUnsupported { algorithm } => {
