@@ -1,0 +1,18 @@
+%begin 1791017762 277 0
+%end 1791017762 277 0
+%session-changed $0 main
+%output %0 $ 
+%window-renamed @0 sh
+%begin 1791017763 283 1
+%end 1791017763 283 1
+%begin 1791017763 284 1
+%end 1791017763 284 1
+%begin 1791017763 285 1
+%end 1791017763 285 1
+%session-window-changed $0 @1
+%window-add @1
+%begin 1791017764 288 1
+%end 1791017764 288 1
+%session-window-changed $0 @0
+%unlinked-window-close @1
+%exit
