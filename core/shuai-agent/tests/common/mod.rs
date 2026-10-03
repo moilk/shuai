@@ -42,12 +42,15 @@ pub fn run_with_stdin(mut cmd: Command, stdin: &str) -> Output {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = cmd.spawn().unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    // The child may exit before reading stdin (e.g. the plugin's guard when the
+    // binary is missing), so a broken pipe here is expected, not a failure.
+    if let Err(e) = child.stdin.take().unwrap().write_all(stdin.as_bytes()) {
+        assert_eq!(
+            e.kind(),
+            std::io::ErrorKind::BrokenPipe,
+            "stdin write failed: {e}"
+        );
+    }
     child.wait_with_output().unwrap()
 }
 
@@ -136,7 +139,7 @@ impl Watcher {
         loop {
             let left = deadline.checked_duration_since(std::time::Instant::now())?;
             let v = self.next_line(left)?;
-            if v["type"] != "heartbeat" {
+            if v["type"] != "heartbeat" && v["type"] != "caught_up" {
                 return Some(v);
             }
         }

@@ -130,7 +130,7 @@ public final class SessionController {
 
     private func wireEngine() {
         engine.onInput = { [weak self] data in
-            MainActor.assumeIsolated { self?.commands?.yield(.write(data)) }
+            MainActor.assumeIsolated { _ = self?.commands?.yield(.write(data)) }
         }
         engine.onResize = { [weak self] grid in
             MainActor.assumeIsolated {

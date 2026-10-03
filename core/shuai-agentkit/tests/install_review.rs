@@ -26,7 +26,7 @@ fn has_tmux(steps: &[InstallStep]) -> bool {
 }
 
 fn our_notify() -> String {
-    format!("notify = [\"{AGENT}\", \"hook\", \"codex-turn-complete\"]")
+    format!("notify = [\"{AGENT}\", \"codex-notify\"]")
 }
 
 #[test]

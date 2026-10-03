@@ -24,11 +24,33 @@ targets:
       - Sources
       - path: ../../fixtures/recordings/claude-cjk-120x40-pre-exit.out
         buildPhase: resources
+      # Prebuilt shuai-agent binaries (scripts/build-agent.sh, gitignored); optional so builds
+      # without them still work, the installer then reports the agent as unavailable.
+      - path: Resources/agent
+        optional: true
+        buildPhase: resources
+    # An app without the agent binaries cannot enable AI integration: fail Release builds (and
+    # any build with SHUAI_REQUIRE_AGENT=1, as CI sets) instead of silently shipping nothing.
+    preBuildScripts:
+      - name: Check bundled shuai-agent
+        basedOnDependencyAnalysis: false
+        script: |
+          missing=""
+          for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            [ -s "$SRCROOT/Resources/agent/shuai-agent-$t" ] || missing="$missing shuai-agent-$t"
+          done
+          [ -z "$missing" ] && exit 0
+          msg="Bundled agent binaries missing:$missing (run scripts/build-agent.sh)"
+          if [ "$CONFIGURATION" = "Release" ] || [ "${SHUAI_REQUIRE_AGENT:-0}" = "1" ]; then
+            echo "error: $msg"; exit 1
+          fi
+          echo "warning: $msg"
     dependencies:
       - package: ShuaiKit
         product: ShuaiApp
     settings:
       base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"

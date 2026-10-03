@@ -34,6 +34,13 @@ jobs:
         with:
           workspaces: core
       - run: brew install xcodegen
+      # Cross-compiles shuai-agent for Linux (bundled into the app as resources).
+      - uses: mlugg/setup-zig@v2
+      - run: cargo install cargo-zigbuild --locked
+      - name: Build bundled shuai-agent binaries
+        run: |
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+          scripts/build-agent.sh
       - name: Script self-tests
         run: scripts/test-check-no-testkit.sh
       # 1) testkit build (in-process SSH server) for the real-SSH Swift tests. Never shipped.
@@ -63,7 +70,7 @@ jobs:
           c=[x for rt,v in sorted(d.items()) if "iOS" in rt for x in v if "iPad" in x["name"]]
           print(c[-1]["udid"] if c else "")')
           if [ -z "$UDID" ]; then echo "no iPad simulator available"; exit 1; fi
-          xcodebuild test -scheme Shuai -destination "platform=iOS Simulator,id=$UDID"
+          SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai -destination "platform=iOS Simulator,id=$UDID"
 
   agent-build:
     runs-on: ubuntu-latest

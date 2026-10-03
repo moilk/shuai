@@ -7,6 +7,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod agent;
 mod keys;
 mod reconnect;
 mod ssh;
@@ -14,6 +15,7 @@ mod ssh;
 mod testkit;
 mod tmux;
 
+pub use agent::*;
 pub use keys::*;
 pub use reconnect::*;
 pub use ssh::*;
