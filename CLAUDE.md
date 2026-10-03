@@ -5,6 +5,7 @@ iPad AI-coding SSH terminal. Rust core + UniFFI, native Swift UI. Plan: `docs/pl
 ## Layout
 - `core/` Cargo workspace (shuai-proto, -keys, -ssh, -tmux, -agentkit, -ffi, -agent, -testkit (dev only: in-process SSH server), uniffi-bindgen)
 - `apple/ShuaiKit` Swift package: `ShuaiCore` (binaryTarget ShuaiCoreFFI + generated bindings, Swift 5 mode) and `ShuaiPlatform` (Swift 6: Keychain key store, known_hosts/TOFU, `Connection`/`Shell` wrappers)
+- `apple/ShuaiKit/Sources/ShuaiTerminal` terminal module (see below)
 - `apple/App` iPad app (XcodeGen `project.yml`; the .xcodeproj is generated, never committed)
 - `plugin/` Claude Code plugin, `android/` future, `scripts/` build scripts
 
@@ -38,3 +39,18 @@ xcode-select may point at CommandLineTools. Always prefix Xcode commands with
 - **Testkit guard**: a `SHUAI_FFI_TESTKIT=1` xcframework must never ship. `scripts/build-xcframework.sh` prints a loud warning in that mode and runs `scripts/check-no-testkit.sh` (`nm` for `start_test_ssh_server`) after every normal build; CI runs the guard explicitly. Release/archive steps must run it too.
 - **Host keys**: `TOFUVerifier` rejects a *changed* key unless `decideChanged` is given (the `decide` prompt only sees unknown hosts); accepting replaces the old entry (`known_hosts_replace`).
 - **Reconnect**: `ReconnectController` (ShuaiPlatform) drives the exported `ReconnectPolicy` with injectable clock/sleep and network/foreground `AsyncStream`s.
+
+## Terminal module (ShuaiTerminal)
+- Engine: libghostty via `Lakr233/libghostty-spm`, pinned `exact: 1.6.20261003` (ADR 0001). Bump deliberately; API churns.
+- `TerminalEngine` protocol (platform-neutral) + `GhosttyEngine` (iOS only). All bytes for the remote, including engine
+  replies (DA1, DECRQM, kitty `CSI ? u`), come out of `onInput`. OSC 52 is `clipboard-write = ask`: the app must answer
+  `ClipboardRequest.respond(allow:)`.
+- `TerminalView` subclasses libghostty's `UITerminalView` (IME inline preedit, selection, scroll, pointer, pinch/⌘± zoom,
+  hardware keys via Ghostty's encoder incl. kitty). Platform-neutral logic: `KeyEncoder` (fallback), `AccessoryBarModel`,
+  `ResizeDebouncer`, `FontSizeModel`, `EchoTransform`.
+- Ghostty-dependent code is `#if canImport(GhosttyTerminal)` (iOS only). Logic tests: `swift test` (macOS). Engine tests need
+  the simulator: `cd apple/ShuaiKit && xcodebuild test -scheme ShuaiKit-Package -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)'`.
+- Debug playground: run the app with launch arg `-debugTerminal` (DEBUG builds) to replay `fixtures/recordings/*pre-exit.out` or echo input.
+- Not CI-testable: real-device IME (see ADR "Pending manual IME test").
+- Theme: `TerminalTheme` (default `claudeDark`; `claudeLight`) is applied as both Ghostty light/dark variants, so the terminal ignores system appearance; contrast (WCAG >= 3.0 for colors 1-15) is unit-tested. Scrollback is capped via `scrollback-limit` (bytes; `ScrollbackPolicy`, 10k lines default).
+- Hardware Option->Alt is mapped in `TerminalView.pressesBegan` (`OptionAsAlt`), not trusted to Ghostty's `macos-option-as-alt` on iOS. Claude strip: Yes=`1`, Always=`2`, No=Esc (see AccessoryBarModel comments).
