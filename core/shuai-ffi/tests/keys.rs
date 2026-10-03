@@ -149,7 +149,10 @@ fn key_material_debug_never_prints_the_private_pem() {
     let m = generate_key(KeyAlg::Ed25519, "t".into()).unwrap();
     let dbg = format!("{m:?}");
     assert!(!dbg.contains("PRIVATE KEY"), "{dbg}");
-    assert!(!dbg.contains(m.private_pem.lines().nth(1).unwrap()), "{dbg}");
+    assert!(
+        !dbg.contains(m.private_pem.lines().nth(1).unwrap()),
+        "{dbg}"
+    );
     assert!(dbg.contains(&m.fingerprint));
 }
 
@@ -158,7 +161,8 @@ fn known_hosts_replace_swaps_the_key_and_keeps_other_hosts() {
     let a = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
     let b = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
     let other = generate_key(KeyAlg::Ed25519, "".into()).unwrap();
-    let text = known_hosts_add(String::new(), "h".into(), 22, a.public_line.clone(), false).unwrap();
+    let text =
+        known_hosts_add(String::new(), "h".into(), 22, a.public_line.clone(), false).unwrap();
     let text = known_hosts_add(text, "other".into(), 22, other.public_line.clone(), false).unwrap();
     let text = known_hosts_replace(text, "h".into(), 22, b.public_line.clone(), false).unwrap();
     let check = |t: &str, host: &str, line: &str| {
