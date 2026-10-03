@@ -165,6 +165,11 @@ final class FakeConnection: RemoteConnection, @unchecked Sendable {
         return execHandler.get(command)
     }
 
+    let uploads = Locked<[UploadRecord]>([])
+    func upload(_ data: Data, to path: String, mode: UInt32) async throws {
+        uploads.with { $0.append(UploadRecord(path: path, data: data, mode: mode)) }
+    }
+
     func execStream(_ command: String) async throws -> RemoteExec {
         if let execStreamError { throw execStreamError }
         execStreamCommands.with { $0.append(command) }

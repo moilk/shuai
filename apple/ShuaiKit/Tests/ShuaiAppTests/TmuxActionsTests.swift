@@ -232,6 +232,14 @@ import Testing
         await monitor.stop()
     }
 
+    @Test func nextAttentionIsAUIActionNotATmuxCommand() async throws {
+        let (server, monitor, actions) = await rig()
+        try await actions.perform(.nextAttention)
+        #expect(sent(server).isEmpty)
+        #expect(ShortcutAction(id: "nextAttention") == .nextAttention)
+        await monitor.stop()
+    }
+
     @Test func failuresSurfaceAsLastErrorFromTheFireAndForgetEntryPoint() async {
         let (_, monitor, actions) = await rig(withClient: false)
         await actions.run { try await actions.switchSession("$1") }

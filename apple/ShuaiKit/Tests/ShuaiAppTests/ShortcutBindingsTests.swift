@@ -29,6 +29,7 @@ import Testing
         #expect(binding(.splitRight)?.modifiers == cmd)
         #expect(binding(.splitDown)?.modifiers == cmd | shift)
         #expect(binding(.quickSwitcher) == TerminalKeyBinding(id: "quickSwitcher", input: "k", modifiers: cmd))
+        #expect(binding(.nextAttention) == TerminalKeyBinding(id: "nextAttention", input: "a", modifiers: cmd | shift))
     }
 
     @Test func arrowsAndReturnUseUIKitKeyInputNames() {

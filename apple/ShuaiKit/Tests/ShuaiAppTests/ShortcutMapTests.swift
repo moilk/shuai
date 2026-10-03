@@ -28,6 +28,7 @@ import Testing
             (.selectPane(.down), KeyChord(.downArrow, [.command, .option])),
             (.zoomPane, KeyChord(.returnKey, [.command, .shift])),
             (.quickSwitcher, KeyChord(.character("k"), [.command])),
+            (.nextAttention, KeyChord(.character("a"), [.command, .shift])),
         ]
         for (action, chord) in expected {
             #expect(map.chord(for: action) == chord, "\(action)")
