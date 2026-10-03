@@ -141,7 +141,7 @@ import Testing
         conn.execStreams.get[0].emit("%window-add @7\n")
         #expect(await waitUntil { monitor.changeCount > before })
         #expect(monitor.topology?.sessions[0].windows.count == 3)
-        #expect(monitor.lastChanges.contains { if case .WindowAdded(_, let w, _, _) = $0 { w == "@7" } else { false } })
+        #expect(monitor.lastChanges.contains { if case .windowAdded(_, let w, _, _) = $0 { w == "@7" } else { false } })
         await monitor.stop()
     }
 
@@ -188,10 +188,11 @@ import Testing
         let exec = conn.execStreams.get[0]
         exec.onWrite.with { $0 = nil } // swallow replies: the command stays pending
         _ = server
-        async let pending: [String] = monitor.run(try tmuxSelectWindow(windowId: "@0"))
+        let cmd = try tmuxSelectWindow(windowId: "@0")
+        let pending = Task { @MainActor in try await monitor.run(cmd) }
         try? await Task.sleep(for: .milliseconds(20))
         exec.finish(.remote)
-        await #expect(throws: TmuxError.self) { _ = try await pending }
+        await #expect(throws: TmuxError.self) { _ = try await pending.value }
         #expect(await waitUntil { if case .ended = monitor.state { true } else { false } })
     }
 
@@ -216,16 +217,11 @@ import Testing
     @Test func concurrentCommandsGetTheirOwnReplies() async throws {
         let (conn, _, monitor) = rig()
         await monitor.start(on: conn)
-        let results = try await withThrowingTaskGroup(of: (Int, [String]).self) { group in
-            for i in 0 ..< 20 {
-                group.addTask { @MainActor in
-                    (i, try await monitor.run(try tmuxSelectWindow(windowId: "@\(i)")))
-                }
-            }
-            var out: [Int: [String]] = [:]
-            for try await (i, l) in group { out[i] = l }
-            return out
+        let tasks = (0 ..< 20).map { i in
+            Task { @MainActor in try await monitor.run(try tmuxSelectWindow(windowId: "@\(i)")) }
         }
+        var results: [Int: [String]] = [:]
+        for (i, t) in tasks.enumerated() { results[i] = try await t.value }
         for i in 0 ..< 20 { #expect(results[i]?.first?.contains("@\(i)") == true, "\(i): \(String(describing: results[i]))") }
         await monitor.stop()
     }

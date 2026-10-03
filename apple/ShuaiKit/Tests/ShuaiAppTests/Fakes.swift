@@ -127,7 +127,7 @@ enum Fixtures {
     /// `core/shuai-tmux/tests/fixtures/NAME` (real tmux 3.6 transcripts; only the sanitized `local36-*` ones).
     static func text(_ name: String, file: StaticString = #filePath) -> String {
         var url = URL(fileURLWithPath: "\(file)")
-        for _ in 0 ..< 4 { url.deleteLastPathComponent() }
+        for _ in 0 ..< 5 { url.deleteLastPathComponent() }
         url.appendPathComponent("core/shuai-tmux/tests/fixtures/\(name)")
         return try! String(contentsOf: url, encoding: .utf8)
     }
