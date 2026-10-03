@@ -37,3 +37,5 @@ xcode-select may point at CommandLineTools. Always prefix Xcode commands with
   the simulator: `cd apple/ShuaiKit && xcodebuild test -scheme ShuaiKit-Package -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)'`.
 - Debug playground: run the app with launch arg `-debugTerminal` (DEBUG builds) to replay `fixtures/recordings/*pre-exit.out` or echo input.
 - Not CI-testable: real-device IME (see ADR "Pending manual IME test").
+- Theme: `TerminalTheme` (default `claudeDark`; `claudeLight`) is applied as both Ghostty light/dark variants, so the terminal ignores system appearance; contrast (WCAG >= 3.0 for colors 1-15) is unit-tested. Scrollback is capped via `scrollback-limit` (bytes; `ScrollbackPolicy`, 10k lines default).
+- Hardware Option->Alt is mapped in `TerminalView.pressesBegan` (`OptionAsAlt`), not trusted to Ghostty's `macos-option-as-alt` on iOS. Claude strip: Yes=`1`, Always=`2`, No=Esc (see AccessoryBarModel comments).
