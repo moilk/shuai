@@ -274,7 +274,10 @@ impl Session {
             Ok(Ok(h)) => h,
         };
 
-        authenticate(&mut handle, &config).await?;
+        match tokio::time::timeout(config.auth_timeout, authenticate(&mut handle, &config)).await {
+            Err(_) => return Err(SshError::Timeout),
+            Ok(r) => r?,
+        }
         Ok(Session {
             handle,
             closed_tx,

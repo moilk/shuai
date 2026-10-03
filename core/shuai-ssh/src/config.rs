@@ -104,6 +104,13 @@ pub struct ConnectConfig {
     pub keepalive_max: u32,
     /// Budget for TCP connect plus SSH handshake (not authentication).
     pub connect_timeout: Duration,
+    /// Budget for the whole authentication phase, across all methods; exceeding it fails the
+    /// connect with [`SshError::Timeout`](crate::SshError::Timeout).
+    ///
+    /// Time spent waiting on a [`KbdInteractivePrompter`] or an [`SshSigner`] (a human
+    /// typing an OTP, a biometric prompt) **counts**: the budget is one wall-clock deadline,
+    /// so the default is generous. Raise it if users need longer.
+    pub auth_timeout: Duration,
 }
 
 impl ConnectConfig {
@@ -117,6 +124,7 @@ impl ConnectConfig {
             keepalive_interval: Duration::from_secs(15),
             keepalive_max: 3,
             connect_timeout: Duration::from_secs(10),
+            auth_timeout: Duration::from_secs(60),
         }
     }
 }
