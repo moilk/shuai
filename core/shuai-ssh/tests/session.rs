@@ -494,3 +494,47 @@ async fn keepalive_timeout_reports_disconnect() {
     assert_eq!(why, SshError::Disconnected);
     assert!(s.is_closed());
 }
+
+// ---------- resource hygiene / failure reporting ----------
+
+async fn wait_closes(server: &TestServer, n: usize) -> bool {
+    for _ in 0..50 {
+        if server.log.closes.load(std::sync::atomic::Ordering::SeqCst) >= n {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+    false
+}
+
+#[tokio::test]
+async fn dropping_exec_channel_closes_remote_channel() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let ch = s.exec_stream("hold").await.unwrap();
+    drop(ch);
+    assert!(wait_closes(&server, 1).await, "remote channel leaked");
+}
+
+#[tokio::test]
+async fn dropping_shell_channel_closes_remote_channel() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let shell = s.open_shell(PtyRequest::xterm(80, 24)).await.unwrap();
+    drop(shell);
+    assert!(wait_closes(&server, 1).await, "remote channel leaked");
+}
+
+#[tokio::test]
+async fn exec_interrupted_by_disconnect_is_an_error_not_a_success() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let r = timeout(T, s.exec("cut")).await.unwrap();
+    assert_eq!(r, Err(SshError::Disconnected));
+}

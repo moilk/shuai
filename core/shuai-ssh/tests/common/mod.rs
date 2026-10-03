@@ -28,6 +28,8 @@ pub struct ServerLog {
     pub ptys: Mutex<Vec<(String, u32, u32)>>,
     pub env: Mutex<Vec<(String, String)>>,
     pub users: Mutex<Vec<String>>,
+    /// Number of `channel_close` messages received from clients.
+    pub closes: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Clone, Default)]
@@ -167,6 +169,17 @@ impl russh::server::Handler for Srv {
         Ok(())
     }
 
+    async fn channel_close(
+        &mut self,
+        _channel: ChannelId,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.log
+            .closes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
     async fn pty_request(
         &mut self,
         channel: ChannelId,
@@ -270,6 +283,18 @@ impl russh::server::Handler for Srv {
                     let _ = handle.exit_status_request(channel, 0).await;
                     let _ = handle.eof(channel).await;
                     let _ = handle.close(channel).await;
+                });
+            }
+            // Accept and then stay silent forever.
+            "hold" => {}
+            // Emit some output, then kill the connection without an exit status.
+            "cut" => {
+                tokio::spawn(async move {
+                    let _ = handle.data(channel, b"half".to_vec()).await;
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    let _ = handle
+                        .disconnect(russh::Disconnect::ByApplication, "".into(), "en".into())
+                        .await;
                 });
             }
             // Tear the whole connection down from the server side.
