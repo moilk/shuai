@@ -1,0 +1,13 @@
+# Rust
+target/
+# Xcode
+DerivedData/
+*.xcodeproj
+xcuserdata/
+.build/
+.swiftpm/
+# Generated artifacts
+build/
+apple/ShuaiKit/ShuaiCoreFFI.xcframework/
+apple/ShuaiKit/Sources/ShuaiCore/Generated/
+.DS_Store
