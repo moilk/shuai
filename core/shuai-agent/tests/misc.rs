@@ -150,3 +150,25 @@ fn doctor_detects_installed_plugin() {
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["plugin_installed"], true);
 }
+
+#[test]
+fn doctor_falls_back_to_known_install_locations() {
+    // `claude` is often put on PATH only by ~/.zshrc, which a login shell does not read.
+    let h = home();
+    let fake_home = h.path().join("fakehome");
+    let bin = fake_home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fake = bin.join("claude");
+    std::fs::write(&fake, "#!/bin/sh\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = agent(&h.path().join("state"))
+        .arg("doctor")
+        .env("HOME", &fake_home)
+        .env("SHELL", "/bin/sh")
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["claude_path"], fake.to_str().unwrap());
+}
