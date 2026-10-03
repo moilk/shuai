@@ -110,6 +110,12 @@ pub fn public_info(private_pem: String) -> Result<PublicInfo, FfiKeyError> {
     })
 }
 
+/// `SHA256:...` fingerprint of an `authorized_keys`-style public key line.
+#[uniffi::export]
+pub fn public_key_fingerprint(public_key_line: String) -> Result<String, FfiKeyError> {
+    Ok(shuai_keys::fingerprint(&parse_public(&public_key_line)?))
+}
+
 #[uniffi::export]
 pub fn known_hosts_check(
     text: String,
