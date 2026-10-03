@@ -229,8 +229,18 @@ impl AgentTracker {
         self.sessions.get(key)
     }
 
+    /// All sessions, most urgent first: NeedsPermission > NeedsInput > Failed > unseen Done >
+    /// Working > Starting > seen Done > Ended; ties broken by recency, then key.
     pub fn sessions(&self) -> Vec<&AgentSession> {
-        self.sessions.values().collect()
+        let mut v: Vec<&AgentSession> = self.sessions.values().collect();
+        v.sort_by(|a, b| {
+            a.rank()
+                .cmp(&b.rank())
+                .then(b.updated_at.cmp(&a.updated_at))
+                .then_with(|| a.host.cmp(&b.host))
+                .then_with(|| a.session_id.cmp(&b.session_id))
+        });
+        v
     }
 
     pub fn attention_count(&self) -> usize {
@@ -569,6 +579,35 @@ impl AgentTracker {
             .collect();
         for k in others {
             self.end_session(&k, env.ts_ms, out);
+        }
+    }
+
+    /// Force a state from ground truth (not from an event): clears the pending card.
+    pub(crate) fn set_state_external(
+        &mut self,
+        key: &SessionKey,
+        new: SessionState,
+        now_ms: u64,
+        out: &mut Vec<TrackerChange>,
+    ) {
+        let Some(s) = self.sessions.get_mut(key) else {
+            return;
+        };
+        if s.state == new {
+            return;
+        }
+        let cleared = take_pending(s);
+        let from = std::mem::replace(&mut s.state, new.clone());
+        s.current_tool = None;
+        s.seen = false;
+        s.updated_at = s.updated_at.max(now_ms);
+        out.push(TrackerChange::StateChanged {
+            key: key.clone(),
+            from,
+            to: new,
+        });
+        if cleared {
+            out.push(TrackerChange::PermissionCleared { key: key.clone() });
         }
     }
 

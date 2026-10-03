@@ -6,6 +6,8 @@
 //! Nothing here touches the clock, the network or the filesystem: time comes from event
 //! timestamps or is passed in by the caller.
 
+mod queries;
+mod reconcile;
 mod tracker;
 
 pub use tracker::{
