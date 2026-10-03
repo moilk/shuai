@@ -151,6 +151,22 @@ public final class TmuxActions {
 
     public func cancelPending() { pendingConfirmation = nil }
 
+    // MARK: - Quick switcher
+
+    /// Jumps to a switcher result of this host (the caller selects the host first).
+    public func jump(to item: SwitcherItem) async throws {
+        switch item.kind {
+        case .pane:
+            if let p = item.paneID { try await selectPane(p) }
+        case .window:
+            if let w = item.windowID { try await selectWindow(w) }
+        case .session:
+            if let s = item.sessionID, s != monitor.viewedSessionID { try await switchSession(s) }
+        case .host:
+            break
+        }
+    }
+
     // MARK: - Shortcuts
 
     /// Runs a keyboard shortcut's action. `.quickSwitcher` is UI-only and ignored here.

@@ -52,6 +52,15 @@ public final class SessionRegistry {
         controllers[id]?.state.status ?? .off
     }
 
+    /// Every host with its live tmux tree, as input for `SwitcherItem.build`.
+    public func switcherSnapshots(for hosts: [HostProfile]) -> [SwitcherItem.HostSnapshot] {
+        hosts.map { h in
+            let c = controllers[h.id]
+            return SwitcherItem.HostSnapshot(
+                id: h.id, name: h.name, connected: c?.state == .connected, topology: c?.tmux.topology)
+        }
+    }
+
     public func remove(id: UUID) async {
         guard let c = controllers.removeValue(forKey: id) else { return }
         await c.disconnect()
