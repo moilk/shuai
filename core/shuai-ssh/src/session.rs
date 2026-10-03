@@ -418,6 +418,13 @@ async fn authenticate(
                 let r = handle.authenticate_password(user, pw.as_str()).await?;
                 step_of(r.success())
             }
+            AuthMethod::PasswordPrompt(p) => match p.password().await {
+                Some(pw) => {
+                    let r = handle.authenticate_password(user, pw.as_str()).await?;
+                    step_of(r.success())
+                }
+                None => AuthStep::Rejected,
+            },
             AuthMethod::PublicKey(key) => {
                 let hash = handle.best_supported_rsa_hash().await?.flatten();
                 let r = handle

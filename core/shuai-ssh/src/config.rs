@@ -52,11 +52,21 @@ pub trait KbdInteractivePrompter: Send + Sync {
     ) -> Option<Vec<String>>;
 }
 
+/// Supplies a password lazily: asked only once the host key is trusted and the server is
+/// ready for password authentication, so a secret is never requested for an untrusted host.
+#[async_trait::async_trait]
+pub trait PasswordPrompter: Send + Sync {
+    /// The password, or `None` to abandon this method.
+    async fn password(&self) -> Option<String>;
+}
+
 /// One authentication method; [`ConnectConfig::auth`] is tried in order.
 #[derive(Clone)]
 pub enum AuthMethod {
     /// Plain password.
     Password(String),
+    /// Password obtained on demand (after host key verification).
+    PasswordPrompt(Arc<dyn PasswordPrompter>),
     /// In-memory private key.
     PublicKey(Arc<PrivateKey>),
     /// Externally held key (Secure Enclave, hardware token...).
@@ -69,7 +79,7 @@ impl AuthMethod {
     /// Stable name used in [`SshError::AuthFailed`](crate::SshError::AuthFailed).
     pub fn name(&self) -> &'static str {
         match self {
-            AuthMethod::Password(_) => "password",
+            AuthMethod::Password(_) | AuthMethod::PasswordPrompt(_) => "password",
             AuthMethod::PublicKey(_) => "publickey",
             AuthMethod::Signer(_) => "signer",
             AuthMethod::KeyboardInteractive(_) => "keyboard-interactive",

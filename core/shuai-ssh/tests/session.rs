@@ -313,10 +313,13 @@ async fn password_prompter_is_never_asked_when_the_host_key_is_rejected() {
 async fn password_prompter_cancel_or_wrong_password_fails_as_password_method() {
     let server = start(ServerOpts::default()).await;
     for answer in [None, Some("wrong")] {
-        let err = connect(&server, vec![AuthMethod::PasswordPrompt(pw_prompter(answer))])
-            .await
-            .err()
-            .unwrap();
+        let err = connect(
+            &server,
+            vec![AuthMethod::PasswordPrompt(pw_prompter(answer))],
+        )
+        .await
+        .err()
+        .unwrap();
         assert_eq!(err, auth_failed(&["password"]));
     }
 }

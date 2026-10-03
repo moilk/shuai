@@ -29,8 +29,8 @@ pub mod reconnect;
 pub mod session;
 
 pub use config::{
-    AuthMethod, ConnectConfig, HostKeyVerifier, KbdInteractivePrompter, KbdPrompt, PtyRequest,
-    SshSigner,
+    AuthMethod, ConnectConfig, HostKeyVerifier, KbdInteractivePrompter, KbdPrompt,
+    PasswordPrompter, PtyRequest, SshSigner,
 };
 pub use error::{Result, SshError};
 pub use russh::keys;
