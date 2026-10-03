@@ -563,7 +563,7 @@ private struct Harness {
     }
 }
 
-@Suite struct SessionStatusTests {
+@MainActor @Suite(.timeLimit(.minutes(1))) struct SessionTmuxAndTeardownTests {
     // MARK: tmux missing
 
     private func failTmux(_ conn: FakeConnection, status: Int32? = 127, text: String? = "bash: tmux: command not found\r\n") {
@@ -696,6 +696,9 @@ private struct Harness {
         #expect(h.controller.state == .disconnected(exitStatus: nil))
     }
 
+}
+
+@Suite struct SessionStatusTests {
     @Test func statusDotMapping() {
         #expect(SessionState.idle.status == .off)
         #expect(SessionState.disconnected(exitStatus: nil).status == .off)

@@ -27,6 +27,11 @@ public final class SessionController {
     public private(set) var banner: TerminalNotification?
     /// OSC 52 / unsafe paste awaiting the user's decision.
     public var pendingClipboard: ClipboardRequest?
+    /// Non-blocking info banner (e.g. tmux missing on the host); cleared by `dismissNotice()` or the next fresh `connect()`.
+    public private(set) var notice: String?
+    public static let tmuxMissingNotice = "tmux not found on host \u{2014} using plain shell (sessions won't persist)"
+    /// A tmux that fails to start prints at most a short error; anything longer is a real session.
+    static let tmuxProbeBytes = 1024
     /// Fired after every successful attach (initial and reconnects).
     @ObservationIgnored public var onConnected: (() -> Void)?
 
@@ -77,6 +82,10 @@ public final class SessionController {
     @ObservationIgnored private var pendingAnswer: PendingAnswer?
     /// Password typed for `.ask` hosts; kept in memory only, so reconnects need no prompt.
     @ObservationIgnored private var sessionPassword: String?
+    /// The user dismissed the lazily shown password prompt (the SSH layer then reports a failed auth).
+    @ObservationIgnored private var passwordCancelled = false
+    /// tmux was not found on this host; later (re)connects open a plain shell right away.
+    @ObservationIgnored private var tmuxUnavailable = false
 
     private struct Cancelled: Error {}
 
@@ -123,6 +132,7 @@ public final class SessionController {
     }
 
     public func dismissBanner() { banner = nil }
+    public func dismissNotice() { notice = nil }
 
     /// Types text into the remote (debug scripting, tests).
     public func sendInput(_ text: String) { commands?.yield(.write(Data(text.utf8))) }
@@ -138,11 +148,12 @@ public final class SessionController {
         }
         generation += 1
         let gen = generation
+        tmuxUnavailable = false
+        notice = nil
+        passwordCancelled = false
         state = .connecting
         do {
-            let auth = try await buildAuth()
-            guard gen == generation else { return }
-            state = .connecting
+            let auth = try buildAuth()
             let conn = try await open(auth: auth)
             guard gen == generation else { await conn.disconnect(); return }
             try await attach(conn, gen: gen, reconnecting: false)
@@ -151,12 +162,28 @@ public final class SessionController {
         } catch {
             guard gen == generation else { return }
             await dropReconnector()
-            state = .failed(SessionError(error))
+            noteAuthOutcome(error)
+            if passwordCancelled {
+                passwordCancelled = false
+                state = .disconnected(exitStatus: nil)
+            } else {
+                state = .failed(SessionError(error))
+            }
         }
     }
 
-    /// User-initiated disconnect (also gives up a reconnect).
+    /// A rejected password must not be offered again silently.
+    private func noteAuthOutcome(_ error: Error) {
+        if SessionError(error).kind == .authFailed { sessionPassword = nil }
+    }
+
+    /// User-initiated disconnect (also gives up a reconnect). Forgets a typed `.ask` password.
     public func disconnect() async {
+        sessionPassword = nil
+        await endSession()
+    }
+
+    private func endSession() async {
         resolvePending()
         generation += 1
         isReconnecting = false
@@ -170,7 +197,7 @@ public final class SessionController {
 
     /// Starts over: replaces a live/lost/failed connection with a fresh one.
     public func reconnect() async {
-        await disconnect()
+        await endSession() // keeps a typed password: an explicit reconnect is not a new login
         await connect()
     }
 
@@ -266,7 +293,9 @@ public final class SessionController {
 
     // MARK: - Connecting
 
-    private func buildAuth() async throws -> [FfiAuth] {
+    /// Builds the credential list without any user interaction: a password that has to be typed is
+    /// requested lazily by the SSH layer (`PasswordBridge`), i.e. only after the host key was trusted.
+    private func buildAuth() throws -> [FfiAuth] {
         var auth: [FfiAuth] = []
         switch profile.auth {
         case .key(let id):
@@ -278,18 +307,21 @@ public final class SessionController {
             if let stored = (try? passwords.password(for: profile.id)) ?? nil {
                 auth.append(.password(password: stored))
             } else {
-                auth.append(.password(password: try await passwordFromUser()))
+                auth.append(.passwordPrompt(prompter: PasswordBridge(controller: self)))
             }
         case .ask:
-            auth.append(.password(password: try await passwordFromUser()))
+            auth.append(.passwordPrompt(prompter: PasswordBridge(controller: self)))
         }
         auth.append(.keyboardInteractive(prompter: KbdBridge(controller: self)))
         return auth
     }
 
-    private func passwordFromUser() async throws -> String {
+    fileprivate func passwordFromUser() async -> String? {
         if let sessionPassword { return sessionPassword }
-        guard let pw = await askPassword() else { throw Cancelled() }
+        guard let pw = await askPassword() else {
+            passwordCancelled = true
+            return nil
+        }
         if profile.auth == .ask { sessionPassword = pw }
         return pw
     }
@@ -317,17 +349,10 @@ public final class SessionController {
     ]
 
     private func attach(_ conn: RemoteConnection, gen: Int, reconnecting: Bool) async throws {
-        let size = currentSize()
+        let useTmux = profile.tmux.enabled && !tmuxUnavailable
         let newShell: RemoteShell
         do {
-            if profile.tmux.enabled {
-                let cmd = TmuxLaunch.command(sessionName: profile.tmux.sessionName, startupCommand: profile.startupCommand)
-                newShell = try await conn.openPtyExec(
-                    command: cmd, cols: size.cols, rows: size.rows, term: "xterm-256color", env: Self.env)
-            } else {
-                newShell = try await conn.openShell(
-                    cols: size.cols, rows: size.rows, term: "xterm-256color", env: Self.env)
-            }
+            newShell = try await openRemoteShell(on: conn, tmux: useTmux)
         } catch {
             await conn.disconnect()
             throw error
@@ -345,6 +370,39 @@ public final class SessionController {
         }
 
         connection = conn
+        startShell(newShell, gen: gen, tmuxAttempt: useTmux)
+        closedTask = Task { [weak self] in
+            let reason = await conn.closed()
+            await self?.connectionClosed(gen: gen, reason: reason)
+        }
+
+        isReconnecting = false
+        lastReconnectError = nil
+        state = .connected
+        onConnected?()
+
+        if reconnecting { redrawNudge(gen: gen) }
+        if !useTmux, !reconnecting { typeStartupCommand() }
+    }
+
+    private func openRemoteShell(on conn: RemoteConnection, tmux: Bool) async throws -> RemoteShell {
+        let size = currentSize()
+        if tmux {
+            let cmd = TmuxLaunch.command(sessionName: profile.tmux.sessionName, startupCommand: profile.startupCommand)
+            return try await conn.openPtyExec(command: cmd, cols: size.cols, rows: size.rows, term: "xterm-256color", env: Self.env)
+        }
+        return try await conn.openShell(cols: size.cols, rows: size.rows, term: "xterm-256color", env: Self.env)
+    }
+
+    private func typeStartupCommand() {
+        if let startup = profile.startupCommand?.trimmingCharacters(in: .whitespacesAndNewlines), !startup.isEmpty {
+            sendInput(startup + "\r")
+        }
+    }
+
+    /// Wires a freshly opened shell to the engine: ordered writer queue + event pump.
+    /// `tmuxAttempt` marks a shell that runs `tmux new -A` so a missing tmux can be detected.
+    private func startShell(_ newShell: RemoteShell, gen: Int, tmuxAttempt: Bool) {
         shell = newShell
         let (stream, continuation) = AsyncStream<Command>.makeStream()
         commands = continuation
@@ -358,35 +416,58 @@ public final class SessionController {
         }
         eventsTask = Task { [weak self] in
             var exitStatus: Int?
+            var received = 0
+            var missingHint = false
             for await event in newShell.events {
                 guard let self else { return }
                 switch event {
                 case .data(let bytes):
+                    if tmuxAttempt, received <= Self.tmuxProbeBytes {
+                        received += bytes.count
+                        missingHint = missingHint || Self.looksLikeMissingTmux(bytes)
+                    }
                     if gen == self.generation { self.engine.feed(bytes) }
                 case .exit(let status, _):
                     exitStatus = status.map { Int($0) }
                 case .closed(let reason):
-                    await self.shellClosed(gen: gen, reason: reason, exitStatus: exitStatus)
+                    let tmuxMissing = tmuxAttempt && reason == .remote && received <= Self.tmuxProbeBytes
+                        && (exitStatus == 127 || missingHint)
+                    await self.shellClosed(gen: gen, reason: reason, exitStatus: exitStatus, tmuxMissing: tmuxMissing)
                     return
                 }
             }
-            await self?.shellClosed(gen: gen, reason: .local, exitStatus: exitStatus)
+            await self?.shellClosed(gen: gen, reason: .local, exitStatus: exitStatus, tmuxMissing: false)
         }
-        closedTask = Task { [weak self] in
-            let reason = await conn.closed()
-            await self?.connectionClosed(gen: gen, reason: reason)
-        }
+    }
 
-        isReconnecting = false
-        lastReconnectError = nil
-        state = .connected
-        onConnected?()
+    private static func looksLikeMissingTmux(_ bytes: Data) -> Bool {
+        let text = String(decoding: bytes, as: UTF8.self).lowercased()
+        return text.contains("command not found") || (text.contains("tmux") && text.contains("not found"))
+    }
 
-        if reconnecting { redrawNudge(gen: gen) }
-        if !profile.tmux.enabled, let startup = profile.startupCommand?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !startup.isEmpty, !reconnecting
-        {
-            sendInput(startup + "\r")
+    /// tmux is not installed: keep the connection, swap the dead PTY exec for a plain login shell.
+    private func fallBackToPlainShell(gen: Int) async {
+        guard gen == generation, let conn = connection else { return }
+        tmuxUnavailable = true
+        notice = Self.tmuxMissingNotice
+        commands?.finish(); commands = nil
+        writerTask = nil
+        eventsTask = nil
+        let old = shell
+        shell = nil
+        await old?.close()
+        guard gen == generation else { return }
+        do {
+            let plain = try await openRemoteShell(on: conn, tmux: false)
+            guard gen == generation else { await plain.close(); return }
+            startShell(plain, gen: gen, tmuxAttempt: false)
+            typeStartupCommand()
+        } catch {
+            guard gen == generation else { return }
+            generation += 1
+            await dropReconnector()
+            await teardownTransport()
+            state = .failed(SessionError(error))
         }
     }
 
@@ -406,12 +487,16 @@ public final class SessionController {
 
     // MARK: - Ending / dropping
 
-    private func shellClosed(gen: Int, reason: CloseReason, exitStatus: Int?) async {
+    private func shellClosed(gen: Int, reason: CloseReason, exitStatus: Int?, tmuxMissing: Bool) async {
         guard gen == generation else { return }
         switch reason {
         case .local:
             return
+        case .remote where tmuxMissing:
+            // Not on this task: it must stay free of cancellation while the fallback shell opens.
+            Task { [weak self] in await self?.fallBackToPlainShell(gen: gen) }
         case .remote:
+            sessionPassword = nil
             // The remote program (shell / tmux client) ended normally: not a network problem.
             generation += 1
             await dropReconnector()
@@ -503,6 +588,7 @@ public final class SessionController {
         case .gaveUp:
             let error = lastReconnectError ?? SessionError(kind: .network, message: "The connection was lost.")
             isReconnecting = false
+            sessionPassword = nil
             Task { [weak self] in
                 await self?.dropReconnector()
                 self?.state = .failed(error)
@@ -514,9 +600,9 @@ public final class SessionController {
 
     private func reconnectOnce() async throws {
         let gen = generation
+        passwordCancelled = false
         do {
-            let auth = try await buildAuth()
-            guard gen == generation else { throw Cancelled() }
+            let auth = try buildAuth()
             let conn = try await open(auth: auth)
             guard gen == generation else { await conn.disconnect(); throw Cancelled() }
             try await attach(conn, gen: gen, reconnecting: true)
@@ -525,6 +611,12 @@ public final class SessionController {
             if gen == generation { await disconnect() }
             throw CancellationError()
         } catch {
+            if passwordCancelled, gen == generation {
+                // The user dismissed the password prompt: stop reconnecting.
+                await disconnect()
+                throw CancellationError()
+            }
+            noteAuthOutcome(error)
             lastReconnectError = SessionError(error)
             throw error
         }
@@ -547,6 +639,13 @@ private final class SessionVerifier: HostKeyVerifierCallback, @unchecked Sendabl
         if ok { await controller?.hostKeyTrusted() }
         return ok
     }
+}
+
+private final class PasswordBridge: PasswordPromptCallback, @unchecked Sendable {
+    private weak var controller: SessionController?
+    init(controller: SessionController) { self.controller = controller }
+
+    func password() async -> String? { await controller?.passwordFromUser() }
 }
 
 private final class KbdBridge: KbdPrompterCallback, @unchecked Sendable {

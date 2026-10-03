@@ -15,6 +15,7 @@ extension FfiAuth: CustomStringConvertible, CustomDebugStringConvertible {
         switch self {
         case .password: return "FfiAuth.password(<redacted>)"
         case .privateKeyPem: return "FfiAuth.privateKeyPem(<redacted>)"
+        case .passwordPrompt: return "FfiAuth.passwordPrompt"
         case .signer: return "FfiAuth.signer"
         case .keyboardInteractive: return "FfiAuth.keyboardInteractive"
         }

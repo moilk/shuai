@@ -129,6 +129,7 @@ struct HostEditorView: View {
                     Button("Save", action: save).accessibilityIdentifier("save-host-button")
                 }
             }
+            .onDisappear { password = "" }
         }
     }
 
@@ -156,7 +157,9 @@ struct HostEditorView: View {
         do {
             if original == nil { try model.hosts.add(p) } else { try model.hosts.update(p) }
             switch authKind {
-            case .password: if !password.isEmpty { try model.passwords.setPassword(password, for: p.id) }
+            case .password:
+                if !password.isEmpty { try model.passwords.setPassword(password, for: p.id) }
+                password = ""
             case .key, .ask: try? model.passwords.deletePassword(for: p.id)
             }
             if model.selection == nil { model.selection = p.id }

@@ -74,8 +74,9 @@ struct KeysView: View {
         .alert("Passphrase required", isPresented: $askPassphrase) {
             SecureField("Passphrase", text: $passphrase)
             Button("Import") {
-                if let data = pendingData { importNow(data, passphrase: passphrase) }
+                let typed = passphrase
                 passphrase = ""
+                if let data = pendingData { importNow(data, passphrase: typed) }
             }
             Button("Cancel", role: .cancel) { pendingData = nil; passphrase = "" }
         } message: {

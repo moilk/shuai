@@ -40,6 +40,10 @@ private struct TerminalSessionView: View {
 
             overlay
             VStack {
+                if let notice = controller.notice {
+                    NoticeView(text: notice) { controller.dismissNotice() }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 if let banner = controller.banner {
                     BannerView(note: banner) { controller.dismissBanner() }
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -48,6 +52,7 @@ private struct TerminalSessionView: View {
             }
             .padding()
             .animation(.snappy, value: controller.banner)
+            .animation(.snappy, value: controller.notice)
         }
         .navigationTitle(controller.windowTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -263,6 +268,25 @@ private struct StatusBadge: View {
     }
 }
 
+/// Non-blocking info banner (the terminal stays usable underneath).
+private struct NoticeView: View {
+    let text: String
+    let dismiss: () -> Void
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle.fill")
+            Text(text).font(.subheadline)
+            Spacer()
+            Button(action: dismiss) { Image(systemName: "xmark") }
+        }
+        .padding(12)
+        .frame(maxWidth: 520)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("session-notice")
+    }
+}
+
 private struct BannerView: View {
     let note: TerminalNotification
     let dismiss: () -> Void
@@ -375,15 +399,21 @@ private struct PasswordSheet: View {
             .navigationTitle("Authenticate")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { controller.answerPassword(nil) } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { password = ""; controller.answerPassword(nil) } }
                 ToolbarItem(placement: .confirmationAction) { Button("Connect", action: submit).disabled(password.isEmpty) }
             }
             .onAppear { focused = true }
+            .onDisappear { password = "" }
         }
         .presentationDetents([.height(260)])
     }
 
-    private func submit() { if !password.isEmpty { controller.answerPassword(password) } }
+    private func submit() {
+        guard !password.isEmpty else { return }
+        let typed = password
+        password = ""
+        controller.answerPassword(typed)
+    }
 }
 
 private struct KeyboardInteractiveSheet: View {
