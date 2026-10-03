@@ -27,6 +27,41 @@ private struct TerminalSessionView: View {
         model.keyboard.isConnected || model.settings.accessoryBar == .floating
     }
 
+    private var topStack: some View {
+        VStack {
+            AgentBannerView()
+            if let message = model.transientNotice {
+                NoticeView(text: message) { model.transientNotice = nil }
+                    .task(id: message) {
+                        try? await Task.sleep(for: .seconds(3))
+                        model.transientNotice = nil
+                    }
+            }
+            if let error = controller.tmuxActions.lastError {
+                NoticeView(text: error) { controller.tmuxActions.lastError = nil }
+                    .task(id: error) {
+                        try? await Task.sleep(for: .seconds(5))
+                        controller.tmuxActions.lastError = nil
+                    }
+            }
+            if let notice = controller.notice {
+                NoticeView(text: notice) { controller.dismissNotice() }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let banner = controller.banner {
+                InAppBanner(
+                    content: BannerContent.make(title: banner.title, body: banner.body, hostName: host.name),
+                    token: "\(banner.title)\n\(banner.body)", dismiss: { controller.dismissBanner() })
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            Spacer()
+        }
+    .padding()
+    .animation(.snappy, value: controller.banner)
+    .animation(.snappy, value: controller.notice)
+    .animation(.snappy, value: model.agentHub.banners.banners)
+    }
+
     var body: some View {
         ZStack {
             Color(uiColor: UIColor(hex: model.settings.theme.terminalTheme.background)).ignoresSafeArea()
@@ -39,27 +74,8 @@ private struct TerminalSessionView: View {
             .accessibilityIdentifier("terminal-view")
 
             overlay
-            VStack {
-                if let error = controller.tmuxActions.lastError {
-                    NoticeView(text: error) { controller.tmuxActions.lastError = nil }
-                        .task(id: error) {
-                            try? await Task.sleep(for: .seconds(5))
-                            controller.tmuxActions.lastError = nil
-                        }
-                }
-                if let notice = controller.notice {
-                    NoticeView(text: notice) { controller.dismissNotice() }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                if let banner = controller.banner {
-                    BannerView(note: banner) { controller.dismissBanner() }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                Spacer()
-            }
-            .padding()
-            .animation(.snappy, value: controller.banner)
-            .animation(.snappy, value: controller.notice)
+            PermissionCardStack()
+            topStack
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if model.columnVisibility == .detailOnly, controller.tmux.topology != nil {
@@ -97,6 +113,9 @@ private struct TerminalSessionView: View {
             }
         }
         .task(id: host.id) {
+            #if DEBUG
+            if DebugLaunch.agentFixture { await DebugLaunch.seedFixtureTerminal(engine); return }
+            #endif
             if controller.state == .idle { await controller.connect() }
         }
         .sheet(item: Binding(
@@ -150,6 +169,14 @@ private struct TerminalSessionView: View {
     }
 
     @ViewBuilder private var overlay: some View {
+        #if DEBUG
+        if DebugLaunch.agentFixture { EmptyView() } else { connectionOverlay }
+        #else
+        connectionOverlay
+        #endif
+    }
+
+    @ViewBuilder private var connectionOverlay: some View {
         switch controller.state {
         case .connecting, .authenticating, .hostKeyPrompt:
             ProgressCard(title: "Connecting to \(host.name)…", detail: host.displayTarget)
@@ -321,30 +348,6 @@ private struct NoticeView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("session-notice")
-    }
-}
-
-private struct BannerView: View {
-    let note: TerminalNotification
-    let dismiss: () -> Void
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "bell.fill")
-            VStack(alignment: .leading) {
-                if !note.title.isEmpty { Text(note.title).font(.headline) }
-                if !note.body.isEmpty { Text(note.body).font(.subheadline) }
-            }
-            Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark") }
-        }
-        .padding(12)
-        .frame(maxWidth: 520)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .task(id: note) {
-            try? await Task.sleep(for: .seconds(6))
-            dismiss()
-        }
-        .accessibilityIdentifier("notification-banner")
     }
 }
 

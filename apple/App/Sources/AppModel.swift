@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Observation
 import ShuaiApp
+import ShuaiCore
 import ShuaiPlatform
 import ShuaiTerminal
 import SwiftUI
@@ -15,6 +16,13 @@ enum HostEditorTarget: Identifiable {
         case .edit(let h): h.id.uuidString
         }
     }
+}
+
+/// The AI-integration sheet of one host (install or remove).
+struct AgentInstallRequest: Identifiable {
+    let id = UUID()
+    let host: HostProfile
+    let model: AgentInstallModel
 }
 
 /// Composition root: owns the stores and the session registry. Views stay thin.
@@ -35,8 +43,18 @@ final class AppModel {
     var columnVisibility: NavigationSplitViewVisibility = .all
     /// Hardware shortcuts delivered while the terminal has focus.
     var shortcuts: ShortcutMap = .defaults
-    /// Per-pane badges (agent state in M5); none for now.
-    var badges: any PaneBadgeProvider = NoPaneBadges()
+    /// Every host's agent monitor; also the sidebar's per-pane badge provider (keyed by profile id).
+    let agentHub: AgentHub
+    var badges: any PaneBadgeProvider { agentHub }
+    var agentInstall: AgentInstallRequest?
+    var showNotificationExplainer = false
+    /// A short message for the main screen (e.g. nothing needs attention).
+    var transientNotice: String?
+    var appActive = true
+    @ObservationIgnored private var lastAttentionKey: FfiSessionKey?
+    @ObservationIgnored private let notifier: LocalNotifier?
+    @ObservationIgnored private let viewing = ViewingBox()
+    private final class ViewingBox { var check: (FfiSessionKey) -> Bool = { _ in false } }
     /// The open ⌘K sheet, if any.
     var quickSwitcher: QuickSwitcherModel?
     @ObservationIgnored private var switcherHistory = QuickSwitcherHistory()
@@ -67,6 +85,10 @@ final class AppModel {
         self.settings = settings
         keys = KeyLibrary(store: keyStore)
         let box = EngineBox()
+        let viewingBox = viewing
+        let hub = AgentHub(banners: AttentionBannerQueue(isSuppressed: { key in viewingBox.check(key) }))
+        agentHub = hub
+        notifier = ephemeral ? nil : LocalNotifier()
         sessions = SessionRegistry(
             factory: LiveConnectionFactory(), keys: keyStore, passwords: passwords, knownHosts: known, hosts: hosts,
             makeEngine: { host in
@@ -75,9 +97,14 @@ final class AppModel {
                     theme: settings.theme.terminalTheme)
                 box.engines[host.id] = engine
                 return engine
-            })
+            }, agentHub: hub)
         engineBox = box
         selection = hosts.hosts.first?.id
+        viewing.check = { [weak self] key in MainActor.assumeIsolated { self?.isViewing(key) ?? false } }
+        hub.onLiveChanges = { [weak self] id, changes in self?.handleLive(profileID: id, changes: changes) }
+        notifier?.onOpen = { [weak self] profile, pane in
+            Task { @MainActor in await self?.jumpToPane(profileID: profile, paneID: pane) }
+        }
         startNetworkMonitor()
     }
 
@@ -95,6 +122,7 @@ final class AppModel {
     func handleShortcut(id: String, host: HostProfile) {
         guard let action = ShortcutAction(id: id) else { return }
         if action == .quickSwitcher { openQuickSwitcher(); return }
+        if action == .nextAttention { jumpNextAttention(); return }
         let controller = sessions.controller(for: host)
         switch controller.tmux.state {
         case .live, .polling: break
@@ -107,7 +135,7 @@ final class AppModel {
     func openQuickSwitcher() {
         guard quickSwitcher == nil else { return }
         let items = SwitcherItem.build(hosts: sessions.switcherSnapshots(for: hosts.hosts))
-        quickSwitcher = QuickSwitcherModel(items: items, badges: badges, history: switcherHistory)
+        quickSwitcher = QuickSwitcherModel(items: items, ranker: AttentionRanker(), badges: badges, history: switcherHistory)
     }
 
     func closeQuickSwitcher(activated: Bool) {
@@ -129,8 +157,103 @@ final class AppModel {
             _ = await waitForTmux(controller)
             let actions = controller.tmuxActions
             await actions.run { try await actions.jump(to: item) }
+            if let pane = item.paneIDs.first, item.kind == .pane { agentHub.markSeen(profileID: host.id, paneID: pane) }
         }
         _ = engineBox.engines[host.id]?.view.acquireProgrammaticFocus()
+    }
+
+    // MARK: agent attention
+
+    /// The user is looking at this session's pane right now (no banner needed).
+    private func isViewing(_ key: FfiSessionKey) -> Bool {
+        guard appActive, let t = agentHub.target(for: key), t.profileID == selection, let pane = t.paneID,
+            let c = sessions.existingController(for: t.profileID)
+        else { return false }
+        return c.tmuxActions.activePane?.id == pane
+    }
+
+    /// Selects `profileID`'s host (connecting it if needed) and shows `paneID` in tmux.
+    func jumpToPane(profileID: UUID, paneID: String?) async {
+        guard let host = hosts.host(id: profileID) else { return }
+        selection = host.id
+        let controller = sessions.controller(for: host)
+        switch controller.state {
+        case .idle, .failed, .disconnected: await controller.connect()
+        default: break
+        }
+        if let paneID {
+            _ = await waitForTmux(controller)
+            let actions = controller.tmuxActions
+            await actions.run { try await actions.selectPane(paneID) }
+            agentHub.markSeen(profileID: profileID, paneID: paneID)
+        }
+        _ = engineBox.engines[host.id]?.view.acquireProgrammaticFocus()
+    }
+
+    func jump(to target: AttentionTarget) async {
+        await jumpToPane(profileID: target.profileID, paneID: target.paneID)
+        agentHub.markSeen(target)
+    }
+
+    /// ⌘⇧A: the next agent session that wants you.
+    func jumpNextAttention() {
+        guard let t = agentHub.nextNeedingAttention(after: lastAttentionKey) else {
+            transientNotice = "No agent needs your attention."
+            return
+        }
+        lastAttentionKey = t.key
+        Task { await jump(to: t) }
+    }
+
+    func jump(toBannerKey key: FfiSessionKey) {
+        guard let t = agentHub.target(for: key) else { return }
+        Task { await jump(to: t) }
+    }
+
+    func permissionContext(_ p: HubPermission) -> String {
+        let name = hosts.host(id: p.profileID)?.name ?? "host"
+        return TmuxTree.paneLabel(p.paneID, host: name, in: sessions.existingController(for: p.profileID)?.tmux.topology)
+    }
+
+    private func handleLive(profileID: UUID, changes: [FfiTrackerChange]) {
+        let hostName = hosts.host(id: profileID)?.name ?? "host"
+        for change in changes {
+            let session = agentHub.target(for: change.sessionKey)?.session
+            guard let content = AttentionNotificationPolicy.content(for: change, session: session, hostName: hostName, appActive: false)
+            else { continue }
+            if appActive {
+                if !settings.notificationsExplained, notifier != nil { showNotificationExplainer = true }
+            } else if settings.notificationsEnabled {
+                Task { await notifier?.post(content, profileID: profileID) }
+            }
+        }
+    }
+
+    func enableNotifications() {
+        settings.notificationsExplained = true
+        Task {
+            let granted = await notifier?.requestAuthorization() ?? false
+            settings.notificationsEnabled = granted
+        }
+    }
+
+    func declineNotifications() { settings.notificationsExplained = true }
+
+    // MARK: AI integration host menu
+
+    func presentAgentInstall(host: HostProfile, uninstall: Bool) {
+        guard let remote = sessions.existingController(for: host.id)?.agentRemote else { return }
+        let installer = AgentInstaller(remote: remote, binaries: BundleAgentBinaryProvider())
+        agentInstall = AgentInstallRequest(
+            host: host, model: AgentInstallModel(installer: installer, mode: uninstall ? .uninstall : .install))
+    }
+
+    func closeAgentInstall() {
+        let req = agentInstall
+        agentInstall = nil
+        if let req, let remote = sessions.existingController(for: req.host.id)?.agentRemote {
+            Task { await agentHub.hostConnected(id: req.host.id, remote: remote) }
+        }
     }
 
     private func waitForTmux(_ controller: SessionController) async -> Bool {
@@ -179,6 +302,7 @@ final class AppModel {
     }
 
     func scenePhaseChanged(_ phase: ScenePhase) {
+        appActive = phase == .active
         if phase == .active { sessions.appForegrounded() }
     }
 }

@@ -32,6 +32,15 @@ struct SettingsView: View {
                     Text("With a hardware keyboard the compact floating bar is always used. Option-as-Alt applies to sessions opened afterwards.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                Section("AI integration") {
+                    Toggle("Notify when an agent needs me", isOn: Binding(
+                        get: { settings.notificationsEnabled },
+                        set: { on in
+                            if on { model.enableNotifications() } else { settings.notificationsEnabled = false }
+                        }))
+                    Text("Local notifications while the app is in the background. iOS suspends apps soon after you leave them, so this is best effort.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("SSH") {
                     Button("Manage keys…") { dismiss(); model.showKeys = true }
                 }

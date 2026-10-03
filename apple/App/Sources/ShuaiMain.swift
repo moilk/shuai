@@ -35,6 +35,8 @@ struct ShuaiMain: App {
                 // Also works while the sidebar has focus; in the terminal the key command takes the chord.
                 Button("Quick Switcher") { model.openQuickSwitcher() }
                     .keyboardShortcut("k", modifiers: .command)
+                Button("Next Agent Needing Attention") { model.jumpNextAttention() }
+                    .keyboardShortcut("a", modifiers: [.command, .shift])
             }
             CommandMenu("Session") {
                 Button("Disconnect") { disconnectSelected() }

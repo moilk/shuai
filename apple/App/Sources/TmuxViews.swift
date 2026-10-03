@@ -262,11 +262,17 @@ struct QuickSwitcherView: View {
 
     private func row(_ item: SwitcherItem) -> some View {
         let badge = PaneBadge.aggregate(panes: item.paneIDs, host: item.hostID.uuidString, provider: model.badges)
+        let detail = switcher.agentDetail(for: item)
         return HStack(spacing: 10) {
             Image(systemName: icon(item.kind)).frame(width: 22).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).font(.body).lineLimit(1)
                 Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if let detail {
+                    Text(verbatim: [AgentStatusBadge.label(for: detail.badge), detail.snippet].compactMap { $0 }.joined(separator: " \u{2014} "))
+                        .font(.caption).foregroundStyle(detail.badge.tint.color).lineLimit(1)
+                        .accessibilityIdentifier("quick-switcher-agent-\(item.id)")
+                }
             }
             Spacer()
             BadgeView(badge: badge)

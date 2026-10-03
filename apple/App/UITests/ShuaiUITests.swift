@@ -132,4 +132,65 @@ final class ShuaiUITests: XCTestCase {
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         XCTAssertTrue(pane.exists)
     }
+
+    // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
+
+    @MainActor
+    private func launchWithAgentFixture() -> XCUIApplication {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-debugAgentFixture"]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    func testAgentBadgeAppearsOnTheWindowOfTheWaitingPane() throws {
+        let app = launchWithAgentFixture()
+        let window = app.buttons["tmux-window-@0"]  // pane %0 hosts the transcript's session
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        let badge = window.images["pane-badge"]
+        XCTAssertTrue(badge.waitForExistence(timeout: 10), "needs-approval badge on the window of %0")
+        XCTAssertEqual(badge.label, "needs approval")
+        // the other window has no agent
+        XCTAssertFalse(app.buttons["tmux-window-@1"].images["pane-badge"].exists)
+        // host row: waiting count
+        XCTAssertTrue(app.staticTexts["host-waiting-count"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testPermissionCardAllowRecordsRespondAndThenDisappears() throws {
+        let app = launchWithAgentFixture()
+        let card = app.descendants(matching: .any)["permission-card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 12), "card for the first permission request")
+        XCTAssertTrue(app.staticTexts["permission-context"].firstMatch.label.contains("fixture-host"))
+        let allow = app.buttons["permission-allow"].firstMatch
+        XCTAssertTrue(allow.exists)
+        allow.tap()
+        let log = app.descendants(matching: .any)["agent-fixture-log"]
+        let deadline = Date().addingTimeInterval(10)
+        var value = ""
+        while Date() < deadline {
+            value = (log.value as? String) ?? ""
+            if value.contains("respond") { break }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        XCTAssertTrue(value.contains("2604cfd0b70257a07ee252c762c243d8"), "respond for the request id: \(value)")
+        XCTAssertTrue(value.contains("allow"))
+        // the agent reports permission_resolved: the card goes away
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: card)
+        waitForExpectations(timeout: 10)
+    }
+
+    @MainActor
+    func testQuickSwitcherRanksTheWaitingSessionFirst() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@0"].images["pane-badge"].waitForExistence(timeout: 12))
+        _ = openQuickSwitcher(app)
+        let first = app.buttons["quick-switcher-row-0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(first.label.contains("shell"), "waiting window first, got: \(first.label)")
+        XCTAssertTrue(first.label.contains("Needs permission"), "row shows the agent state: \(first.label)")
+    }
 }

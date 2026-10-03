@@ -2,6 +2,7 @@
 import Foundation
 import ShuaiApp
 import ShuaiCore
+import ShuaiTerminal
 
 /// DEBUG-only launch arguments for scripted simulator runs (never compiled into Release):
 ///
@@ -18,6 +19,7 @@ enum DebugLaunch {
         return args[i + 1]
     }
 
+    static var agentFixture: Bool { args.contains("-debugAgentFixture") }
     static var autoAccept: Bool { args.contains("-debugAutoAcceptHostKey") }
     static var sendAfterConnect: String? { value(of: "-debugSendAfterConnect") }
 
@@ -58,7 +60,7 @@ enum DebugLaunch {
     /// `-debugTmuxFixture`: a host whose tmux tree is a made-up topology (no server involved), for UI tests.
     @MainActor
     static func applyTmuxFixtureIfRequested(model: AppModel) {
-        guard args.contains("-debugTmuxFixture") else { return }
+        guard args.contains("-debugTmuxFixture") || agentFixture else { return }
         var profile = HostProfile(name: "fixture-host", host: "example.invalid", username: "alice")
         profile.tmux = TmuxPrefs(enabled: true, sessionName: "main")
         if model.hosts.host(id: profile.id) == nil { try? model.hosts.add(profile) }
@@ -76,7 +78,30 @@ enum DebugLaunch {
         ])
         model.sessions.controller(for: profile).tmux.debugSeed(topology: FfiTopology(sessions: [main, other]), viewedSessionID: "$0")
         model.selection = profile.id
+        if agentFixture {
+            let remote = FixtureAgentRemote()
+            fixtureRemote = remote
+            Task { await model.agentHub.hostConnected(id: profile.id, remote: remote) }
+        }
     }
+
+    /// `-debugAgentFixture`: fake terminal content (no server, no real data) with a prompt on the last row.
+    @MainActor
+    static func seedFixtureTerminal(_ engine: GhosttyEngine) async {
+        for _ in 0 ..< 60 where !engine.gridSize.isValid { try? await Task.sleep(for: .milliseconds(50)) }
+        let rows = max(engine.gridSize.rows, 10)
+        var text = "\u{1B}[2J\u{1B}[H"
+        let lines = [
+            "$ swift build", "Compiling ShuaiApp (42 files)", "Build complete! (12.3s)", "$ claude",
+            "\u{1B}[38;5;208m\u{25CF}\u{1B}[0m Refactor the session store", "  \u{23BF} Read(Sources/Store.swift)",
+            "  \u{23BF} Bash(rm -rf build && swift build)",
+        ]
+        for l in lines { text += l + "\r\n" }
+        text += "\u{1B}[\(rows);1H\u{1B}[1m\u{276F}\u{1B}[0m "
+        engine.feed(Data(text.utf8))
+    }
+
+    @MainActor static var fixtureRemote: FixtureAgentRemote?
 
     @MainActor
     static func autoAnswer(controller: SessionController) async {
