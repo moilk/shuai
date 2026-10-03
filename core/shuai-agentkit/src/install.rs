@@ -144,11 +144,7 @@ impl InstallPlan {
             match probe.codex_notify.as_deref().map(str::trim) {
                 None | Some("") => steps.push(InstallStep::ConfigureCodexNotify {
                     config_path: CODEX_CONFIG.into(),
-                    notify_argv: vec![
-                        agent_abs.clone(),
-                        "hook".into(),
-                        "codex-turn-complete".into(),
-                    ],
+                    notify_argv: vec![agent_abs.clone(), "codex-notify".into()],
                 }),
                 Some(existing) if existing.contains("shuai-agent") => {}
                 Some(existing) => steps.push(InstallStep::CodexNotifyConflict {
