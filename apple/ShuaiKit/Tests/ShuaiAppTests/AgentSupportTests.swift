@@ -166,6 +166,23 @@ struct PermissionPreviewTests {
         #expect(p.truncated)
     }
 
+    @Test func hugeInputsAreCapped() {
+        let huge = String(repeating: "x", count: 2_000_000)
+        let cmd = PermissionPreview.make(toolName: "Bash", inputJSON: "{\"command\":\"\(huge)\"}")
+        #expect(cmd.kind == .command)
+        #expect(cmd.primary.count <= PermissionPreview.maxPrimaryChars + 1)
+        #expect(cmd.truncated)
+
+        let write = PermissionPreview.make(toolName: "Write", inputJSON: "{\"file_path\":\"/x\",\"content\":\"\(huge)\"}")
+        #expect(write.diff.allSatisfy { if case .added(let s) = $0 { s.count <= PermissionPreview.maxLineChars + 1 } else { false } })
+        #expect(write.truncated)
+
+        let other = PermissionPreview.make(toolName: "Mcp", inputJSON: "{\"a\":\"\(huge)\"}")
+        #expect(other.primary.count <= PermissionPreview.maxPrimaryChars + 1)
+        let bad = PermissionPreview.make(toolName: "Bash", inputJSON: huge)
+        #expect(bad.primary.count <= PermissionPreview.maxPrimaryChars + 1)
+    }
+
     @Test func otherToolsAndBadJSONFallBack() {
         let p = PermissionPreview.make(toolName: "WebFetch", inputJSON: #"{"url":"https://x.dev"}"#)
         #expect(p.kind == .other)
