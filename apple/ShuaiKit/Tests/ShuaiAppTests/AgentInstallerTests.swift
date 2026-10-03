@@ -152,7 +152,7 @@ struct AgentInstallerTests {
         let inst = installer(remote)
         let report = await inst.run(probe: try await inst.probe())
         #expect(report.ok)
-        let merged = remote.uploads.get.first { $0.path == "/home/u/.claude/settings.json" }
+        let merged = remote.uploads.get.first { $0.path == "/home/u/.claude/settings.json.shuai-tmp" }
         let text = String(decoding: merged?.data ?? Data(), as: UTF8.self)
         #expect(text.contains("\"model\""))
         #expect(text.contains("echo mine"))
@@ -161,12 +161,45 @@ struct AgentInstallerTests {
         #expect(remote.ran(containing: "plugin marketplace").isEmpty)
     }
 
+    @Test func settingsAreReplacedAtomicallyAndTheBackupIsNeverOverwritten() async throws {
+        let remote = host(
+            probe: probeText(claude: nil), files: ["/home/u/.claude/settings.json": "{}"])
+        let inst = installer(remote)
+        _ = await inst.run(probe: try await inst.probe())
+        let cmds = remote.commands.get
+        // Written beside the target, then renamed over it.
+        #expect(remote.uploads.get.contains { $0.path == "/home/u/.claude/settings.json.shuai-tmp" })
+        #expect(!remote.uploads.get.contains { $0.path == "/home/u/.claude/settings.json" })
+        let replace = cmds.first { $0.contains("mv -f /home/u/.claude/settings.json.shuai-tmp") }
+        #expect(replace?.contains("[ -L /home/u/.claude/settings.json ]") == true, "symlinks are written through")
+        // The first backup wins: a second install must not replace the original copy.
+        let backup = cmds.first { $0.contains("settings.json.shuai-bak") && $0.contains("cp ") }
+        #expect(backup == "[ -e /home/u/.claude/settings.json.shuai-bak ] || cp /home/u/.claude/settings.json /home/u/.claude/settings.json.shuai-bak")
+        // Backup happens before the replacement.
+        let iBackup = cmds.firstIndex { $0 == backup }
+        let iReplace = cmds.firstIndex { $0 == replace }
+        #expect(iBackup != nil && iReplace != nil && iBackup! < iReplace!)
+    }
+
+    @Test func hostileHomeIsQuotedInEveryCommand() async throws {
+        let probe = probeText(claude: nil).replacingOccurrences(of: "home=/home/u", with: "home=/ho me/it's $x `y`")
+        let remote = host(probe: probe)
+        let inst = installer(remote)
+        let report = await inst.run(probe: try await inst.probe())
+        #expect(report.ok)
+        for c in remote.commands.get where c.contains("ho me") {
+            // every occurrence of the home must sit inside single quotes ('it'\\''s' form)
+            #expect(c.contains("'/ho me/it'\\''s $x `y`"), "unquoted hostile path in: \(c)")
+        }
+        #expect(remote.commands.get.contains { $0.contains("ho me") })
+    }
+
     @Test func noClaudeAndNoSettingsFileCreatesIt() async throws {
         let remote = host(probe: probeText(claude: nil))
         let inst = installer(remote)
         let report = await inst.run(probe: try await inst.probe())
         #expect(report.ok)
-        #expect(remote.uploads.get.contains { $0.path == "/home/u/.claude/settings.json" })
+        #expect(remote.uploads.get.contains { $0.path == "/home/u/.claude/settings.json.shuai-tmp" })
         #expect(remote.commands.get.contains("mkdir -p /home/u/.claude"))
     }
 
@@ -178,7 +211,7 @@ struct AgentInstallerTests {
         let report = await inst.run(probe: try await inst.probe())
         #expect(report.ok)
         #expect(report.warnings.contains { $0.contains("settings.json") })
-        #expect(remote.uploads.get.contains { $0.path == "/home/u/.claude/settings.json" })
+        #expect(remote.uploads.get.contains { $0.path == "/home/u/.claude/settings.json.shuai-tmp" })
     }
 
     @Test func existingMarketplaceRegistrationDoesNotBlockInstall() async throws {
@@ -235,7 +268,7 @@ struct AgentInstallerTests {
             probe: try await inst.probe(), options: InstallOptions(codexConflict: .replace))
         #expect(report.ok)
         #expect(report.conflicts.isEmpty)
-        let up = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml" }
+        let up = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml.shuai-tmp" }
         #expect(String(decoding: up?.data ?? Data(), as: UTF8.self)
             == "notify = [\"/home/u/.shuai/bin/shuai-agent\", \"codex-notify\"]\nmodel = \"x\"\n")
     }
@@ -245,7 +278,7 @@ struct AgentInstallerTests {
         let inst = installer(remote)
         let report = await inst.run(probe: try await inst.probe())
         #expect(report.ok)
-        let up = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml" }
+        let up = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml.shuai-tmp" }
         let upText = String(decoding: up?.data ?? Data(), as: UTF8.self)
         #expect(upText.hasPrefix("notify = [\"/home/u/.shuai/bin/shuai-agent\", \"codex-notify\"]\n"))
     }
@@ -290,12 +323,12 @@ struct AgentInstallerTests {
         let cmds = remote.commands.get
         #expect(cmds.contains("/home/u/.local/bin/claude plugin uninstall shuai@shuai"))
         #expect(cmds.contains("/home/u/.local/bin/claude plugin marketplace remove shuai"))
-        #expect(cmds.contains { $0.contains("sed -i.shuai-bak") && $0.contains("~/.tmux.conf") })
+        #expect(cmds.contains { $0.contains("awk") && $0.contains("~/.tmux.conf") })
         #expect(cmds.contains("rm -rf /home/u/.shuai/bin /home/u/.shuai/plugin-marketplace"))
-        let s = remote.uploads.get.first { $0.path == "/home/u/.claude/settings.json" }
+        let s = remote.uploads.get.first { $0.path == "/home/u/.claude/settings.json.shuai-tmp" }
         let sText = String(decoding: s?.data ?? Data(), as: UTF8.self)
         #expect(!sText.contains("shuai-agent"))
-        let c = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml" }
+        let c = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml.shuai-tmp" }
         #expect(String(decoding: c?.data ?? Data(), as: UTF8.self) == "model = 1\n")
     }
 
