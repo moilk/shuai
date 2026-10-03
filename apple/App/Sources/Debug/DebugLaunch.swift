@@ -89,6 +89,7 @@ enum DebugLaunch {
     @MainActor
     static func seedFixtureTerminal(_ engine: GhosttyEngine) async {
         for _ in 0 ..< 60 where !engine.gridSize.isValid { try? await Task.sleep(for: .milliseconds(50)) }
+        try? await Task.sleep(for: .milliseconds(1200))  // let the first layout settle
         let rows = max(engine.gridSize.rows, 10)
         var text = "\u{1B}[2J\u{1B}[H"
         let lines = [

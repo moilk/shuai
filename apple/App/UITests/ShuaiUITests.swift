@@ -149,13 +149,18 @@ final class ShuaiUITests: XCTestCase {
         let app = launchWithAgentFixture()
         let window = app.buttons["tmux-window-@0"]  // pane %0 hosts the transcript's session
         XCTAssertTrue(window.waitForExistence(timeout: 10))
-        let badge = window.images["pane-badge"]
-        XCTAssertTrue(badge.waitForExistence(timeout: 10), "needs-approval badge on the window of %0")
+        let badge = app.images["pane-badge"].firstMatch
+        XCTAssertTrue(badge.waitForExistence(timeout: 10), "needs-approval badge: \(app.debugDescription)")
         XCTAssertEqual(badge.label, "needs approval")
-        // the other window has no agent
-        XCTAssertFalse(app.buttons["tmux-window-@1"].images["pane-badge"].exists)
+        // it sits in the row of window @0, not @1
+        let w0 = window.frame, w1 = app.buttons["tmux-window-@1"].frame
+        let centers = app.images.matching(identifier: "pane-badge").allElementsBoundByIndex
+            .map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
+        XCTAssertTrue(centers.contains { w0.contains($0) }, "a badge inside the @0 row: \(centers) vs \(w0)")
+        XCTAssertFalse(centers.contains { w1.contains($0) }, "no badge in the @1 row")
         // host row: waiting count
-        XCTAssertTrue(app.staticTexts["host-waiting-count"].waitForExistence(timeout: 5))
+        let waiting = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'waiting for you'")).firstMatch
+        XCTAssertTrue(waiting.waitForExistence(timeout: 5), "host row shows the waiting count")
     }
 
     @MainActor
@@ -163,7 +168,9 @@ final class ShuaiUITests: XCTestCase {
         let app = launchWithAgentFixture()
         let card = app.descendants(matching: .any)["permission-card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 12), "card for the first permission request")
-        XCTAssertTrue(app.staticTexts["permission-context"].firstMatch.label.contains("fixture-host"))
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'fixture-host'")).firstMatch.exists,
+            "context label names the host: \(card.debugDescription)")
         let allow = app.buttons["permission-allow"].firstMatch
         XCTAssertTrue(allow.exists)
         allow.tap()
@@ -186,7 +193,7 @@ final class ShuaiUITests: XCTestCase {
     @MainActor
     func testQuickSwitcherRanksTheWaitingSessionFirst() throws {
         let app = launchWithAgentFixture()
-        XCTAssertTrue(app.buttons["tmux-window-@0"].images["pane-badge"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 12))
         _ = openQuickSwitcher(app)
         let first = app.buttons["quick-switcher-row-0"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))

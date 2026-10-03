@@ -78,6 +78,7 @@ public struct PermissionCardView: View {
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permission-card")
     }
 
