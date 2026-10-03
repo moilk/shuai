@@ -1,5 +1,6 @@
 //! Client session, PTY shell and exec channels.
 
+use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -23,6 +24,8 @@ pub struct ExecOutput {
     pub stderr: Vec<u8>,
     /// Exit status, if the server reported one.
     pub exit_status: Option<u32>,
+    /// Name of the signal (without `SIG`, e.g. `KILL`) that terminated the command, if any.
+    pub exit_signal: Option<String>,
 }
 
 /// One event from an [`ExecChannel`].
@@ -34,6 +37,8 @@ pub enum ExecEvent {
     Stderr(Vec<u8>),
     /// The remote command exited with this status.
     ExitStatus(u32),
+    /// The remote command was terminated by this signal (name without `SIG`, e.g. `KILL`).
+    ExitSignal(String),
 }
 
 /// Maximum keyboard-interactive rounds before the method is considered failed.
@@ -183,19 +188,26 @@ impl Session {
     /// Opens a PTY-backed interactive shell.
     pub async fn open_shell(&self, pty: PtyRequest) -> Result<ShellChannel> {
         let mut ch = self.handle.channel_open_session().await?;
-        ch.request_pty(true, &pty.term, pty.cols, pty.rows, 0, 0, &[])
-            .await?;
-        await_reply(&mut ch).await?;
-        for (k, v) in &pty.env {
-            // Servers commonly refuse unlisted variables; never fail the shell over it.
-            ch.set_env(false, k.as_str(), v.as_str()).await?;
+        let setup: Result<()> = async {
+            ch.request_pty(true, &pty.term, pty.cols, pty.rows, 0, 0, &[])
+                .await?;
+            await_reply(&mut ch).await?;
+            for (k, v) in &pty.env {
+                // Servers commonly refuse unlisted variables; never fail the shell over it.
+                ch.set_env(false, k.as_str(), v.as_str()).await?;
+            }
+            ch.request_shell(true).await?;
+            await_reply(&mut ch).await
         }
-        ch.request_shell(true).await?;
-        await_reply(&mut ch).await?;
+        .await;
+        if let Err(e) = setup {
+            let _ = ch.close().await;
+            return Err(e);
+        }
         let (read, write) = ch.split();
         Ok(ShellChannel {
             read: Mutex::new(read),
-            write,
+            write: Writer::new(write),
             closed: CloseFlag::new(),
         })
     }
@@ -209,7 +221,13 @@ impl Session {
                 ExecEvent::Stdout(d) => out.stdout.extend(d),
                 ExecEvent::Stderr(d) => out.stderr.extend(d),
                 ExecEvent::ExitStatus(c) => out.exit_status = Some(c),
+                ExecEvent::ExitSignal(n) => out.exit_signal = Some(n),
             }
+        }
+        // Output that merely stopped (session died, channel dropped under us) must not look
+        // like a command that finished without reporting a status.
+        if !ch.peer_closed.load(Ordering::SeqCst) {
+            return Err(SshError::Disconnected);
         }
         Ok(out)
     }
@@ -217,13 +235,21 @@ impl Session {
     /// Starts `cmd` and returns a channel streaming its output as it is produced.
     pub async fn exec_stream(&self, cmd: &str) -> Result<ExecChannel> {
         let mut ch = self.handle.channel_open_session().await?;
-        ch.exec(true, cmd.as_bytes().to_vec()).await?;
-        await_reply(&mut ch).await?;
+        let setup: Result<()> = async {
+            ch.exec(true, cmd.as_bytes().to_vec()).await?;
+            await_reply(&mut ch).await
+        }
+        .await;
+        if let Err(e) = setup {
+            let _ = ch.close().await;
+            return Err(e);
+        }
         let (read, write) = ch.split();
         Ok(ExecChannel {
             read: Mutex::new(read),
-            write,
+            write: Writer::new(write),
             closed: CloseFlag::new(),
+            peer_closed: AtomicBool::new(false),
         })
     }
 
@@ -394,10 +420,56 @@ impl CloseFlag {
     }
 }
 
+/// Write half of a channel that closes the remote channel when dropped without an explicit
+/// [`Writer::close`]; otherwise a dropped channel would leave the remote process running.
+struct Writer {
+    half: Option<ChannelWriteHalf<Msg>>,
+    close_sent: AtomicBool,
+}
+
+impl Writer {
+    fn new(half: ChannelWriteHalf<Msg>) -> Self {
+        Self {
+            half: Some(half),
+            close_sent: AtomicBool::new(false),
+        }
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.close_sent.store(true, Ordering::SeqCst);
+        self.half
+            .as_ref()
+            .expect("present until drop")
+            .close()
+            .await
+            .map_err(|_| SshError::ChannelClosed)
+    }
+}
+
+impl Deref for Writer {
+    type Target = ChannelWriteHalf<Msg>;
+    fn deref(&self) -> &Self::Target {
+        self.half.as_ref().expect("present until drop")
+    }
+}
+
+impl Drop for Writer {
+    fn drop(&mut self) {
+        if self.close_sent.load(Ordering::SeqCst) {
+            return;
+        }
+        if let (Some(half), Ok(rt)) = (self.half.take(), tokio::runtime::Handle::try_current()) {
+            rt.spawn(async move {
+                let _ = half.close().await;
+            });
+        }
+    }
+}
+
 /// Interactive PTY shell channel. All methods take `&self`.
 pub struct ShellChannel {
     read: Mutex<ChannelReadHalf>,
-    write: ChannelWriteHalf<Msg>,
+    write: Writer,
     closed: CloseFlag,
 }
 
@@ -446,18 +518,17 @@ impl ShellChannel {
     /// Closes the channel. Pending [`read`](Self::read) calls end with `None`.
     pub async fn close(&self) -> Result<()> {
         self.closed.set();
-        self.write
-            .close()
-            .await
-            .map_err(|_| SshError::ChannelClosed)
+        self.write.close().await
     }
 }
 
 /// Streaming exec channel (long-running commands such as `tmux -C`).
 pub struct ExecChannel {
     read: Mutex<ChannelReadHalf>,
-    write: ChannelWriteHalf<Msg>,
+    write: Writer,
     closed: CloseFlag,
+    /// Set once the peer's orderly `Close` was seen (as opposed to the session vanishing).
+    peer_closed: AtomicBool,
 }
 
 impl ExecChannel {
@@ -473,7 +544,16 @@ impl ExecChannel {
                 ChannelMsg::ExitStatus { exit_status } => {
                     return Some(ExecEvent::ExitStatus(exit_status));
                 }
-                ChannelMsg::Close => return None,
+                ChannelMsg::ExitSignal { signal_name, .. } => {
+                    return Some(ExecEvent::ExitSignal(match signal_name {
+                        russh::Sig::Custom(c) => c,
+                        other => format!("{other:?}"),
+                    }));
+                }
+                ChannelMsg::Close => {
+                    self.peer_closed.store(true, Ordering::SeqCst);
+                    return None;
+                }
                 // Keep reading past EOF: the exit status may still follow.
                 _ => {}
             }
@@ -494,10 +574,7 @@ impl ExecChannel {
     /// Closes the channel.
     pub async fn close(&self) -> Result<()> {
         self.closed.set();
-        self.write
-            .close()
-            .await
-            .map_err(|_| SshError::ChannelClosed)
+        self.write.close().await
     }
 }
 

@@ -285,6 +285,14 @@ impl russh::server::Handler for Srv {
                     let _ = handle.close(channel).await;
                 });
             }
+            "sig" => {
+                let _ = handle.data(channel, b"x".to_vec()).await;
+                let _ = handle
+                    .exit_signal_request(channel, russh::Sig::KILL, false, "".into(), "en".into())
+                    .await;
+                let _ = handle.eof(channel).await;
+                let _ = handle.close(channel).await;
+            }
             // Accept and then stay silent forever.
             "hold" => {}
             // Emit some output, then kill the connection without an exit status.

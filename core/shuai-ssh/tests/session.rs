@@ -431,6 +431,7 @@ async fn exec_stream_yields_events_over_time() {
             ExecEvent::Stdout(d) => stdout.extend(d),
             ExecEvent::ExitStatus(c) => exit = Some(c),
             ExecEvent::Stderr(_) => panic!("unexpected stderr"),
+            ExecEvent::ExitSignal(s) => panic!("unexpected signal {s}"),
         }
     }
     assert_eq!(
@@ -537,4 +538,15 @@ async fn exec_interrupted_by_disconnect_is_an_error_not_a_success() {
         .unwrap();
     let r = timeout(T, s.exec("cut")).await.unwrap();
     assert_eq!(r, Err(SshError::Disconnected));
+}
+
+#[tokio::test]
+async fn exec_reports_exit_signal() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let out = s.exec("sig").await.unwrap();
+    assert_eq!(out.exit_status, None);
+    assert_eq!(out.exit_signal.as_deref(), Some("KILL"));
 }
