@@ -364,6 +364,9 @@ public final class TmuxMonitor {
 
     // MARK: - Refresh
 
+    /// True while a refresh is queued behind the debounce timer or running (tests wait for idle).
+    var isRefreshBusy: Bool { refreshing || refreshTask != nil }
+
     private func scheduleRefresh() {
         if refreshing { refreshAgain = true; return }
         guard refreshTask == nil else { return } // a refresh is already queued: this burst joins it

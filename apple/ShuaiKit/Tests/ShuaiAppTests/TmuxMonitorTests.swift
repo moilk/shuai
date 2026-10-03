@@ -164,7 +164,7 @@ final class ManualSleeper: @unchecked Sendable {
         #expect(timer.calls == 1)
         #expect(server.listPanesCount == 1)
         timer.fire()
-        #expect(await waitUntil(timeout: .seconds(20)) { server.listPanesCount == 2 })
+        #expect(await waitUntil(timeout: .seconds(20)) { server.listPanesCount == 2 && !monitor.isRefreshBusy })
 
         // burst 2 after the window: a fresh timer and exactly one more refresh
         for i in 0 ..< 3 { exec.emit("%window-add @\(20 + i)\n") }
@@ -172,7 +172,7 @@ final class ManualSleeper: @unchecked Sendable {
         #expect(timer.calls == 2)
         #expect(server.listPanesCount == 2)
         timer.fire()
-        #expect(await waitUntil(timeout: .seconds(20)) { server.listPanesCount == 3 })
+        #expect(await waitUntil(timeout: .seconds(20)) { server.listPanesCount == 3 && !monitor.isRefreshBusy })
         await barrier()
         #expect(timer.calls == 2)
         #expect(server.listPanesCount == 3)
