@@ -1,5 +1,13 @@
 //! Shared protocol types between the app and shuai-agent.
 
+/// Wire protocol version shared by the app and shuai-agent.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// Crate version.
+pub fn version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

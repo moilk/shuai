@@ -2,6 +2,16 @@
 
 uniffi::setup_scaffolding!();
 
+#[uniffi::export]
+pub fn ping() -> String {
+    "pong".to_string()
+}
+
+#[uniffi::export]
+pub fn core_version() -> String {
+    shuai_proto::version().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
