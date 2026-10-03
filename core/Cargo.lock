@@ -2084,6 +2084,7 @@ dependencies = [
  "serde_json",
  "shuai-proto",
  "shuai-tmux",
+ "tempfile",
 ]
 
 [[package]]
