@@ -274,6 +274,6 @@ fn plugin_and_settings_helpers() {
     assert!(merge_claude_settings("[".into(), "/a".into()).is_err());
     let lines = vec!["# >>> shuai >>>".to_string(), "# <<< shuai <<<".to_string()];
     assert!(append_tmux_block_command("~/.tmux.conf".into(), lines).contains("grep -qF"));
-    assert!(remove_tmux_block_command("~/.tmux.conf".into()).contains("sed -i"));
+    assert!(remove_tmux_block_command("~/.tmux.conf".into()).contains("awk"));
     assert!(plugin_install_commands("/c/claude".into())[0].contains("moilk/shuai"));
 }

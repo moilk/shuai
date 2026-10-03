@@ -70,7 +70,7 @@ jobs:
           c=[x for rt,v in sorted(d.items()) if "iOS" in rt for x in v if "iPad" in x["name"]]
           print(c[-1]["udid"] if c else "")')
           if [ -z "$UDID" ]; then echo "no iPad simulator available"; exit 1; fi
-          xcodebuild test -scheme Shuai -destination "platform=iOS Simulator,id=$UDID"
+          SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai -destination "platform=iOS Simulator,id=$UDID"
 
   agent-build:
     runs-on: ubuntu-latest
