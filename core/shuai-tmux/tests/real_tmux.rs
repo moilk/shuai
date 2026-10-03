@@ -15,10 +15,14 @@ use shuai_tmux::{Direction, Target, TmuxCommand, TmuxTopology, TmuxVersion, Wind
 const SOCKET: &str = "shuaim4";
 
 fn tmux_bin() -> Option<String> {
-    ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
-        .iter()
-        .find(|p| std::path::Path::new(p).exists())
-        .map(|s| s.to_string())
+    [
+        "/opt/homebrew/bin/tmux",
+        "/usr/local/bin/tmux",
+        "/usr/bin/tmux",
+    ]
+    .iter()
+    .find(|p| std::path::Path::new(p).exists())
+    .map(|s| s.to_string())
 }
 
 struct Server {
@@ -40,8 +44,7 @@ impl Server {
     }
     fn base(&self) -> Command {
         let mut c = Command::new(&self.bin);
-        c.env_remove("TMUX")
-            .args(["-L", SOCKET, "-f", "/dev/null"]);
+        c.env_remove("TMUX").args(["-L", SOCKET, "-f", "/dev/null"]);
         c
     }
     fn run(&self, c: &TmuxCommand) -> String {
@@ -93,12 +96,23 @@ fn builders_drive_a_real_server() {
         assert_eq!(s.windows.len(), 2);
         let second = s.windows.iter().find(|w| w.name == "second").unwrap();
         assert!(second.active);
-        assert!(second.panes[0].current_path.ends_with("/tmp") || second.panes[0].current_path.contains("tmp"));
+        assert!(
+            second.panes[0].current_path.ends_with("/tmp")
+                || second.panes[0].current_path.contains("tmp")
+        );
 
         // split in the pane's cwd, both directions
         let pane = second.panes[0].id;
-        srv.run(&cmd::split_window(&Target::pane(pane), Direction::Horizontal, Some("/tmp")));
-        srv.run(&cmd::split_window(&Target::pane(pane), Direction::Vertical, None));
+        srv.run(&cmd::split_window(
+            &Target::pane(pane),
+            Direction::Horizontal,
+            Some("/tmp"),
+        ));
+        srv.run(&cmd::split_window(
+            &Target::pane(pane),
+            Direction::Vertical,
+            None,
+        ));
         let t = srv.topology();
         let second = session(&t, "main")
             .windows
@@ -206,9 +220,9 @@ fn control_channel_without_a_pty_gives_events_and_replies() {
     let Some(bin) = tmux_bin() else { return };
     serial(|| {
         let mut srv = Server::start(bin);
-        let version = TmuxVersion::parse(&String::from_utf8(
-            srv.base().arg("-V").output().unwrap().stdout,
-        ).unwrap())
+        let version = TmuxVersion::parse(
+            &String::from_utf8(srv.base().arg("-V").output().unwrap().stdout).unwrap(),
+        )
         .unwrap();
         let mut ctl = spawn_control(&srv, "main");
         let mut c = TmuxController::new("main", version);
@@ -221,8 +235,14 @@ fn control_channel_without_a_pty_gives_events_and_replies() {
         // our own pid via display-message in the control client's context
         let (tok, line) = c.send(&cmd::display_message(None, "#{client_pid}"));
         writeln!(ctl.child.stdin.as_mut().unwrap(), "{line}").unwrap();
-        let ev = pump_until(&ctl, &mut c, |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)));
-        let ControllerEvent::Reply(r) = ev.last().unwrap() else { unreachable!() };
+        let ev = pump_until(
+            &ctl,
+            &mut c,
+            |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)),
+        );
+        let ControllerEvent::Reply(r) = ev.last().unwrap() else {
+            unreachable!()
+        };
         assert!(r.ok);
         assert_eq!(r.lines, vec![ctl.child.id().to_string()]);
 
@@ -233,8 +253,14 @@ fn control_channel_without_a_pty_gives_events_and_replies() {
         // commands over the channel work and are replied to
         let (tok, line) = c.send(&cmd::list_panes_all());
         writeln!(ctl.child.stdin.as_mut().unwrap(), "{line}").unwrap();
-        let ev = pump_until(&ctl, &mut c, |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)));
-        let ControllerEvent::Reply(r) = ev.last().unwrap() else { unreachable!() };
+        let ev = pump_until(
+            &ctl,
+            &mut c,
+            |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)),
+        );
+        let ControllerEvent::Reply(r) = ev.last().unwrap() else {
+            unreachable!()
+        };
         let t = parse_topology(&r.lines.join("\n")).unwrap();
         assert_eq!(session(&t, "main").windows.len(), 2);
 
@@ -242,7 +268,11 @@ fn control_channel_without_a_pty_gives_events_and_replies() {
         let wid: WindowId = session(&t, "main").windows[1].id;
         let (_, line) = c.send(&cmd::rename_window(&Target::window(wid), "viactl"));
         writeln!(ctl.child.stdin.as_mut().unwrap(), "{line}").unwrap();
-        pump_until(&ctl, &mut c, |e| matches!(e, ControllerEvent::WindowRenamed { name, .. } if name == "viactl"));
+        pump_until(
+            &ctl,
+            &mut c,
+            |e| matches!(e, ControllerEvent::WindowRenamed { name, .. } if name == "viactl"),
+        );
 
         let _ = ctl.child.kill();
         let _ = ctl.child.wait();
@@ -259,11 +289,24 @@ fn switch_client_moves_the_pty_client_not_the_control_client() {
     serial(|| {
         let mut srv = Server::start(bin.clone());
         srv.run(&TmuxCommand::from_argv(
-            ["new-session", "-d", "-s", "other"].map(String::from).to_vec(),
+            ["new-session", "-d", "-s", "other"]
+                .map(String::from)
+                .to_vec(),
         ));
         // a real PTY client (script allocates the pty); stdin stays open
         let pty = Command::new("/usr/bin/script")
-            .args(["-q", "/dev/null", &bin, "-L", SOCKET, "-f", "/dev/null", "attach", "-t", "=main:"])
+            .args([
+                "-q",
+                "/dev/null",
+                &bin,
+                "-L",
+                SOCKET,
+                "-f",
+                "/dev/null",
+                "attach",
+                "-t",
+                "=main:",
+            ])
             .env_remove("TMUX")
             .env("TERM", "xterm-256color")
             .stdin(Stdio::piped())
@@ -285,8 +328,14 @@ fn switch_client_moves_the_pty_client_not_the_control_client() {
         let list = |c: &mut TmuxController, ctl: &mut Control| {
             let (tok, line) = c.send(&cmd::list_clients());
             writeln!(ctl.child.stdin.as_mut().unwrap(), "{line}").unwrap();
-            let ev = pump_until(ctl, c, |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)));
-            let ControllerEvent::Reply(r) = ev.last().unwrap() else { unreachable!() };
+            let ev = pump_until(
+                ctl,
+                c,
+                |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)),
+            );
+            let ControllerEvent::Reply(r) = ev.last().unwrap() else {
+                unreachable!()
+            };
             parse_clients(&r.lines.join("\n")).unwrap()
         };
         let clients = list(&mut c, &mut ctl);
@@ -298,8 +347,14 @@ fn switch_client_moves_the_pty_client_not_the_control_client() {
         // switch through the control channel, targeting the PTY client
         let (tok, line) = c.send(&cmd::switch_client(&tty, &Target::session("other")));
         writeln!(ctl.child.stdin.as_mut().unwrap(), "{line}").unwrap();
-        let ev = pump_until(&ctl, &mut c, |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)));
-        let ControllerEvent::Reply(r) = ev.last().unwrap() else { unreachable!() };
+        let ev = pump_until(
+            &ctl,
+            &mut c,
+            |e| matches!(e, ControllerEvent::Reply(r) if r.token == Some(tok)),
+        );
+        let ControllerEvent::Reply(r) = ev.last().unwrap() else {
+            unreachable!()
+        };
         assert!(r.ok, "{r:?}");
 
         let after = list(&mut c, &mut ctl);

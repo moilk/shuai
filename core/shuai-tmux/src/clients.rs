@@ -89,8 +89,16 @@ pub fn parse_clients(text: &str) -> Result<Vec<TmuxClient>, ClientParseError> {
             session_name: f[3].to_string(),
             control_mode: f[4] == "1",
             created: num("created", f[5])?,
-            width: num("width", f[6])? as u32,
-            height: num("height", f[7])? as u32,
+            width: if f[6].is_empty() {
+                0
+            } else {
+                num("width", f[6])? as u32
+            },
+            height: if f[7].is_empty() {
+                0
+            } else {
+                num("height", f[7])? as u32
+            },
         });
     }
     Ok(out)

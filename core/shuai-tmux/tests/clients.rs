@@ -15,6 +15,18 @@ fn zoom_pane_is_resize_pane_z() {
 }
 
 #[test]
+fn select_pane_direction_uses_the_flag_letters() {
+    use shuai_tmux::cmd::PaneDirection::*;
+    let t = Target::window(shuai_tmux::WindowId(1));
+    for (d, f) in [(Left, "-L"), (Right, "-R"), (Up, "-U"), (Down, "-D")] {
+        assert_eq!(
+            cmd::select_pane_direction(&t, d).argv(),
+            ["select-pane", f, "-t", "@1"]
+        );
+    }
+}
+
+#[test]
 fn window_navigation_targets_the_exact_session() {
     let s = Target::session("my proj");
     assert_eq!(
@@ -34,10 +46,16 @@ fn window_navigation_targets_the_exact_session() {
 #[test]
 fn switch_client_targets_the_given_client_tty_not_the_caller() {
     let c = cmd::switch_client("/dev/ttys004", &Target::session_id(SessionId(2)));
-    assert_eq!(c.argv(), ["switch-client", "-c", "/dev/ttys004", "-t", "$2"]);
+    assert_eq!(
+        c.argv(),
+        ["switch-client", "-c", "/dev/ttys004", "-t", "$2"]
+    );
     // a tty containing odd characters stays one argument in every rendering
     let c = cmd::switch_client("/dev/pts/1 x", &Target::session("a"));
-    assert_eq!(c.to_shell(), "tmux switch-client -c '/dev/pts/1 x' -t '=a:'");
+    assert_eq!(
+        c.to_shell(),
+        "tmux switch-client -c '/dev/pts/1 x' -t '=a:'"
+    );
 }
 
 #[test]
