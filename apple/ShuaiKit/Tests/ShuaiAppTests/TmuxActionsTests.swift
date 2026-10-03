@@ -181,6 +181,35 @@ import Testing
         await monitor.stop()
     }
 
+    @Test func killPaneAsksFirstAndOnlyRunsWhenConfirmed() async throws {
+        let (server, monitor, actions) = await rig()
+        actions.requestKillPane("%1")
+        #expect(actions.pendingConfirmation?.kind == .killPane(id: "%1"))
+        #expect(actions.pendingConfirmation?.message.contains("window") == false)
+        #expect(sent(server).isEmpty)
+        try await actions.confirmPending()
+        #expect(sent(server) == [try tmuxKillPane(paneId: "%1").controlLine])
+        #expect(actions.pendingConfirmation == nil)
+        await monitor.stop()
+    }
+
+    @Test func killingTheOnlyPaneWarnsThatTheWindowCloses() async throws {
+        let (server, monitor, actions) = await rig()
+        actions.requestKillPane("%0")
+        #expect(actions.pendingConfirmation?.message.contains("window") == true)
+        actions.cancelPending()
+        try await actions.confirmPending()
+        #expect(sent(server).isEmpty)
+        await monitor.stop()
+    }
+
+    @Test func killingAnUnknownPaneAsksNothing() async throws {
+        let (_, monitor, actions) = await rig()
+        actions.requestKillPane("%99")
+        #expect(actions.pendingConfirmation == nil)
+        await monitor.stop()
+    }
+
     // MARK: shortcut dispatch
 
     @Test func shortcutsMapToActions() async throws {

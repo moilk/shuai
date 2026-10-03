@@ -265,6 +265,72 @@ import Testing
         await monitor.stop()
     }
 
+    @Test func restartForgetsAStalePtyClientEvenIfItsTtyStillExists() async throws {
+        let (conn, server, monitor) = rig()
+        server.clients.with { $0 = clientsText(ptyTTY: "/dev/ttys002") }
+        await monitor.start(on: conn)
+        #expect(monitor.ptyClientTty == "/dev/ttys002")
+        // reconnect: the old client lingers (or its tty was reused by another client); our new PTY
+        // client and control client are newer
+        let after = [
+            ["/dev/ttys002", "100", "$0", "main", "0", "1000", "90", "20"].joined(separator: Self.us),
+            ["/dev/ttys007", "300", "$0", "main", "0", "2000", "120", "40"].joined(separator: Self.us),
+            ["", "4343", "$0", "main", "1", "2001", "80", "24"].joined(separator: Self.us),
+        ].joined(separator: "\n") + "\n"
+        server.clients.with { $0 = after }
+        server.controlPid.with { $0 = 4343 }
+        await monitor.start(on: conn)
+        #expect(monitor.ptyClientTty == "/dev/ttys007")
+        await monitor.stop()
+    }
+
+    @Test func lateEventsOfAReplacedChannelAreIgnored() async throws {
+        let (conn, _, monitor) = rig()
+        await monitor.start(on: conn)
+        let old = conn.execStreams.get[0]
+        let window = try #require(monitor.topology?.sessions[0].windows.first)
+        let original = window.name
+        await monitor.start(on: conn)
+        #expect(conn.execStreams.get.count == 2)
+        old.emit("%window-renamed \(window.id) stale\n")
+        old.emit("%exit\n")
+        try? await Task.sleep(for: .milliseconds(80))
+        #expect(monitor.topology?.sessions[0].windows.first?.name == original)
+        #expect(monitor.state == .live)
+        await monitor.stop()
+    }
+
+    func twoClientsOnOneSession() -> String {
+        // the laptop's client matches our size; ours does not (the terminal was resized meanwhile)
+        [
+            ["/dev/ttys002", "100", "$0", "main", "0", "1000", "120", "40"].joined(separator: Self.us),
+            ["/dev/ttys003", "200", "$0", "main", "0", "1500", "100", "30"].joined(separator: Self.us),
+            ["", "4242", "$0", "main", "1", "1501", "80", "24"].joined(separator: Self.us),
+        ].joined(separator: "\n") + "\n"
+    }
+
+    @Test func otherClientsOnTheSameSessionAreToldApartByTheSshProcessTree() async throws {
+        let (conn, server, monitor) = rig()
+        server.clients.with { $0 = twoClientsOnOneSession() }
+        let base = conn.execHandler.get
+        // pid ppid: 4242 and 200 share sshd session 900; 100 hangs off another connection (777)
+        let ps = "1 0\n800 1\n900 800\n777 800\n4240 900\n4242 4240\n199 900\n200 199\n99 777\n100 99\n"
+        conn.execHandler.with { $0 = { cmd in
+            cmd.hasPrefix("ps ") ? ExecResult(stdout: Data(ps.utf8), stderr: Data(), exitStatus: 0, exitSignal: nil) : base(cmd)
+        } }
+        await monitor.start(on: conn)
+        #expect(monitor.ptyClientTty == "/dev/ttys003")
+        await monitor.stop()
+    }
+
+    @Test func ambiguousClientsFallBackToTheHeuristicWhenPsFails() async throws {
+        let (conn, server, monitor) = rig()
+        server.clients.with { $0 = twoClientsOnOneSession() }
+        await monitor.start(on: conn) // the default handler answers `ps` with garbage
+        #expect(monitor.ptyClientTty == "/dev/ttys002") // size match
+        await monitor.stop()
+    }
+
     @Test func noPtyClientFoundLeavesTargetingEmpty() async throws {
         let (conn, _, monitor) = rig()
         await monitor.start(on: conn)

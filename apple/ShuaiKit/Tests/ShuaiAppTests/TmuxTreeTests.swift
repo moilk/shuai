@@ -70,4 +70,20 @@ import Testing
         #expect(tabs.map(\.title) == ["1: shell", "2: claude"])
         #expect(tabs[1].badge != nil)
     }
+
+    @Test func loadingPlaceholderCoversTheGapBetweenConnectAndFirstTopology() {
+        func shows(_ c: SessionState, _ m: TmuxMonitor.State, tmux: Bool = true, tree: Bool = false) -> Bool {
+            TmuxTree.showsLoadingPlaceholder(session: c, tmuxEnabled: tmux, monitor: m, hasTopology: tree)
+        }
+        #expect(shows(.connected, .idle))
+        #expect(shows(.connected, .starting))
+        #expect(!shows(.connected, .live, tree: true))
+        #expect(!shows(.connected, .starting, tree: true)) // the stale tree stays while restarting
+        #expect(shows(.connected, .live)) // live, first list-panes still on its way
+        #expect(!shows(.connected, .unavailable("x")))
+        #expect(!shows(.connected, .ended(nil)))
+        #expect(!shows(.connected, .idle, tmux: false))
+        #expect(!shows(.idle, .idle))
+        #expect(!shows(.failed(SessionError(kind: .network, message: "x")), .idle))
+    }
 }
