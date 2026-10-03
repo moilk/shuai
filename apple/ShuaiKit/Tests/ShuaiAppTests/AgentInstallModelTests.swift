@@ -52,6 +52,23 @@ struct AgentInstallModelTests {
         #expect(!remote.uploads.get.isEmpty)
     }
 
+    @Test func uninstallModeInspectPreviewsTheRemovalAndRemoveRunsIt() async {
+        let installedProbe = probe().replacingOccurrences(
+            of: "tmux_version=tmux 3.4", with: "tmux_version=tmux 3.4\nagent_version=shuai-agent 0.1.0\nplugin_installed=1")
+        let remote = FakeAgentRemote { cmd in cmd.contains("__SHUAI_PROBE_BEGIN__") ? .ok(installedProbe) : .ok("{}") }
+        let m = AgentInstallModel(installer: AgentInstaller(remote: remote, binaries: FakeBinaries()), mode: .uninstall)
+        await m.inspect()
+        #expect(m.phase == .ready)
+        #expect(m.preview.map(\.title).contains("Remove Claude Code plugin"))
+        #expect(m.preview.map(\.title).contains("Remove shuai-agent"))
+        #expect(m.preview.allSatisfy { $0.status == .wouldRun })
+        #expect(remote.commands.get.count == 1, "only the probe ran")
+        #expect(remote.uploads.get.isEmpty)
+        await m.uninstall()
+        #expect(m.phase == .finished)
+        #expect(remote.commands.get.contains { $0.contains("rm -rf") })
+    }
+
     @Test func probeFailureIsShown() async {
         let remote = FakeAgentRemote { _ in .fail(255, "Connection reset") }
         let m = model(remote)
