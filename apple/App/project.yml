@@ -8,6 +8,9 @@ settings:
     SWIFT_VERSION: "6.0"
     TARGETED_DEVICE_FAMILY: "2"
     CODE_SIGNING_ALLOWED: "NO"
+    # Simulator builds are ad-hoc signed so the Keychain works (-34018 without entitlements).
+    CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]: "YES"
+    CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"
     GENERATE_INFOPLIST_FILE: "YES"
     EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64  # xcframework sim slice is arm64 only
 packages:
@@ -23,11 +26,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: ShuaiKit
-        product: ShuaiCore
-      - package: ShuaiKit
-        product: ShuaiPlatform
-      - package: ShuaiKit
-        product: ShuaiTerminal
+        product: ShuaiApp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai
@@ -40,17 +39,22 @@ targets:
     sources: [Tests]
     dependencies:
       - target: Shuai
-      - package: ShuaiKit
-        product: ShuaiCore
-      - package: ShuaiKit
-        product: ShuaiPlatform
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai.tests
+  ShuaiUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: Shuai
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai.uitests
 schemes:
   Shuai:
     build:
       targets:
         Shuai: all
     test:
-      targets: [ShuaiTests]
+      targets: [ShuaiTests, ShuaiUITests]

@@ -54,3 +54,10 @@ xcode-select may point at CommandLineTools. Always prefix Xcode commands with
 - Not CI-testable: real-device IME (see ADR "Pending manual IME test").
 - Theme: `TerminalTheme` (default `claudeDark`; `claudeLight`) is applied as both Ghostty light/dark variants, so the terminal ignores system appearance; contrast (WCAG >= 3.0 for colors 1-15) is unit-tested. Scrollback is capped via `scrollback-limit` (bytes; `ScrollbackPolicy`, 10k lines default).
 - Hardware Option->Alt is mapped in `TerminalView.pressesBegan` (`OptionAsAlt`), not trusted to Ghostty's `macos-option-as-alt` on iOS. Claude strip: Yes=`1`, Always=`2`, No=Esc (see AccessoryBarModel comments).
+
+## App shell (ShuaiApp target + apple/App)
+- `ShuaiApp` (ShuaiKit, Swift 6, testable with `swift test`): `HostProfile`/`HostStore` (JSON v1 in Application Support, atomic, legacy-array migration, refuses newer schema), `KeyLibrary`, `PasswordStore` (Keychain service `io.github.moilk.shuai.passwords`), `AppSettings`, `TmuxLaunch`, `SessionController` (@MainActor @Observable state machine over `ConnectionFactory`/`RemoteConnection`/`RemoteShell`; fakes in tests, `LiveConnectionFactory` in the app), `SessionRegistry`.
+- tmux attaches via `Connection.openPtyExec("tmux new -A -s 'NAME'")` (FFI `open_pty_exec`: exec on a PTY channel, nothing typed). Reconnect uses `ReconnectController.adopt()` after the first connect; reattach nudges the window height to force a tmux redraw.
+- The app links only the `ShuaiApp` product (linking several dynamic package products duplicates classes at runtime). Simulator builds are ad-hoc signed (`CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"`) because the Keychain fails with -34018 unsigned.
+- DEBUG launch args: `-uiTesting` (ephemeral stores), `-debugHostFile <json {name,host,port,user,keyPath,tmuxSession?}>`, `-debugAutoAcceptHostKey`, `-debugSendAfterConnect <text>` (results via NSLog `[debug]`). Keep the JSON outside the repo.
+- Gotcha: `swift test` for ShuaiAppTests real-SSH tests needs `SHUAI_FFI_TESTKIT=1` (xcframework built with the testkit).
