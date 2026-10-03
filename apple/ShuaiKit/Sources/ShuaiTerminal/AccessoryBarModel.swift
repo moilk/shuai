@@ -12,7 +12,15 @@ public enum AccessoryButton: Sendable, Hashable {
     case esc, tab, ctrl, alt
     case up, down, left, right
     case symbol(Character)
-    // Claude Code strip
+    // Claude Code strip. Mapping against Claude Code's permission dialog
+    // ("1. Yes / 2. Yes, and don't ask again ... / 3. No, and tell Claude what to do differently (esc)"):
+    //  - Yes    -> "1": always the first option, selects immediately.
+    //  - Always -> "2": the second option. In two-option dialogs (Yes/No) "2" is No, i.e. the failure mode
+    //              is a denial, never an unintended approval.
+    //  - No     -> Esc, NOT "3": Esc is the dialog's own cancel ("(esc)") in every dialog regardless of
+    //              how many options it has, and can never select an approval. "3" would do nothing in a
+    //              2-option dialog and cannot be the same key everywhere.
+    // Outside a dialog "1"/"2" are typed into the prompt as text (harmless, visible).
     case claudeYes, claudeAlways, claudeNo, claudeModeCycle, claudeInterrupt, claudeCtrlC, claudeSlash
 
     public static let standardRow: [AccessoryButton] = [

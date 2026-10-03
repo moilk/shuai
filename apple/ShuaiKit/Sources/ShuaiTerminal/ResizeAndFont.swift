@@ -90,3 +90,15 @@ public struct FontSizeModel: Sendable, Equatable {
         return delta
     }
 }
+
+/// Scrollback sizing. Ghostty's `scrollback-limit` is in bytes (per surface), not lines; a cell is 8 bytes,
+/// so lines are converted with a typical iPad terminal width. The default (10k lines) is ~12.8 MB.
+public enum ScrollbackPolicy {
+    public static let defaultLines = 10_000
+    public static let assumedColumns = 160
+    public static let bytesPerCell = 8
+
+    public static func limitBytes(lines: Int) -> Int {
+        max(lines, 0) * assumedColumns * bytesPerCell
+    }
+}

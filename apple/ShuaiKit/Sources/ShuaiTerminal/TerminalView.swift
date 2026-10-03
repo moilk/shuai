@@ -12,6 +12,11 @@ public final class TerminalView: UITerminalView {
     public var keySink: ((KeyStroke) -> Void)?
     /// Take first responder as soon as the view is in a window.
     public var autoFocus = false
+    /// Hardware Option+<char> sends ESC-prefixed Meta (see `OptionAsAlt`). Set by the engine.
+    public var altSendsEscape = true
+
+    /// Presses already delivered as Alt chords; their release/cancel must not reach libghostty.
+    private var optionChordPresses = Set<UIPress>()
 
     public lazy var dockedAccessoryBar: KeyboardAccessoryBar = makeBar(.docked)
     public lazy var floatingAccessoryBar: KeyboardAccessoryBar = makeBar(.compactFloating)
@@ -39,6 +44,42 @@ public final class TerminalView: UITerminalView {
         if window != nil, autoFocus {
             DispatchQueue.main.async { [weak self] in _ = self?.acquireProgrammaticFocus() }
         }
+    }
+
+    // MARK: - Hardware Option as Alt
+
+    override public func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard altSendsEscape else { return super.pressesBegan(presses, with: event) }
+        var rest = presses
+        for press in presses {
+            guard let key = press.key, let stroke = Self.optionStroke(for: key) else { continue }
+            if markedTextRange != nil { unmarkText() }
+            optionChordPresses.insert(press)
+            rest.remove(press)
+            keySink?(stroke)
+        }
+        if !rest.isEmpty { super.pressesBegan(rest, with: event) }
+    }
+
+    override public func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let rest = presses.subtracting(optionChordPresses)
+        optionChordPresses.subtract(presses)
+        if !rest.isEmpty { super.pressesEnded(rest, with: event) }
+    }
+
+    override public func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let rest = presses.subtracting(optionChordPresses)
+        optionChordPresses.subtract(presses)
+        if !rest.isEmpty { super.pressesCancelled(rest, with: event) }
+    }
+
+    private static func optionStroke(for key: UIKey) -> KeyStroke? {
+        let f = key.modifierFlags
+        return OptionAsAlt.stroke(
+            base: key.charactersIgnoringModifiers,
+            shift: f.contains(.shift), control: f.contains(.control),
+            command: f.contains(.command), option: f.contains(.alternate)
+        )
     }
 
     // MARK: - Bars

@@ -74,8 +74,8 @@ struct GhosttyEngineHardeningTests {
     @Test func pasteIsDeliveredExactlyOnce() async {
         let h = await EngineHarness()
         await h.feed("\u{1B}[?2004h")
-        UIPasteboard.general.string = "once"
-        h.engine.view.paste(nil)
+        // (UIPasteboard reads are not authorized in the test host, so drive the paste path directly.)
+        h.engine.paste("once")
         await h.engine.settle()
         let count = h.inputString.components(separatedBy: "once").count - 1
         #expect(count == 1, "\(h.inputString.debugDescription)")
@@ -121,7 +121,7 @@ struct GhosttyEngineHardeningTests {
         h.window.rootViewController?.view.layoutIfNeeded()
         await h.engine.settle()
         #expect(h.engine.gridSize.isValid)
-        #expect(h.resizes.allSatisfy(\.isValid))
+        #expect(h.resizes.allSatisfy { $0.isValid })
     }
 
     @Test func resizeBurstIsDebouncedToTheFinalGrid() async throws {
@@ -138,7 +138,7 @@ struct GhosttyEngineHardeningTests {
         #expect(h.resizes.count == before + 1)
         #expect(h.resizes.last == TerminalGridSize(cols: 60, rows: 20))
         #expect(h.engine.gridSize == TerminalGridSize(cols: 60, rows: 20))
-        #expect(h.resizes.allSatisfy(\.isValid))
+        #expect(h.resizes.allSatisfy { $0.isValid })
     }
 
     // MARK: memory

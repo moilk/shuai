@@ -24,8 +24,11 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
     /// Ghostty config).
     public let altSendsEscape: Bool
 
+    /// Active theme. The terminal ignores the system light/dark appearance.
+    public private(set) var theme: TerminalTheme
+
     private let session: InMemoryTerminalSession
-    private let controller: TerminalController
+    let controller: TerminalController
     private var debouncer: ResizeDebouncer!
     private var metrics: TerminalGridMetrics?
     private var fixedGrid: TerminalGridSize?
@@ -34,23 +37,36 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
 
     private final class InputBox: @unchecked Sendable { var handler: ((Data) -> Void)? }
 
-    public init(fontSize: Float = 12, resizeDebounce: TimeInterval = 0.15, altSendsEscape: Bool = true) {
+    public init(
+        fontSize: Float = 12,
+        resizeDebounce: TimeInterval = 0.15,
+        altSendsEscape: Bool = true,
+        theme: TerminalTheme = .default,
+        scrollbackLines: Int = ScrollbackPolicy.defaultLines
+    ) {
         let box = InputBox()
         self.altSendsEscape = altSendsEscape
+        self.theme = theme
         session = InMemoryTerminalSession(
             write: { data in DispatchQueue.main.async { box.handler?(data) } },
             resize: { _ in }
         )
-        controller = TerminalController { b in
+        controller = TerminalController(theme: theme.ghostty) { b in
             b.withFontSize(fontSize)
             b.withWindowPaddingX(0)
             b.withWindowPaddingY(0)
             // Remote OSC 52 clipboard writes must be confirmed by the app, never silent.
             b.withCustom("clipboard-write", "ask")
             b.withCustom("clipboard-read", "ask")
+            // Kept for Ghostty's own encoder; TerminalView also maps hardware Option chords (OptionAsAlt)
+            // because the iOS embedding is not known to honour this key.
             b.withCustom("macos-option-as-alt", altSendsEscape ? "true" : "false")
+            // Bounded history: Ghostty's limit is in bytes per surface.
+            b.withCustom("scrollback-limit", String(ScrollbackPolicy.limitBytes(lines: scrollbackLines)))
         }
         view = TerminalView(frame: CGRect(x: 0, y: 0, width: 900, height: 700))
+        view.altSendsEscape = altSendsEscape
+        view.overrideUserInterfaceStyle = theme.isDark ? .dark : .light
         super.init()
         debouncer = ResizeDebouncer(delay: resizeDebounce) { [weak self] in self?.onResize?($0) }
         box.handler = { [weak self] data in self?.onInput?(data) }
@@ -64,8 +80,17 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
 
     public func feed(_ data: Data) { session.receive(data) }
 
+    /// Switches theme live (both Ghostty light/dark variants, so system appearance never matters).
+    public func apply(theme: TerminalTheme) {
+        guard theme != self.theme else { return }
+        self.theme = theme
+        view.overrideUserInterfaceStyle = theme.isDark ? .dark : .light
+        controller.setTheme(theme.ghostty)
+    }
+
     public func resize(cols: Int, rows: Int) {
-        fixedGrid = TerminalGridSize(cols: cols, rows: rows)
+        // A 0x0 grid is never valid (division by zero in reflow, zero-size PTY).
+        fixedGrid = TerminalGridSize(cols: max(cols, 1), rows: max(rows, 1))
         if widthConstraint == nil {
             view.translatesAutoresizingMaskIntoConstraints = false
             widthConstraint = view.widthAnchor.constraint(equalToConstant: 900)
@@ -146,7 +171,9 @@ extension GhosttyEngine:
     public func terminalDidResize(_ size: TerminalGridMetrics) {
         metrics = size
         let grid = TerminalGridSize(cols: Int(size.columns), rows: Int(size.rows))
-        if grid != gridSize {
+        // A collapsed view (keyboard animation, zero-size Stage Manager frame) reports 0 cols/rows:
+        // keep the last valid grid and never forward it.
+        if grid.isValid, grid != gridSize {
             gridSize = grid
             debouncer.submit(grid)
         }
@@ -179,6 +206,26 @@ extension GhosttyEngine:
 
     public func terminalDidRequestOpenURL(_ url: String, kind _: TerminalOpenURLKind) {
         if let u = URL(string: url) { onHyperlink?(u) }
+    }
+}
+// MARK: - Theme -> Ghostty
+
+extension TerminalTheme {
+    /// Ghostty config for this theme.
+    var ghosttyConfiguration: TerminalConfiguration {
+        TerminalConfiguration { b in
+            b.withBackground(background.hexString)
+            b.withForeground(foreground.hexString)
+            b.withCursorColor(cursor.hexString)
+            b.withSelectionBackground(selection.hexString)
+            b.withSelectionForeground(foreground.hexString)
+            for (i, c) in palette.enumerated() { b.withPalette(i, color: c.hexString) }
+        }
+    }
+
+    /// Same colors for Ghostty's light and dark variants: the terminal never follows system appearance.
+    var ghostty: GhosttyTerminal.TerminalTheme {
+        GhosttyTerminal.TerminalTheme(light: ghosttyConfiguration, dark: ghosttyConfiguration)
     }
 }
 #endif
