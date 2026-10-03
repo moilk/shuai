@@ -56,7 +56,7 @@ public final class TmuxMonitor {
     public private(set) var viewedSessionID: String?
     public let sessionName: String
 
-    @ObservationIgnored private let ptySize: () -> (cols: UInt32, rows: UInt32)
+    @ObservationIgnored private let ptySize: @MainActor () -> (cols: UInt32, rows: UInt32)
     @ObservationIgnored private let debounce: Duration
     @ObservationIgnored private let pollInterval: Duration
     @ObservationIgnored private let attachRetries: Int
@@ -95,7 +95,7 @@ public final class TmuxMonitor {
 
     public init(
         sessionName: String,
-        ptySize: @escaping () -> (cols: UInt32, rows: UInt32) = { (80, 24) },
+        ptySize: @escaping @MainActor () -> (cols: UInt32, rows: UInt32) = { (80, 24) },
         debounce: Duration = .milliseconds(100), pollInterval: Duration = .seconds(2),
         attachRetries: Int = 8, attachRetryDelay: Duration = .milliseconds(150)
     ) {
@@ -114,6 +114,7 @@ public final class TmuxMonitor {
     /// reconnect with the new connection.
     public func start(on connection: RemoteConnection) async {
         await shutdown()
+        guard !Task.isCancelled else { return }
         generation += 1
         let gen = generation
         conn = connection

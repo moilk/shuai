@@ -37,7 +37,13 @@ public final class SessionController {
 
     public var windowTitle: String { title.isEmpty ? profile.name : title }
 
+    /// tmux side channel (topology for the sidebar, window/pane actions). Started on every
+    /// successful tmux attach, stopped when the transport goes away.
+    public let tmux: TmuxMonitor
+    public let tmuxActions: TmuxActions
+
     @ObservationIgnored var stateLog: [SessionState] = [.idle]
+    @ObservationIgnored private var tmuxStartTask: Task<Void, Never>?
 
     // Dependencies
     @ObservationIgnored private let engine: any TerminalEngine
@@ -111,6 +117,12 @@ public final class SessionController {
         self.sleep = sleep
         self.now = now
         self.redrawNudgeDelay = redrawNudgeDelay
+        let monitor = TmuxMonitor(sessionName: profile.tmux.sessionName, ptySize: { [engine] in
+            let g = engine.gridSize
+            return g.isValid ? (UInt32(g.cols), UInt32(g.rows)) : (80, 24)
+        })
+        tmux = monitor
+        tmuxActions = TmuxActions(monitor: monitor)
         wireEngine()
     }
 
@@ -380,9 +392,21 @@ public final class SessionController {
         lastReconnectError = nil
         state = .connected
         onConnected?()
+        if useTmux { startTmuxMonitor(on: conn) }
 
         if reconnecting { redrawNudge(gen: gen) }
         if !useTmux, !reconnecting { typeStartupCommand() }
+    }
+
+    private func startTmuxMonitor(on conn: RemoteConnection) {
+        tmuxStartTask?.cancel()
+        let monitor = tmux
+        tmuxStartTask = Task { await monitor.start(on: conn) }
+    }
+
+    private func stopTmuxMonitor() async {
+        tmuxStartTask?.cancel(); tmuxStartTask = nil
+        if tmux.state != .idle { await tmux.stop() }
     }
 
     private func openRemoteShell(on conn: RemoteConnection, tmux: Bool) async throws -> RemoteShell {
@@ -450,6 +474,7 @@ public final class SessionController {
         guard gen == generation, let conn = connection else { return }
         tmuxUnavailable = true
         notice = Self.tmuxMissingNotice
+        await stopTmuxMonitor()
         commands?.finish(); commands = nil
         writerTask = nil
         eventsTask = nil
@@ -537,6 +562,7 @@ public final class SessionController {
         let s = shell, c = connection
         shell = nil
         connection = nil
+        await stopTmuxMonitor()
         await s?.close()
         await c?.disconnect()
     }

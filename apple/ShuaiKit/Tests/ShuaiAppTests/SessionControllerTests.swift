@@ -494,7 +494,9 @@ private struct Harness {
         }, factory: factory)
         await h.controller.connect()
         h.factory.last!.end(.io)
-        #expect(await waitUntil { sleeping.get == 1 })
+        #expect(await waitUntil {
+            if case .reconnecting(_, let at) = h.controller.state { sleeping.get == 1 && at != nil } else { false }
+        })
         guard case .reconnecting(let attempt, let retryAt) = h.controller.state else { Issue.record("expected reconnecting, got \(h.controller.state)"); return }
         #expect(attempt >= 1 && retryAt != nil)
 

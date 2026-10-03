@@ -31,6 +31,7 @@ private struct Harness {
         }
         var profile = HostProfile(name: "dev", host: host, username: "alice", auth: .password)
         profile.tmux.enabled = tmux
+        profile.tmux.sessionName = "main"
         let passwords = InMemoryPasswordStore()
         try? passwords.setPassword("pw", for: profile.id)
         let known = KnownHostsStore(fileURL: scratchURL("known_hosts"))
@@ -45,7 +46,7 @@ private struct Harness {
     @Test func connectingStartsTheControlChannelOnTheSameConnection() async {
         let h = Harness()
         await h.controller.connect()
-        #expect(await waitUntil { h.controller.tmux.state == .live })
+        #expect(await waitUntil { h.controller.tmux.state == .live && h.controller.tmux.topology != nil })
         let conn = h.factory.last!
         #expect(conn.execStreamCommands.get.count == 1)
         #expect(conn.opens.get.count == 1) // only the PTY is a shell channel
@@ -72,7 +73,7 @@ private struct Harness {
     @Test func disconnectingStopsTheMonitorAndKeepsTheLastTree() async {
         let h = Harness()
         await h.controller.connect()
-        #expect(await waitUntil { h.controller.tmux.state == .live })
+        #expect(await waitUntil { h.controller.tmux.state == .live && h.controller.tmux.topology != nil })
         await h.controller.disconnect()
         #expect(h.controller.tmux.state == .stopped)
         #expect(h.controller.tmux.topology != nil)
@@ -81,7 +82,7 @@ private struct Harness {
     @Test func theTmuxClientEndingStopsTheMonitor() async {
         let h = Harness()
         await h.controller.connect()
-        #expect(await waitUntil { h.controller.tmux.state == .live })
+        #expect(await waitUntil { h.controller.tmux.state == .live && h.controller.tmux.topology != nil })
         // the user detached / killed the session: the PTY command exits cleanly
         h.factory.last!.shell.emit(.exit(status: 0, signal: nil))
         h.factory.last!.shell.emit(.closed(reason: .remote))
@@ -92,7 +93,7 @@ private struct Harness {
     @Test func aReconnectRestartsTheMonitorOnTheNewConnection() async {
         let h = Harness()
         await h.controller.connect()
-        #expect(await waitUntil { h.controller.tmux.state == .live })
+        #expect(await waitUntil { h.controller.tmux.state == .live && h.controller.tmux.topology != nil })
         let first = h.factory.last!
         first.end(.io)
         #expect(await waitUntil { h.factory.attempts == 2 && h.controller.state == .connected })
@@ -107,7 +108,7 @@ private struct Harness {
     @Test func actionsAreAvailableOnTheController() async throws {
         let h = Harness()
         await h.controller.connect()
-        #expect(await waitUntil { h.controller.tmux.state == .live })
+        #expect(await waitUntil { h.controller.tmux.state == .live && h.controller.tmux.topology != nil })
         #expect(h.controller.tmuxActions.windows.count == 2)
         await h.controller.disconnect()
     }
