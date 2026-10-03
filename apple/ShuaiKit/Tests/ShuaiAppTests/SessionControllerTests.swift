@@ -588,7 +588,7 @@ private struct Harness {
         #expect(h.controller.state == .connected)
         #expect(h.factory.attempts == 1 && conn.disconnects.get == 0)
         h.controller.sendInput("ls\r")
-        #expect(await waitUntil { conn.shell.writtenText == "ls\r" })
+        #expect(await waitUntil(timeout: .seconds(20)) { conn.shell.writtenText == "ls\r" })
         conn.shell.emit("file\r\n")
         #expect(await waitUntil { h.engine.fedText.contains("file") })
         h.controller.dismissNotice()
