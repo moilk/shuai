@@ -222,6 +222,12 @@ mod tests {
     fn t(state: ReconnectState, action: ReconnectAction) -> Transition {
         Transition { state, action }
     }
+    fn dropped(uptime: Duration) -> ReconnectEvent {
+        E::Dropped { uptime }
+    }
+    fn connected(attempt: u32) -> ReconnectState {
+        S::Connected { attempt }
+    }
 
     #[test]
     fn failure_kind_retriable() {
@@ -272,7 +278,8 @@ mod tests {
                 d / 3
             }
         }
-        let p = ReconnectPolicy::with_jitter(Arc::new(Third));
+        let mut p = ReconnectPolicy::with_jitter(Arc::new(Third));
+        p.min_drop_delay = Duration::ZERO;
         let tr = p.transition(
             &S::Connecting { attempt: 3 },
             E::ConnectFailed(FailureKind::Network),
@@ -302,7 +309,7 @@ mod tests {
         for e in [
             E::ConnectOk,
             E::ConnectFailed(FailureKind::Network),
-            E::Dropped,
+            dropped(secs(100)),
             E::BackoffElapsed,
             E::NetworkChanged,
             E::AppForegrounded,
@@ -313,10 +320,10 @@ mod tests {
     }
 
     #[test]
-    fn connecting_ok_goes_connected() {
+    fn connecting_ok_goes_connected_carrying_the_attempt() {
         assert_eq!(
             p().transition(&S::Connecting { attempt: 4 }, E::ConnectOk),
-            t(S::Connected, A::None)
+            t(connected(4), A::None)
         );
     }
 
@@ -376,16 +383,45 @@ mod tests {
     }
 
     #[test]
+    fn max_attempts_zero_means_a_single_try_and_no_retries() {
+        let mut policy = p();
+        policy.max_attempts = Some(0);
+        // An explicit connect still makes one attempt...
+        assert_eq!(
+            policy.transition(&S::Idle, E::Connect),
+            t(S::Connecting { attempt: 1 }, A::StartConnect)
+        );
+        // ...but its failure is final, retriable or not.
+        assert_eq!(
+            policy.transition(
+                &S::Connecting { attempt: 1 },
+                E::ConnectFailed(FailureKind::Network)
+            ),
+            t(S::GaveUp, A::None)
+        );
+        // And so is a quick drop of a connection that came up.
+        assert_eq!(
+            policy.transition(&connected(1), dropped(Duration::ZERO)),
+            t(S::GaveUp, A::None)
+        );
+    }
+
+    #[test]
     fn connecting_ignores_redundant_triggers() {
         let s = S::Connecting { attempt: 2 };
-        for e in [
-            E::Connect,
-            E::Dropped,
-            E::BackoffElapsed,
-            E::NetworkChanged,
-            E::AppForegrounded,
-        ] {
+        for e in [E::Connect, dropped(secs(1)), E::BackoffElapsed] {
             assert_eq!(p().transition(&s, e), t(s, A::None), "{e:?}");
+        }
+    }
+
+    #[test]
+    fn connecting_network_change_or_foreground_restarts_the_attempt() {
+        for e in [E::NetworkChanged, E::AppForegrounded] {
+            assert_eq!(
+                p().transition(&S::Connecting { attempt: 3 }, e),
+                t(S::Connecting { attempt: 1 }, A::RestartConnect),
+                "{e:?}"
+            );
         }
     }
 
@@ -398,17 +434,82 @@ mod tests {
     }
 
     #[test]
-    fn connected_dropped_retries_immediately() {
+    fn stable_connection_dropping_reconnects_immediately_from_attempt_one() {
+        for uptime in [secs(10), secs(3600)] {
+            assert_eq!(
+                p().transition(&connected(5), dropped(uptime)),
+                t(S::Connecting { attempt: 1 }, A::StartConnect)
+            );
+        }
+    }
+
+    #[test]
+    fn quick_drop_backs_off_instead_of_hammering_the_server() {
+        let tr = p().transition(&connected(1), dropped(Duration::from_millis(200)));
         assert_eq!(
-            p().transition(&S::Connected, E::Dropped),
-            t(S::Connecting { attempt: 1 }, A::StartConnect)
+            tr,
+            t(
+                S::Backoff {
+                    attempt: 1,
+                    delay: secs(1)
+                },
+                A::ScheduleRetry(secs(1))
+            )
+        );
+        // Just below the stability threshold still counts as quick.
+        let tr = p().transition(&connected(1), dropped(Duration::from_millis(9_999)));
+        assert!(matches!(tr.action, A::ScheduleRetry(_)));
+    }
+
+    #[test]
+    fn quick_drop_applies_minimum_delay_even_with_small_jitter() {
+        struct Tiny;
+        impl Jitter for Tiny {
+            fn apply(&self, _: Duration) -> Duration {
+                Duration::from_millis(1)
+            }
+        }
+        let mut p = ReconnectPolicy::with_jitter(Arc::new(Tiny));
+        p.min_drop_delay = Duration::from_millis(500);
+        let tr = p.transition(&connected(1), dropped(Duration::ZERO));
+        assert_eq!(tr.action, A::ScheduleRetry(Duration::from_millis(500)));
+    }
+
+    #[test]
+    fn accept_then_drop_server_sees_growing_delays_not_a_tight_loop() {
+        let p = p();
+        let mut s = S::Idle;
+        let mut tr = p.transition(&s, E::Connect);
+        let mut delays = Vec::new();
+        for _ in 0..8 {
+            s = p.transition(&tr.state, E::ConnectOk).state;
+            tr = p.transition(&s, dropped(Duration::from_millis(50)));
+            let A::ScheduleRetry(d) = tr.action else {
+                panic!("quick drop must back off, got {tr:?}");
+            };
+            delays.push(d);
+            tr = p.transition(&tr.state, E::BackoffElapsed);
+            assert!(matches!(tr.state, S::Connecting { .. }));
+        }
+        assert_eq!(
+            delays,
+            vec![
+                secs(1),
+                secs(2),
+                secs(4),
+                secs(8),
+                secs(16),
+                secs(30),
+                secs(30),
+                secs(30)
+            ]
         );
     }
 
     #[test]
     fn connected_cancel_goes_idle_and_cancels() {
         assert_eq!(
-            p().transition(&S::Connected, E::UserCancel),
+            p().transition(&connected(1), E::UserCancel),
             t(S::Idle, A::Cancel)
         );
     }
@@ -424,8 +525,8 @@ mod tests {
             E::AppForegrounded,
         ] {
             assert_eq!(
-                p().transition(&S::Connected, e),
-                t(S::Connected, A::None),
+                p().transition(&connected(2), e),
+                t(connected(2), A::None),
                 "{e:?}"
             );
         }
@@ -440,6 +541,20 @@ mod tests {
                     delay: secs(4)
                 },
                 E::BackoffElapsed
+            ),
+            t(S::Connecting { attempt: 4 }, A::StartConnect)
+        );
+    }
+
+    #[test]
+    fn backoff_connect_means_retry_now_keeping_the_attempt_count() {
+        assert_eq!(
+            p().transition(
+                &S::Backoff {
+                    attempt: 3,
+                    delay: secs(4)
+                },
+                E::Connect
             ),
             t(S::Connecting { attempt: 4 }, A::StartConnect)
         );
@@ -481,10 +596,9 @@ mod tests {
             delay: secs(2),
         };
         for e in [
-            E::Connect,
             E::ConnectOk,
             E::ConnectFailed(FailureKind::Network),
-            E::Dropped,
+            dropped(secs(100)),
         ] {
             assert_eq!(p().transition(&s, e), t(s, A::None), "{e:?}");
         }
@@ -503,7 +617,7 @@ mod tests {
         for e in [
             E::ConnectOk,
             E::ConnectFailed(FailureKind::Network),
-            E::Dropped,
+            dropped(secs(100)),
             E::BackoffElapsed,
             E::NetworkChanged,
             E::AppForegrounded,
@@ -517,11 +631,11 @@ mod tests {
     }
 
     #[test]
-    fn full_scenario_drop_fail_fail_recover() {
+    fn full_scenario_stable_drop_fail_fail_recover() {
         let p = p();
-        let mut s = S::Connected;
+        let mut s = connected(1);
         let steps = [
-            (E::Dropped, S::Connecting { attempt: 1 }),
+            (dropped(secs(60)), S::Connecting { attempt: 1 }),
             (
                 E::ConnectFailed(FailureKind::Network),
                 S::Backoff {
@@ -538,11 +652,88 @@ mod tests {
                 },
             ),
             (E::NetworkChanged, S::Connecting { attempt: 1 }),
-            (E::ConnectOk, S::Connected),
+            (E::ConnectOk, connected(1)),
         ];
         for (e, want) in steps {
             s = p.transition(&s, e).state;
             assert_eq!(s, want, "{e:?}");
+        }
+    }
+
+    mod props {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn arb_event() -> impl Strategy<Value = ReconnectEvent> {
+            prop_oneof![
+                Just(E::Connect),
+                Just(E::ConnectOk),
+                prop_oneof![
+                    Just(FailureKind::Network),
+                    Just(FailureKind::Timeout),
+                    Just(FailureKind::AuthFailed),
+                    Just(FailureKind::HostKeyRejected),
+                    Just(FailureKind::Other),
+                ]
+                .prop_map(E::ConnectFailed),
+                (0u64..40_000).prop_map(|ms| E::Dropped {
+                    uptime: Duration::from_millis(ms)
+                }),
+                Just(E::BackoffElapsed),
+                Just(E::NetworkChanged),
+                Just(E::AppForegrounded),
+                Just(E::UserCancel),
+            ]
+        }
+
+        proptest! {
+            #[test]
+            fn invariants_hold_for_arbitrary_event_sequences(
+                events in proptest::collection::vec(arb_event(), 0..200),
+                max_attempts in proptest::option::of(0u32..6),
+                half_jitter in any::<bool>(),
+            ) {
+                let jitter: Arc<dyn Jitter> =
+                    if half_jitter { Arc::new(HalfJitter) } else { Arc::new(NoJitter) };
+                let mut policy = ReconnectPolicy::with_jitter(jitter);
+                policy.max_attempts = max_attempts;
+                let mut state = S::Idle;
+                for e in events {
+                    let tr = policy.transition(&state, e);
+                    // Delays never exceed the cap.
+                    if let A::ScheduleRetry(d) = tr.action {
+                        prop_assert!(d <= policy.cap, "{d:?}");
+                        prop_assert!(matches!(tr.state, S::Backoff { delay, .. } if delay == d));
+                    }
+                    if let S::Backoff { delay, attempt } = tr.state {
+                        prop_assert!(delay <= policy.cap);
+                        prop_assert!(attempt >= 1);
+                    }
+                    // GaveUp is only left through an explicit Connect (or the user cancelling).
+                    if state == S::GaveUp {
+                        match e {
+                            E::Connect => prop_assert_eq!(tr.state, S::Connecting { attempt: 1 }),
+                            E::UserCancel => prop_assert_eq!(tr.state, S::Idle),
+                            _ => prop_assert_eq!(tr.state, S::GaveUp),
+                        }
+                    }
+                    // Never start (or restart) an attempt while connected.
+                    if matches!(state, S::Connected { .. }) {
+                        prop_assert!(!matches!(tr.action, A::StartConnect | A::RestartConnect));
+                    }
+                    // Actions and resulting states agree.
+                    if matches!(tr.action, A::StartConnect | A::RestartConnect) {
+                        prop_assert!(matches!(tr.state, S::Connecting { .. }));
+                    }
+                    if let S::Connecting { attempt } = tr.state {
+                        prop_assert!(attempt >= 1);
+                        if let Some(m) = max_attempts.filter(|m| *m >= 1) {
+                            prop_assert!(attempt <= m, "attempt {attempt} > budget {m}");
+                        }
+                    }
+                    state = tr.state;
+                }
+            }
         }
     }
 }
