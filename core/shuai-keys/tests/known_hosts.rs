@@ -277,3 +277,54 @@ fn parse_never_panics_on_garbage() {
         let _ = kh.to_text();
     }
 }
+
+#[test]
+fn pathological_wildcard_pattern_does_not_blow_up() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let line = format!(
+            "{} {}\n",
+            "*a".repeat(30) + "*b",
+            ed().to_openssh().unwrap()
+        );
+        let kh = KnownHosts::parse(&line);
+        let st = kh.check(&"a".repeat(60), 22, &ed());
+        let _ = tx.send(st);
+    });
+    let st = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("glob matching must be linear-ish, not exponential");
+    assert_eq!(st, HostKeyStatus::Unknown);
+}
+
+#[test]
+fn add_entry_never_injects_lines_or_wildcards() {
+    for evil in [
+        "*",
+        "a b",
+        "x\nevil.example ssh-ed25519 AAAA",
+        "a,b",
+        "!x",
+        "?",
+        "@revoked",
+        "#c",
+    ] {
+        let line = add_entry(evil, 22, &ed(), false);
+        assert!(!line.contains('\n'), "{evil:?}");
+        let mut kh = KnownHosts::default();
+        kh.add(evil, 22, &ed(), false);
+        // The recorded entry must not trust unrelated hosts.
+        assert_eq!(
+            kh.check("unrelated.example", 22, &ed()),
+            HostKeyStatus::Unknown,
+            "{evil:?}"
+        );
+        assert_eq!(kh.to_text().lines().count(), 1, "{evil:?}");
+        // ...but must still be found again under the same host name.
+        assert_eq!(
+            kh.check(evil, 22, &ed()),
+            HostKeyStatus::Trusted,
+            "{evil:?}"
+        );
+    }
+}
