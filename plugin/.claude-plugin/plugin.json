@@ -1,6 +1,17 @@
 {
   "name": "shuai",
   "version": "0.1.0",
-  "description": "shuai: lets the shuai iPad terminal observe Claude Code sessions via hooks.",
-  "hooks": {}
+  "description": "shuai: lets the shuai iPad terminal observe Claude Code sessions and answer permission requests via hooks.",
+  "author": {
+    "name": "moilk"
+  },
+  "homepage": "https://github.com/moilk/shuai",
+  "repository": "https://github.com/moilk/shuai",
+  "license": "MIT",
+  "keywords": [
+    "ipad",
+    "tmux",
+    "hooks",
+    "notifications"
+  ]
 }

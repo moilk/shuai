@@ -1,0 +1,10 @@
+{
+  "type": "agent-turn-complete",
+  "thread-id": "b5f6c1c2-9e5c-4a7e-8f1a-2f4f0f3c9d11",
+  "turn-id": "12345",
+  "cwd": "/home/dev/proj",
+  "input-messages": [
+    "Rename foo to bar"
+  ],
+  "last-assistant-message": "Renamed foo to bar across 4 files."
+}
