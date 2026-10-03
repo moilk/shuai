@@ -56,6 +56,37 @@ import ShuaiTerminal
         #expect(await waitUntil { c.state == .disconnected(exitStatus: 3) })
     }
 
+    @Test func missingTmuxOnTheServerFallsBackToAPlainShell() async throws {
+        // The testkit answers unknown exec commands (like `tmux new -A ...`) with exit status 127.
+        let server = await startTestSshServer()
+        let (c, engine, known) = makeController(server, tmux: true)
+        try known.add(host: "127.0.0.1", port: server.port(), publicKeyLine: server.hostPublicKeyLine())
+        await c.connect()
+        #expect(await waitUntil { c.notice == SessionController.tmuxMissingNotice })
+        #expect(c.state == .connected)
+        engine.onInput?(Data("hello\r".utf8))
+        #expect(await waitUntil { engine.fedText.contains("hello") })
+        await c.disconnect()
+    }
+
+    @Test func askHostGetsTheHostKeyPromptBeforeThePasswordPrompt() async throws {
+        let server = await startTestSshServer()
+        var profile = HostProfile(name: "local", host: "127.0.0.1", port: Int(server.port()), username: server.username(), auth: .ask)
+        profile.tmux.enabled = false
+        let c = SessionController(
+            profile: profile, engine: FakeEngine(), factory: LiveConnectionFactory(), keys: InMemoryKeyStore(),
+            passwords: InMemoryPasswordStore(), knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")))
+        let task = Task { @MainActor in await c.connect() }
+        #expect(await waitUntil { c.pendingPrompt != nil })
+        guard case .hostKey = c.pendingPrompt else { Issue.record("host key must come first"); return }
+        c.answerHostKey(accept: true)
+        #expect(await waitUntil { c.pendingPrompt == .password(host: "127.0.0.1", username: server.username()) })
+        c.answerPassword(server.password())
+        await task.value
+        #expect(c.state == .connected)
+        await c.disconnect()
+    }
+
     @Test func wrongPasswordFailsWithAuthFailed() async throws {
         let server = await startTestSshServer()
         let (c, _, known) = makeController(server, password: "wrong")

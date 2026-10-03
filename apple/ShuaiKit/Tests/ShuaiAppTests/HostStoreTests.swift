@@ -137,6 +137,55 @@ private func sample(_ name: String = "dev", auth: HostAuth = .ask) -> HostProfil
         #expect(String(decoding: try Data(contentsOf: url), as: UTF8.self) == future)
     }
 
+    /// A store whose directory cannot be created (a regular file sits where the directory should be).
+    private func unwritableStore() throws -> HostStore {
+        let url = tempURL()
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: dir)
+        return HostStore(fileURL: url)
+    }
+
+    @Test func failedWriteDoesNotLeaveTheInMemoryListAheadOfDisk() throws {
+        let store = try unwritableStore()
+        #expect(throws: HostStoreError.self) { try store.add(sample()) }
+        #expect(store.hosts.isEmpty)
+    }
+
+    @Test func failedUpdateAndDeleteRollBack() throws {
+        let url = tempURL()
+        let store = HostStore(fileURL: url)
+        let p = sample("a")
+        try store.add(p)
+        try FileManager.default.removeItem(at: url.deletingLastPathComponent())
+        try Data("x".utf8).write(to: url.deletingLastPathComponent())
+        var edited = p
+        edited.name = "renamed"
+        #expect(throws: HostStoreError.self) { try store.update(edited) }
+        #expect(store.host(id: p.id)?.name == "a")
+        #expect(throws: HostStoreError.self) { try store.delete(id: p.id) }
+        #expect(store.hosts.count == 1)
+        #expect(throws: HostStoreError.self) { try store.markConnected(id: p.id) }
+        #expect(store.host(id: p.id)?.lastConnectedAt == nil)
+    }
+
+    @Test func manyConcurrentWritersNeverLoseOrCorruptEntries() async throws {
+        let url = tempURL()
+        let store = HostStore(fileURL: url)
+        await withTaskGroup(of: Void.self) { group in
+            for i in 0..<40 {
+                group.addTask { @MainActor in
+                    try? store.add(sample("h\(i)"))
+                    if let h = store.hosts.first { try? store.markConnected(id: h.id) }
+                }
+            }
+        }
+        #expect(store.hosts.count == 40)
+        let reloaded = HostStore(fileURL: url)
+        #expect(reloaded.loadError == nil)
+        #expect(Set(reloaded.hosts.map(\.name)) == Set((0..<40).map { "h\($0)" }))
+    }
+
     @Test func corruptFileSurfacesErrorAndKeepsBackup() throws {
         let url = tempURL()
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

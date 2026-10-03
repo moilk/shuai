@@ -63,7 +63,10 @@ enum ShellOpen: Equatable {
 }
 
 final class FakeConnection: RemoteConnection, @unchecked Sendable {
-    let shell = FakeShell()
+    private let shells = Locked<[FakeShell]>([FakeShell()])
+    private let handedOut = Locked(0)
+    /// The most recently opened shell (the pre-made first one before anything was opened).
+    var shell: FakeShell { shells.get.last! }
     let opens = Locked<[ShellOpen]>([])
     let disconnects = Locked(0)
     private let closedState = Locked<(reason: CloseReason?, waiters: [CheckedContinuation<CloseReason, Never>])>((nil, []))
@@ -72,13 +75,22 @@ final class FakeConnection: RemoteConnection, @unchecked Sendable {
     func openShell(cols: UInt32, rows: UInt32, term: String, env: [FfiEnvVar]) async throws -> RemoteShell {
         if let openError { throw openError }
         opens.with { $0.append(.shell(cols: cols, rows: rows, term: term, env: env)) }
-        return shell
+        return nextShell()
+    }
+
+    /// The first open gets the pre-made shell; later opens (fallbacks) get fresh ones.
+    private func nextShell() -> FakeShell {
+        let n = handedOut.with { $0 += 1; return $0 }
+        if n == 1 { return shells.get[0] }
+        let s = FakeShell()
+        shells.with { $0.append(s) }
+        return s
     }
 
     func openPtyExec(command: String, cols: UInt32, rows: UInt32, term: String, env: [FfiEnvVar]) async throws -> RemoteShell {
         if let openError { throw openError }
         opens.with { $0.append(.ptyExec(command: command, cols: cols, rows: rows, term: term, env: env)) }
-        return shell
+        return nextShell()
     }
 
     func closed() async -> CloseReason {
