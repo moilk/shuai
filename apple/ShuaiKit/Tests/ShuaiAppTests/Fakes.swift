@@ -147,6 +147,8 @@ final class FakeConnection: RemoteConnection, @unchecked Sendable {
     let disconnects = Locked(0)
     private let closedState = Locked<(reason: CloseReason?, waiters: [CheckedContinuation<CloseReason, Never>])>((nil, []))
     var openError: Error?
+    /// Delays every shell opened after the first (a slow server while falling back to a plain shell).
+    var laterOpenDelay: Duration?
 
     // exec / exec streams
     let execCommands = Locked<[String]>([])
@@ -181,6 +183,7 @@ final class FakeConnection: RemoteConnection, @unchecked Sendable {
 
     func openShell(cols: UInt32, rows: UInt32, term: String, env: [FfiEnvVar]) async throws -> RemoteShell {
         if let openError { throw openError }
+        if handedOut.get > 0, let d = laterOpenDelay { try? await Task.sleep(for: d) }
         opens.with { $0.append(.shell(cols: cols, rows: rows, term: term, env: env)) }
         return nextShell()
     }
