@@ -244,6 +244,8 @@ struct AgentMonitorPermissionTests {
         }
         let task = Task { await m.respond(requestId: req, allow: true) }
         #expect(await waitUntil { m.answering[req] == .allowing })
+        // the optimistic state is set before the command is recorded: wait for it
+        #expect(await waitUntil { !remote.ran(containing: "respond").isEmpty })
         #expect(remote.ran(containing: "respond").first == "~/.shuai/bin/shuai-agent respond \(req) allow")
         _ = await waitUntil { release.get != nil }
         release.get?.resume()
