@@ -118,6 +118,9 @@ fn run_inner(
         t.drain(&mut last, out)?;
     }
 
+    out.write_all(b"{\"type\":\"caught_up\"}\n")?;
+    out.flush()?;
+
     let mut next_beat = Instant::now() + heartbeat_every;
     // Adaptive polling: fast while events flow, backing off to 4x when idle.
     let base = state.poll_interval();

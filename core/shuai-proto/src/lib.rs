@@ -433,6 +433,8 @@ pub fn is_valid_request_id(id: &str) -> bool {
 #[derive(Debug, Clone, PartialEq)]
 pub enum WatchLine {
     Heartbeat,
+    /// Sent once after the `--since` replay is drained: everything after it is live.
+    CaughtUp,
     Event(Box<Envelope>),
 }
 
@@ -441,6 +443,9 @@ impl WatchLine {
         let v: Value = serde_json::from_str(line)?;
         if v.get("type").and_then(Value::as_str) == Some("heartbeat") {
             return Ok(WatchLine::Heartbeat);
+        }
+        if v.get("type").and_then(Value::as_str) == Some("caught_up") {
+            return Ok(WatchLine::CaughtUp);
         }
         Ok(WatchLine::Event(Box::new(serde_json::from_value(v)?)))
     }
