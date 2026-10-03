@@ -482,7 +482,6 @@ public final class SessionController {
     private func fallBackToPlainShell(gen: Int) async {
         guard gen == generation, let conn = connection else { return }
         tmuxUnavailable = true
-        notice = Self.tmuxMissingNotice
         await stopTmuxMonitor()
         commands?.finish(); commands = nil
         writerTask = nil
@@ -495,6 +494,8 @@ public final class SessionController {
             let plain = try await openRemoteShell(on: conn, tmux: false)
             guard gen == generation else { await plain.close(); return }
             startShell(plain, gen: gen, tmuxAttempt: false)
+            // Only now (input is wired again): the notice tells the user the plain shell is ready.
+            notice = Self.tmuxMissingNotice
             typeStartupCommand()
         } catch {
             guard gen == generation else { return }
