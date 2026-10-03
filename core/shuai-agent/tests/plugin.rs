@@ -64,13 +64,21 @@ fn permission_request_is_sync_with_120s_timeout() {
     assert!(h.get("async").is_none() || h["async"] == false);
     assert_eq!(h["timeout"], 120);
     assert!(cmd.contains("hook PermissionRequest"));
-    assert!(cmd.contains("--timeout 110"), "agent waits less than the hook timeout: {cmd}");
+    assert!(
+        cmd.contains("--timeout 110"),
+        "agent waits less than the hook timeout: {cmd}"
+    );
 }
 
 #[test]
 fn no_unexpected_events() {
     let hooks = json("plugin/hooks/hooks.json");
-    let mut names: Vec<_> = hooks["hooks"].as_object().unwrap().keys().cloned().collect();
+    let mut names: Vec<_> = hooks["hooks"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
     names.sort();
     let mut want: Vec<String> = ASYNC_EVENTS.iter().map(|s| s.to_string()).collect();
     want.push("PermissionRequest".into());
@@ -89,7 +97,11 @@ fn marketplace_lists_plugin() {
     assert!(repo().join("plugin/.claude-plugin/plugin.json").exists());
 }
 
-fn run_hook_command(cmd: &str, home: &std::path::Path, state: &std::path::Path) -> std::process::Output {
+fn run_hook_command(
+    cmd: &str,
+    home: &std::path::Path,
+    state: &std::path::Path,
+) -> std::process::Output {
     let mut c = Command::new("sh");
     c.arg("-c")
         .arg(cmd)

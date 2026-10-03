@@ -1,0 +1,18 @@
+{
+  "name": "shuai",
+  "owner": {
+    "name": "moilk"
+  },
+  "metadata": {
+    "description": "Plugins for the shuai iPad AI-coding terminal"
+  },
+  "plugins": [
+    {
+      "name": "shuai",
+      "source": "./plugin",
+      "description": "Forward Claude Code hook events to the shuai iPad app; native permission approval.",
+      "version": "0.1.0",
+      "license": "MIT"
+    }
+  ]
+}
