@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use shuai_ssh::keys::PublicKey;
 use shuai_ssh::{
-    AuthMethod, ConnectConfig, HostKeyVerifier, KbdInteractivePrompter, KbdPrompt, PtyRequest,
-    Session, SshError, SshSigner,
+    AuthMethod, ConnectConfig, HostKeyVerifier, KbdInteractivePrompter, KbdPrompt,
+    PasswordPrompter, PtyRequest, Session, SshError, SshSigner,
 };
 
 use crate::keys::parse_public;
@@ -93,6 +93,23 @@ pub trait KbdPrompterCallback: Send + Sync {
     ) -> Option<Vec<String>>;
 }
 
+/// Supplies a password on demand (called only after the host key is trusted).
+#[uniffi::export(with_foreign)]
+#[async_trait::async_trait]
+pub trait PasswordPromptCallback: Send + Sync {
+    /// The password, or `None` to cancel.
+    async fn password(&self) -> Option<String>;
+}
+
+struct PasswordAdapter(Arc<dyn PasswordPromptCallback>);
+
+#[async_trait::async_trait]
+impl PasswordPrompter for PasswordAdapter {
+    async fn password(&self) -> Option<String> {
+        self.0.password().await
+    }
+}
+
 struct VerifierAdapter(Arc<dyn HostKeyVerifierCallback>);
 
 #[async_trait::async_trait]
@@ -157,6 +174,10 @@ pub enum FfiAuth {
     Password {
         password: String,
     },
+    /// Password asked for lazily, after the host key was accepted.
+    PasswordPrompt {
+        prompter: Arc<dyn PasswordPromptCallback>,
+    },
     /// Unencrypted OpenSSH PEM (as produced by `generate_key` / `import_key`).
     PrivateKeyPem {
         pem: String,
@@ -195,6 +216,9 @@ fn to_config(c: FfiConnectConfig) -> Result<ConnectConfig, FfiSshError> {
     for a in c.auth {
         out.auth.push(match a {
             FfiAuth::Password { password } => AuthMethod::Password(password),
+            FfiAuth::PasswordPrompt { prompter } => {
+                AuthMethod::PasswordPrompt(Arc::new(PasswordAdapter(prompter)))
+            }
             FfiAuth::PrivateKeyPem { pem } => {
                 let key = shuai_keys::import_private_key(&pem, None).map_err(|e| {
                     FfiSshError::InvalidKey {
@@ -415,6 +439,26 @@ impl SshConnection {
             env: env.into_iter().map(|e| (e.name, e.value)).collect(),
         };
         let inner = self.session.open_shell(pty).await?;
+        Ok(Arc::new(ShellStream { inner }))
+    }
+
+    /// Runs `cmd` directly on a PTY (e.g. `tmux new -A -s NAME`) without a login shell, so
+    /// nothing is typed/echoed. Same stream type and semantics as `open_shell`.
+    pub async fn open_pty_exec(
+        &self,
+        command: String,
+        cols: u32,
+        rows: u32,
+        term: String,
+        env: Vec<FfiEnvVar>,
+    ) -> Result<Arc<ShellStream>, FfiSshError> {
+        let pty = PtyRequest {
+            term,
+            cols,
+            rows,
+            env: env.into_iter().map(|e| (e.name, e.value)).collect(),
+        };
+        let inner = self.session.open_pty_exec(pty, &command).await?;
         Ok(Arc::new(ShellStream { inner }))
     }
 

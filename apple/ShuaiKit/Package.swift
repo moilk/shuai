@@ -15,6 +15,7 @@ let package = Package(
         .library(name: "ShuaiCore", targets: ["ShuaiCore"]),
         .library(name: "ShuaiPlatform", targets: ["ShuaiPlatform"]),
         .library(name: "ShuaiTerminal", targets: ["ShuaiTerminal"]),
+        .library(name: "ShuaiApp", targets: ["ShuaiApp"]),
     ],
     dependencies: [
         // Pinned exactly: single-maintainer wrapper tracking Ghostty tip (see docs/adr/0001).
@@ -45,5 +46,12 @@ let package = Package(
             ]
         ),
         .testTarget(name: "ShuaiTerminalTests", dependencies: ["ShuaiTerminal"]),
+        // App logic (host profiles, key library, session controller): testable without UI.
+        .target(name: "ShuaiApp", dependencies: ["ShuaiPlatform", "ShuaiTerminal", "ShuaiCore"]),
+        .testTarget(
+            name: "ShuaiAppTests",
+            dependencies: ["ShuaiApp", "ShuaiPlatform", "ShuaiTerminal", "ShuaiCore"],
+            swiftSettings: hasTestkit ? [.define("SHUAI_TESTKIT")] : []
+        ),
     ]
 )

@@ -8,8 +8,8 @@ use common::*;
 use russh::keys::signature::Signer as _;
 use russh::keys::{PrivateKey, PublicKey};
 use shuai_ssh::{
-    AuthMethod, CloseReason, ExecEvent, KbdInteractivePrompter, KbdPrompt, PtyRequest, Session,
-    SessionLostKind, ShellEvent, SshError, SshSigner,
+    AuthMethod, CloseReason, ExecEvent, KbdInteractivePrompter, KbdPrompt, PasswordPrompter,
+    PtyRequest, Session, SessionLostKind, ShellEvent, SshError, SshSigner,
 };
 use tokio::time::timeout;
 
@@ -258,6 +258,69 @@ async fn keyboard_interactive_wrong_code_or_cancel_fails() {
             .await
             .err();
         assert_eq!(err, Some(auth_failed(&["keyboard-interactive"])));
+    }
+}
+
+// ---------- lazy password prompt ----------
+
+struct CountingPassword {
+    answer: Option<&'static str>,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait]
+impl PasswordPrompter for CountingPassword {
+    async fn password(&self) -> Option<String> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.answer.map(String::from)
+    }
+}
+
+fn pw_prompter(answer: Option<&'static str>) -> Arc<CountingPassword> {
+    Arc::new(CountingPassword {
+        answer,
+        calls: Default::default(),
+    })
+}
+
+#[tokio::test]
+async fn password_prompter_is_asked_only_after_the_host_key_is_accepted() {
+    let server = start(ServerOpts::default()).await;
+    let p = pw_prompter(Some(PASSWORD));
+    let s = connect(&server, vec![AuthMethod::PasswordPrompt(p.clone())])
+        .await
+        .unwrap();
+    assert!(!s.is_closed());
+    assert_eq!(p.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn password_prompter_is_never_asked_when_the_host_key_is_rejected() {
+    let server = start(ServerOpts::default()).await;
+    let p = pw_prompter(Some(PASSWORD));
+    let err = Session::connect(
+        cfg(&server, vec![AuthMethod::PasswordPrompt(p.clone())]),
+        Arc::new(RejectAll),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert_eq!(err, SshError::HostKeyRejected);
+    assert_eq!(p.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn password_prompter_cancel_or_wrong_password_fails_as_password_method() {
+    let server = start(ServerOpts::default()).await;
+    for answer in [None, Some("wrong")] {
+        let err = connect(
+            &server,
+            vec![AuthMethod::PasswordPrompt(pw_prompter(answer))],
+        )
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(err, auth_failed(&["password"]));
     }
 }
 
@@ -821,4 +884,36 @@ async fn time_in_kbd_prompter_counts_towards_auth_timeout() {
 async fn default_auth_timeout_leaves_room_for_a_human() {
     let c = shuai_ssh::ConnectConfig::new("h", "u");
     assert_eq!(c.auth_timeout, Duration::from_secs(60));
+}
+
+#[tokio::test]
+async fn pty_exec_runs_command_on_a_pty() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    // `cat` in the testkit echoes stdin; the point is: exec + PTY + resize on one channel.
+    let ch = s
+        .open_pty_exec(PtyRequest::xterm(90, 33), "cat")
+        .await
+        .unwrap();
+    ch.write("你好\r".as_bytes()).await.unwrap();
+    assert_eq!(
+        String::from_utf8(read_until(&ch, "你好\r".as_bytes()).await).unwrap(),
+        "你好\r"
+    );
+    ch.resize(100, 40).await.unwrap();
+    read_until(&ch, b"RESIZE 100 40").await;
+    assert_eq!(
+        server.log.ptys.lock().unwrap().as_slice(),
+        &[("xterm-256color".into(), 90, 33)]
+    );
+    assert!(
+        server
+            .log
+            .env
+            .lock()
+            .unwrap()
+            .contains(&("COLORTERM".to_string(), "truecolor".to_string()))
+    );
 }

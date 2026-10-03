@@ -289,6 +289,16 @@ impl Session {
 
     /// Opens a PTY-backed interactive shell.
     pub async fn open_shell(&self, pty: PtyRequest) -> Result<ShellChannel> {
+        self.open_pty(pty, None).await
+    }
+
+    /// Runs `cmd` directly on a PTY (no login shell, nothing typed): e.g. `tmux new -A -s x`.
+    /// The channel behaves exactly like a shell channel (write/resize/read).
+    pub async fn open_pty_exec(&self, pty: PtyRequest, cmd: &str) -> Result<ShellChannel> {
+        self.open_pty(pty, Some(cmd)).await
+    }
+
+    async fn open_pty(&self, pty: PtyRequest, cmd: Option<&str>) -> Result<ShellChannel> {
         let mut ch = self.handle.channel_open_session().await?;
         let setup: Result<()> = async {
             ch.request_pty(true, &pty.term, pty.cols, pty.rows, 0, 0, &[])
@@ -298,7 +308,10 @@ impl Session {
                 // Servers commonly refuse unlisted variables; never fail the shell over it.
                 ch.set_env(false, k.as_str(), v.as_str()).await?;
             }
-            ch.request_shell(true).await?;
+            match cmd {
+                None => ch.request_shell(true).await?,
+                Some(c) => ch.exec(true, c.as_bytes().to_vec()).await?,
+            }
             await_reply(&mut ch).await
         }
         .await;
@@ -405,6 +418,13 @@ async fn authenticate(
                 let r = handle.authenticate_password(user, pw.as_str()).await?;
                 step_of(r.success())
             }
+            AuthMethod::PasswordPrompt(p) => match p.password().await {
+                Some(pw) => {
+                    let r = handle.authenticate_password(user, pw.as_str()).await?;
+                    step_of(r.success())
+                }
+                None => AuthStep::Rejected,
+            },
             AuthMethod::PublicKey(key) => {
                 let hash = handle.best_supported_rsa_hash().await?.flatten();
                 let r = handle

@@ -77,12 +77,28 @@ public actor ReconnectController {
 
     /// Starts connecting (and listening for network/foreground events).
     public func start() {
-        if !started {
-            started = true
-            listen(networkChanges, as: .networkChanged)
-            listen(foreground, as: .appForegrounded)
-        }
+        startListening()
         handle(.connect)
+    }
+
+    /// An already established connection (made by the caller) is live: the policy moves to
+    /// `connected` without starting an attempt, so a later ``connectionDropped()`` reconnects
+    /// with the right uptime accounting. Also starts listening for network/foreground events.
+    public func adopt() {
+        startListening()
+        stopTimers()
+        for event in [FfiReconnectEvent.connect, .connectOk] {
+            _ = policy.transition(event: event)
+            statesContinuation.yield(policy.state())
+        }
+        connectedAtMs = now()
+    }
+
+    private func startListening() {
+        guard !started else { return }
+        started = true
+        listen(networkChanges, as: .networkChanged)
+        listen(foreground, as: .appForegrounded)
     }
 
     /// The live connection ended unexpectedly.

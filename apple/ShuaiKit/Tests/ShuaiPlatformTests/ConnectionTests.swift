@@ -137,6 +137,19 @@ private func collect(_ shell: Shell, until needle: String) async throws -> Strin
         try await shell.close()
     }
 
+    @Test func ptyExecRunsACommandOnAPtyWithoutTypingIt() async throws {
+        let server = await startTestSshServer()
+        let conn = try await Connection.connect(
+            config: config(server), verifier: TOFUVerifier(store: KnownHostsStore(fileURL: tempFile())) { _ in true })
+        let shell = try await conn.openPtyExec(command: "cat", cols: 90, rows: 33)
+        try await shell.write(Data("你好\r".utf8))
+        let out = try await collect(shell, until: "你好")
+        #expect(out == "你好\r")  // only our echo: the command line itself was never typed
+        try await shell.resize(cols: 100, rows: 40)
+        #expect(try await collect(shell, until: "RESIZE 100 40").contains("RESIZE 100 40"))
+        await conn.disconnect()
+    }
+
     @Test func shellEventsFinishAfterClose() async throws {
         let server = await startTestSshServer()
         let conn = try await Connection.connect(

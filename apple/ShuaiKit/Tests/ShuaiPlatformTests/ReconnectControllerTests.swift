@@ -120,6 +120,31 @@ private struct Harness {
 }
 
 @Suite(.timeLimit(.minutes(1))) struct ReconnectControllerTests {
+    @Test func adoptedConnectionThatDropsQuicklyBacksOffThenReconnects() async {
+        let h = Harness()
+        await h.controller.adopt()
+        #expect(await h.waitFor(.connected(attempt: 1)))
+        #expect(h.attempts.started == 0, "adopt must not start an attempt")
+        await h.controller.connectionDropped()
+        #expect(await h.waitFor(.backoff(attempt: 1, delayMs: 1000)))
+        #expect(await h.waitUntil { h.clock.sleeping == 1 })
+        h.clock.advance(1000)
+        #expect(await h.waitUntil { h.attempts.started == 1 })
+        h.attempts.finish(.success(()))
+        #expect(await h.waitFor(.connected(attempt: 2)))
+    }
+
+    @Test func adoptedStableConnectionReconnectsImmediatelyAfterADrop() async {
+        let h = Harness()
+        await h.controller.adopt()
+        #expect(await h.waitFor(.connected(attempt: 1)))
+        h.clock.advance(60_000)
+        await h.controller.connectionDropped()
+        #expect(await h.waitFor(.connecting(attempt: 1)))
+        #expect(await h.waitUntil { h.attempts.started == 1 })
+        #expect(h.clock.requested.isEmpty)
+    }
+
     @Test func connectsOnFirstTry() async {
         let h = Harness()
         await h.controller.start()
