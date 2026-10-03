@@ -1,0 +1,72 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  apple:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - run: brew install xcodegen
+      - run: scripts/build-xcframework.sh
+      - name: swift test
+        working-directory: apple/ShuaiKit
+        run: swift test
+      - name: Generate Xcode project
+        working-directory: apple/App
+        run: xcodegen generate
+      - name: xcodebuild test on an iPad simulator
+        working-directory: apple/App
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          c=[x for rt,v in sorted(d.items()) if "iOS" in rt for x in v if "iPad" in x["name"]]
+          print(c[-1]["udid"] if c else "")')
+          if [ -z "$UDID" ]; then echo "no iPad simulator available"; exit 1; fi
+          xcodebuild test -scheme Shuai -destination "platform=iOS Simulator,id=$UDID"
+
+  agent-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: mlugg/setup-zig@v2
+      - run: cargo install cargo-zigbuild --locked
+      - run: cargo zigbuild --release -p shuai-agent --target ${{ matrix.target }}
+        working-directory: core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shuai-agent-${{ matrix.target }}
+          path: core/target/${{ matrix.target }}/release/shuai-agent
