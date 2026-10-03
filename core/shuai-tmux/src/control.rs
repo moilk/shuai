@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 
 use crate::ids::{PaneId, SessionId, WindowId};
 use crate::layout::Layout;
+use crate::parse::unescape_output;
 
 /// A completed command reply block (`%begin` ... `%end` / `%error`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,7 +15,9 @@ pub struct CommandReply {
     pub flags: u32,
     /// `%end` -> true, `%error` -> false.
     pub ok: bool,
-    /// Body lines (lossy UTF-8, without line terminators).
+    /// Body lines (lossy UTF-8, without line terminators) exactly as tmux printed them,
+    /// i.e. still escaped (backslash doubled, control bytes as octal); parse list output with `crate::parse` or call
+    /// `crate::parse::unescape_output` for free text such as capture-pane.
     pub lines: Vec<String>,
     /// Token registered with [`ControlParser::expect_reply`], if this reply answers a
     /// command sent by us (flags bit 0). Server-originated blocks (e.g. the one printed
@@ -286,7 +289,7 @@ impl ControlParser {
             "%window-renamed" | "%unlinked-window-renamed" => {
                 let (w, n) = rest.split_once(' ').unwrap_or((rest, ""));
                 let window = w.parse().ok()?;
-                let name = n.to_string();
+                let name = unescape_output(n);
                 if text.starts_with("%window") {
                     E::WindowRenamed { window, name }
                 } else {
@@ -301,17 +304,17 @@ impl ControlParser {
                 let (s, n) = rest.split_once(' ')?;
                 E::SessionChanged {
                     session: s.parse().ok()?,
-                    name: n.to_string(),
+                    name: unescape_output(n),
                 }
             }
             "%session-renamed" => match rest.split_once(' ') {
                 Some((s, n)) if s.parse::<SessionId>().is_ok() => E::SessionRenamed {
                     session: s.parse().ok(),
-                    name: n.to_string(),
+                    name: unescape_output(n),
                 },
                 _ => E::SessionRenamed {
                     session: None,
-                    name: rest.to_string(),
+                    name: unescape_output(rest),
                 },
             },
             "%sessions-changed" => E::SessionsChanged,
@@ -341,7 +344,7 @@ impl ControlParser {
                 E::ClientSessionChanged {
                     client: p.next()?.to_string(),
                     session: p.next()?.parse().ok()?,
-                    name: p.next()?.to_string(),
+                    name: unescape_output(p.next()?),
                 }
             }
             "%client-detached" => E::ClientDetached {
