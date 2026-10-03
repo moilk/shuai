@@ -1,0 +1,124 @@
+{
+  "description": "Forward Claude Code events to the shuai iPad app via ~/.shuai/bin/shuai-agent",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook SessionStart",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook SessionEnd",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook UserPromptSubmit",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook PreToolUse",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook PostToolUse",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook Notification",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook Stop",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook SubagentStop",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook StopFailure",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x \"$HOME/.shuai/bin/shuai-agent\" ] || exit 0; exec \"$HOME/.shuai/bin/shuai-agent\" hook PermissionRequest --timeout 110",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

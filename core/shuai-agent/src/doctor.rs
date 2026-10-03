@@ -1,0 +1,120 @@
+//! `shuai-agent doctor`: environment self-check, printed as JSON.
+
+use crate::state::State;
+use serde_json::{Value, json};
+use std::path::PathBuf;
+use std::process::Command;
+
+/// Run with stdin closed and a 5 s cap, so a slow login shell cannot hang `doctor`.
+fn out_of(cmd: &mut Command) -> Option<String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut s = Vec::new();
+        let _ = stdout.read_to_end(&mut s);
+        s
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        match child.try_wait().ok()? {
+            Some(s) => break s,
+            None if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            None => std::thread::sleep(Duration::from_millis(20)),
+        }
+    };
+    let out = reader.join().ok()?;
+    status
+        .success()
+        .then(|| String::from_utf8_lossy(&out).trim().to_string())
+}
+
+/// `claude` usually only lives on the login-shell PATH (~/.local/bin).
+fn find_claude() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+    let out = out_of(Command::new(shell).args(["-lc", "command -v claude"]))?;
+    out.lines()
+        .rev()
+        .find(|l| l.starts_with('/'))
+        .map(str::to_string)
+}
+
+/// Fallback: PATH set only in interactive rc files (~/.zshrc) is invisible to `-lc`.
+fn known_claude_path() -> Option<String> {
+    use std::os::unix::fs::PermissionsExt;
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    [
+        home.join(".local/bin/claude"),
+        home.join(".claude/local/claude"),
+        home.join(".npm-global/bin/claude"),
+        PathBuf::from("/usr/local/bin/claude"),
+        PathBuf::from("/opt/homebrew/bin/claude"),
+    ]
+    .into_iter()
+    .find(|p| {
+        p.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    })
+    .map(|p| p.display().to_string())
+}
+
+fn claude_dir() -> PathBuf {
+    if let Some(d) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+        return PathBuf::from(d);
+    }
+    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".claude")
+}
+
+fn plugin_installed() -> bool {
+    let dir = claude_dir();
+    let has = |rel: &str, needle: &str| {
+        std::fs::read_to_string(dir.join(rel))
+            .map(|s| s.contains(needle))
+            .unwrap_or(false)
+    };
+    has("plugins/installed_plugins.json", "\"shuai@") || has("settings.json", "shuai-agent")
+}
+
+fn writable(state: &State) -> bool {
+    if state.ensure().is_err() {
+        return false;
+    }
+    let p = state.dir.join(".doctor-probe");
+    let ok = std::fs::write(&p, b"ok").is_ok();
+    let _ = std::fs::remove_file(p);
+    ok
+}
+
+pub fn report(state: &State) -> Value {
+    let cfg = state.config();
+    let last_seq = std::fs::read_to_string(state.seq_path())
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok());
+    json!({
+        "version": shuai_proto::version(),
+        "protocol": shuai_proto::PROTOCOL_VERSION,
+        "os": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "binary": std::env::current_exe().ok().map(|p| p.display().to_string()),
+        "state_dir": state.dir.display().to_string(),
+        "state_dir_writable": writable(state),
+        "last_seq": last_seq,
+        "app_present": state.present(),
+        "claude_path": find_claude().or_else(known_claude_path),
+        "plugin_installed": plugin_installed(),
+        "tmux_version": out_of(Command::new("tmux").arg("-V")),
+        "tmux_allow_passthrough": out_of(Command::new("tmux").args(["show-options", "-gv", "allow-passthrough"])),
+        "ntfy_configured": cfg.ntfy.is_some(),
+    })
+}
