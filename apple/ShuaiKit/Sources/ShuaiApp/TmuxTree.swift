@@ -35,6 +35,19 @@ public enum TmuxTree {
         public var badge: PaneBadge?
     }
 
+    /// A lightweight "loading" row instead of an empty gap while a connected host's tmux tree has
+    /// not arrived yet (control channel attaching, first `list-panes` in flight). An existing tree
+    /// is kept while the monitor restarts, and an unusable tmux shows nothing.
+    public static func showsLoadingPlaceholder(
+        session: SessionState, tmuxEnabled: Bool, monitor: TmuxMonitor.State, hasTopology: Bool
+    ) -> Bool {
+        guard tmuxEnabled, !hasTopology, session == .connected else { return false }
+        switch monitor {
+        case .idle, .starting, .live, .polling: return true
+        case .unavailable, .ended, .stopped: return false
+        }
+    }
+
     @MainActor
     public static func sessions(
         topology: FfiTopology, viewedSessionID: String?, host: UUID, badges: any PaneBadgeProvider

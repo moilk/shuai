@@ -242,5 +242,44 @@ final class LocalExec: RemoteExec, @unchecked Sendable {
         #expect(text.contains(" main 1")) // the control client stayed
         await finish(r, procs)
     }
+
+    /// The user's laptop is attached to the same session: switching must move only our client.
+    @Test func switchSessionNeverMovesAnotherClientAttachedToTheSameSession() async throws {
+        guard let conn = LocalTmuxConnection() else { return }
+        try await conn.sh("tmux kill-server; tmux new-session -d -s main -x 120 -y 40; tmux new-session -d -s other -x 100 -y 30")
+        func clientCount() async throws -> Int {
+            let r = try await conn.sh("tmux list-clients -F x | wc -l")
+            return Int(String(decoding: r.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        }
+        func waitClients(_ n: Int) async throws {
+            for _ in 0 ..< 100 where try await clientCount() < n { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        let (laptop, _) = try conn.attachPtyClient(session: "main")
+        try await waitClients(1)
+        try await Task.sleep(for: .milliseconds(1100)) // client_created has one second resolution
+        let (ours, _) = try conn.attachPtyClient(session: "main")
+        try await waitClients(2)
+        try await Task.sleep(for: .milliseconds(1100))
+        let monitor = TmuxMonitor(sessionName: "main", ptySize: { (120, 40) })
+        await monitor.start(on: conn)
+        let actions = TmuxActions(monitor: monitor)
+        let list = try await conn.sh("tmux list-clients -F '#{client_created} #{client_tty} #{client_control_mode}'")
+        let rows = String(decoding: list.stdout, as: UTF8.self).split(separator: "\n").map { $0.split(separator: " ").map(String.init) }
+        let ptyRows = rows.filter { $0.count == 3 && $0[2] == "0" }.sorted { Int($0[0])! < Int($1[0])! }
+        #expect(ptyRows.count == 2)
+        let ourTty = try #require(ptyRows.last?[1])
+        let laptopTty = try #require(ptyRows.first?[1])
+        #expect(monitor.ptyClientTty == ourTty)
+        let other = try #require(monitor.topology?.sessions.first { $0.name == "other" })
+        try await actions.switchSession(other.id)
+        let shown = try await conn.sh("tmux list-clients -F '#{client_tty} #{session_name}'")
+        let text = String(decoding: shown.stdout, as: UTF8.self)
+        #expect(text.contains("\(ourTty) other"))
+        #expect(text.contains("\(laptopTty) main"))
+        await monitor.stop()
+        laptop.terminate()
+        ours.terminate()
+        conn.cleanup()
+    }
 }
 #endif

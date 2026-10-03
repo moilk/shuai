@@ -120,6 +120,9 @@ public final class TmuxMonitor {
         conn = connection
         state = .starting
         controlPid = nil
+        // A new connection means a new PTY client: the old tty may linger or be reused.
+        ptyClientTty = nil
+        viewedSessionID = nil
 
         guard let version = await probeVersion(connection), gen == generation else {
             if gen == generation { state = .unavailable("tmux was not found on this host.") }
@@ -261,25 +264,10 @@ public final class TmuxMonitor {
             case .needsRefresh:
                 guard channel === ch, state == .live else { continue }
                 scheduleRefresh()
-            case .windowRenamed(let id, let name):
-                patch { t in
-                    for s in t.sessions.indices {
-                        for w in t.sessions[s].windows.indices where t.sessions[s].windows[w].id == id {
-                            t.sessions[s].windows[w].name = name
-                        }
-                    }
-                } change: { t in
-                    for s in t.sessions { for w in s.windows where w.id == id {
-                        return .windowRenamed(sessionId: s.id, windowId: id, old: w.name, new: name)
-                    } }
-                    return nil
-                }
-            case .sessionRenamed(let id, let name):
-                patch { t in
-                    for s in t.sessions.indices where t.sessions[s].id == id { t.sessions[s].name = name }
-                } change: { t in
-                    t.sessions.first { $0.id == id }.map { .sessionRenamed(sessionId: id, old: $0.name, new: name) }
-                }
+            case .windowRenamed, .sessionRenamed:
+                // Only the current channel may touch the tree (a replaced one is late and stale).
+                guard channel === ch, !ch.closed else { continue }
+                handleRename(event)
             case .reply(let token, let ok, let lines):
                 if let c = ch.pending.removeValue(forKey: token) {
                     if ok { c.resume(returning: lines) } else { c.resume(throwing: TmuxError.commandFailed(lines.joined(separator: "\n"))) }
@@ -287,6 +275,32 @@ public final class TmuxMonitor {
             case .exited(let reason):
                 channelEnded(ch, reason: reason)
             }
+        }
+    }
+
+    private func handleRename(_ event: FfiControllerEvent) {
+        switch event {
+        case .windowRenamed(let id, let name):
+            patch { t in
+                for s in t.sessions.indices {
+                    for w in t.sessions[s].windows.indices where t.sessions[s].windows[w].id == id {
+                        t.sessions[s].windows[w].name = name
+                    }
+                }
+            } change: { t in
+                for s in t.sessions { for w in s.windows where w.id == id {
+                    return .windowRenamed(sessionId: s.id, windowId: id, old: w.name, new: name)
+                } }
+                return nil
+            }
+        case .sessionRenamed(let id, let name):
+            patch { t in
+                for s in t.sessions.indices where t.sessions[s].id == id { t.sessions[s].name = name }
+            } change: { t in
+                t.sessions.first { $0.id == id }.map { .sessionRenamed(sessionId: id, old: $0.name, new: name) }
+            }
+        default:
+            break
         }
     }
 
@@ -372,35 +386,66 @@ public final class TmuxMonitor {
                 let panes = try await run(tmuxListPanesAll())
                 let clients = try? await run(tmuxListClients())
                 guard gen == generation else { return }
-                apply(panesText: panes.joined(separator: "\n") + "\n", clientsText: clients.map { $0.joined(separator: "\n") + "\n" })
+                let parsed = clients.flatMap { try? parseClients(text: $0.joined(separator: "\n") + "\n") }
+                apply(panesText: panes.joined(separator: "\n") + "\n")
+                if let parsed {
+                    let resolved = await resolveClient(parsed)
+                    guard gen == generation else { return }
+                    applyClient(resolved)
+                }
             } catch {
                 // A failed refresh keeps the last tree (the channel's end is reported separately).
             }
         } while refreshAgain && gen == generation
     }
 
-    private func apply(panesText: String, clientsText: String?) {
+    private func apply(panesText: String) {
         if let new = try? parseTopology(text: panesText), new != topology {
             let changes = topology.flatMap { try? diffTopology(old: $0, new: new) } ?? []
             topology = new
             lastChanges = changes
             changeCount += 1
         }
-        if let clientsText, let clients = try? parseClients(text: clientsText) { updateClient(clients) }
     }
 
-    private func updateClient(_ clients: [FfiTmuxClient]) {
+    /// Our PTY client's tty (nil: not found yet) and the session it shows.
+    private struct ClientResolution {
+        var tty: String?
+        var sessionID: String?
+    }
+
+    /// Sticky once found (the tty stays the same across `switch-client`). Otherwise the PTY client
+    /// is the non-control client of our session: when several clients are candidates (other devices
+    /// on the same session) the remote process tree picks the one spawned by our own SSH
+    /// connection; if that is not conclusive the Rust heuristic (size, age) decides.
+    private func resolveClient(_ clients: [FfiTmuxClient]) async -> ClientResolution {
         if let tty = ptyClientTty, let row = clients.first(where: { $0.tty == tty && !$0.controlMode }) {
-            viewedSessionID = row.sessionId
-            return
+            return ClientResolution(tty: tty, sessionID: row.sessionId)
         }
         let size = ptySize()
         let sz = FfiSize(cols: size.cols, rows: size.rows)
         let pid = controlPid.map { UInt32($0) }
-        let tty = pickPtyClient(clients: clients, session: sessionName, controlPid: pid, size: sz)
-            ?? pickPtyClientAnySession(clients: clients, controlPid: pid, size: sz)
-        ptyClientTty = tty
-        viewedSessionID = tty.flatMap { t in clients.first { $0.tty == t }?.sessionId }
+        var pool = clients
+        let own = clients.filter { !$0.controlMode && $0.sessionName == sessionName }
+        let candidates = own.isEmpty ? clients.filter { !$0.controlMode } : own
+        if candidates.count > 1, let cp = controlPid, let narrowed = await narrow(candidates, controlPid: cp) {
+            pool = clients.filter { $0.controlMode || narrowed.contains(Int($0.pid)) }
+        }
+        let tty = pickPtyClient(clients: pool, session: sessionName, controlPid: pid, size: sz)
+            ?? pickPtyClientAnySession(clients: pool, controlPid: pid, size: sz)
+        return ClientResolution(tty: tty, sessionID: tty.flatMap { t in clients.first { $0.tty == t }?.sessionId })
+    }
+
+    private func narrow(_ candidates: [FfiTmuxClient], controlPid: Int) async -> Set<Int>? {
+        guard let conn, let r = try? await conn.exec(ClientProcessTree.command), r.exitStatus == 0 else { return nil }
+        let parents = ClientProcessTree.parse(psOutput: String(decoding: r.stdout, as: UTF8.self))
+        guard !parents.isEmpty else { return nil }
+        return Set(ClientProcessTree.closest(to: controlPid, among: candidates.map { Int($0.pid) }, parents: parents))
+    }
+
+    private func applyClient(_ r: ClientResolution) {
+        ptyClientTty = r.tty
+        viewedSessionID = r.sessionID
     }
 
     #if DEBUG

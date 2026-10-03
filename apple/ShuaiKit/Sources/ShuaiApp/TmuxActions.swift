@@ -140,12 +140,22 @@ public final class TmuxActions {
             message: n > 1 ? "Its \(n) panes and their running programs are closed." : "The running program in it is closed.")
     }
 
+    public func requestKillPane(_ id: String) {
+        guard let loc = location(ofPane: id) else { return }
+        let only = loc.window.panes.count == 1
+        pendingConfirmation = Confirmation(
+            kind: .killPane(id: id), title: "Close pane \u{201C}\(loc.pane.currentCommand)\u{201D}?",
+            message: only
+                ? "It is the only pane of its window, so the window closes too. The running program is closed."
+                : "The running program in it is closed.")
+    }
+
     public func confirmPending() async throws {
         guard let c = pendingConfirmation else { return }
         pendingConfirmation = nil
         switch c.kind {
         case .killWindow(let id): try await monitor.run(tmuxKillWindow(windowId: id))
-        case .killPane: break
+        case .killPane(let id): try await monitor.run(tmuxKillPane(paneId: id))
         }
     }
 
