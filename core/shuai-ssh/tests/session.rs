@@ -777,3 +777,48 @@ async fn twenty_mebibytes_of_output_is_read_without_stalling() {
     assert_eq!(total, BIG_LEN);
     assert_eq!(exit, Some(0));
 }
+
+// ---------- auth timeout ----------
+
+#[tokio::test]
+async fn auth_phase_is_bounded_by_auth_timeout() {
+    let server = start(ServerOpts::default()).await;
+    let mut c = cfg(&server, vec![AuthMethod::Password(PASSWORD.into())]);
+    c.username = HANG_USER.into();
+    c.auth_timeout = Duration::from_millis(300);
+    let started = std::time::Instant::now();
+    let err = Session::connect(c, Arc::new(AcceptAll::default()))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(err, SshError::Timeout);
+    assert!(started.elapsed() < Duration::from_secs(3));
+}
+
+struct SlowOtp;
+
+#[async_trait]
+impl KbdInteractivePrompter for SlowOtp {
+    async fn respond(&self, _: &str, _: &str, _: &[KbdPrompt]) -> Option<Vec<String>> {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        Some(vec![KBD_CODE.into()])
+    }
+}
+
+#[tokio::test]
+async fn time_in_kbd_prompter_counts_towards_auth_timeout() {
+    let server = start(ServerOpts::default()).await;
+    let mut c = kbd_cfg(&server, Arc::new(SlowOtp));
+    c.auth_timeout = Duration::from_millis(300);
+    let err = Session::connect(c, Arc::new(AcceptAll::default()))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(err, SshError::Timeout);
+}
+
+#[tokio::test]
+async fn default_auth_timeout_leaves_room_for_a_human() {
+    let c = shuai_ssh::ConnectConfig::new("h", "u");
+    assert_eq!(c.auth_timeout, Duration::from_secs(60));
+}
