@@ -209,4 +209,40 @@ import Testing
         #expect(actions.lastError != nil)
         await monitor.stop()
     }
+
+    // MARK: quick switcher jumps
+
+    func item(_ kind: SwitcherItem.Kind, session: String? = nil, window: String? = nil, pane: String? = nil) -> SwitcherItem {
+        SwitcherItem(
+            id: "x", kind: kind, hostID: UUID(), hostName: "h", sessionID: session, windowID: window, paneID: pane,
+            title: "t", subtitle: "", searchFields: [], paneIDs: [], connected: true)
+    }
+
+    @Test func jumpingToAWindowSelectsIt() async throws {
+        let (server, monitor, actions) = await rig()
+        try await actions.jump(to: item(.window, session: "$0", window: "@0"))
+        #expect(sent(server) == [try tmuxSelectWindow(windowId: "@0").controlLine])
+        await monitor.stop()
+    }
+
+    @Test func jumpingToAPaneSelectsWindowAndPane() async throws {
+        let (server, monitor, actions) = await rig()
+        try await actions.jump(to: item(.pane, session: "$0", window: "@1", pane: "%1"))
+        #expect(sent(server) == [try tmuxSelectWindow(windowId: "@1").controlLine, try tmuxSelectPane(paneId: "%1").controlLine])
+        await monitor.stop()
+    }
+
+    @Test func jumpingToASessionSwitchesTheClient() async throws {
+        let (server, monitor, actions) = await rig()
+        try await actions.jump(to: item(.session, session: "$1"))
+        #expect(sent(server) == [try tmuxSwitchClient(clientTty: "/dev/ttys002", sessionId: "$1").controlLine])
+        await monitor.stop()
+    }
+
+    @Test func jumpingToAHostDoesNothingHere() async throws {
+        let (server, monitor, actions) = await rig()
+        try await actions.jump(to: item(.host))
+        #expect(sent(server).isEmpty)
+        await monitor.stop()
+    }
 }

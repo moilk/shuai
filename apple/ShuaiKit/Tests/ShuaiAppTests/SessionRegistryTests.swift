@@ -60,4 +60,14 @@ import ShuaiPlatform
         await r.remove(id: p.id)
         #expect(r.controller(for: p) !== c)
     }
+
+    @Test func switcherSnapshotsListEveryHostWithItsTreeAndConnectedFlag() async {
+        let (r, _, _) = make()
+        let a = profile("a"), b = profile("b")
+        _ = r.controller(for: a)
+        let snaps = r.switcherSnapshots(for: [a, b])
+        #expect(snaps.map(\.name) == ["a", "b"])
+        #expect(snaps.allSatisfy { !$0.connected && $0.topology == nil })
+        #expect(snaps.map(\.id) == [a.id, b.id])
+    }
 }
