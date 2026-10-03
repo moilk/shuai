@@ -4,3 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+
+[features]
+default = []
+# RSA key generation (3072-bit). Import/export/fingerprinting of RSA keys is always on.
+rsa-generate = []
+
+[dependencies]
+# Pinned to the exact version re-exported by russh 0.63.x as `russh::keys::ssh_key`.
+ssh-key = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+sha1 = { workspace = true }
+hmac = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

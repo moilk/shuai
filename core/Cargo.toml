@@ -15,3 +15,12 @@ publish = false
 [workspace.dependencies]
 uniffi = "0.32.2"
 shuai-proto = { path = "shuai-proto" }
+# Exact pin: identical to the ssh-key re-exported by russh 0.63.x (`russh::keys::ssh_key`).
+ssh-key = { version = "=0.7.0-rc.11", default-features = false, features = ["std", "ecdsa", "ed25519", "p256", "p384", "p521", "rsa", "encryption", "getrandom", "rand_core"] }
+rand = "0.10"
+sha2 = "0.11"
+sha1 = "0.11"
+hmac = "0.13"
+base64 = "0.22"
+thiserror = "2"
+proptest = "1"
