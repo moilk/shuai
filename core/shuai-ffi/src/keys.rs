@@ -162,3 +162,21 @@ pub fn known_hosts_add(
     kh.add(&host, port, &key, hashed);
     Ok(kh.to_text())
 }
+
+/// Like [`known_hosts_add`] but first removes the entries specific to `host:port`, so a
+/// deliberately accepted *changed* key replaces the old one instead of leaving both trusted.
+/// Wildcard / multi-host lines are left alone.
+#[uniffi::export]
+pub fn known_hosts_replace(
+    text: String,
+    host: String,
+    port: u16,
+    public_key_line: String,
+    hashed: bool,
+) -> Result<String, FfiKeyError> {
+    let key = parse_public(&public_key_line)?;
+    let mut kh = KnownHosts::parse(&text);
+    kh.remove_host(&host, port);
+    kh.add(&host, port, &key, hashed);
+    Ok(kh.to_text())
+}
