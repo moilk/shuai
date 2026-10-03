@@ -143,11 +143,14 @@ struct KeyEncoderArrowTests {
         #expect(enc(.arrow(.left), app: true) == esc("OD"))
     }
 
-    @Test(arguments: [
-        (KeyModifiers.shift, "2"), (.alt, "3"), ([.shift, .alt], "4"), (.ctrl, "5"),
-        ([.shift, .ctrl], "6"), ([.alt, .ctrl], "7"), ([.shift, .alt, .ctrl], "8"),
-    ])
-    func modifierParameter(_ mods: KeyModifiers, _ param: String) {
+    @Test(arguments: [2, 3, 4, 5, 6, 7, 8])
+    func modifierParameter(_ param: Int) {
+        // param - 1 is the xterm bitmask: shift=1, alt=2, ctrl=4.
+        let bits = param - 1
+        var mods: KeyModifiers = []
+        if bits & 1 != 0 { mods.insert(.shift) }
+        if bits & 2 != 0 { mods.insert(.alt) }
+        if bits & 4 != 0 { mods.insert(.ctrl) }
         #expect(enc(.arrow(.up), mods) == esc("[1;\(param)A"))
         #expect(enc(.arrow(.left), mods, app: true) == esc("[1;\(param)D"))
         #expect(enc(.arrow(.right), mods) == esc("[1;\(param)C"))
