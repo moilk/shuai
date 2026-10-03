@@ -12,6 +12,10 @@ const MESSAGE_MAX: usize = 300;
 const PREVIEW_MAX: usize = 200;
 /// How many out-of-order seqs per host are remembered for deduplication.
 const SEEN_WINDOW: usize = 8192;
+/// An envelope whose seq is not newer than the host's highest seq but whose timestamp is more
+/// than this far ahead of the newest timestamp seen is treated as a restarted seq counter
+/// (server-side `shuai-agent` state wiped/reinstalled), see [`AgentTracker::ingest`].
+const EPOCH_MARGIN_MS: u64 = 5_000;
 
 /// Identity of a session: agent host + agent session id (Codex: thread id).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -49,6 +53,18 @@ pub struct PendingPermission {
     pub input_preview: String,
     /// Timestamp (ms) of the request event.
     pub since: u64,
+    /// Used to recognize the matching `PostToolUse` when `permission_resolved` was missed.
+    pub(crate) tool_use_id: Option<String>,
+    pub(crate) tool_input: Value,
+}
+
+impl PendingPermission {
+    fn matches_tool(&self, id: &Option<String>, name: &str, input: &Value) -> bool {
+        match (&self.tool_use_id, id) {
+            (Some(a), Some(b)) => a == b,
+            _ => self.tool_name == name && &self.tool_input == input,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +108,13 @@ impl AgentSession {
             }
             _ => false,
         }
+    }
+
+    /// Heuristic: `Working` with no event for at least `ttl_ms` (a lost `Stop`, a crashed agent,
+    /// a dropped watch). Purely a flag for the UI; the state itself is never changed by it.
+    pub fn is_possibly_stale(&self, now_ms: u64, ttl_ms: u64) -> bool {
+        matches!(self.state, SessionState::Working { .. })
+            && self.updated_at.saturating_add(ttl_ms) <= now_ms
     }
 
     /// Lower = more urgent.
@@ -146,6 +169,8 @@ pub enum TrackerChange {
 #[derive(Debug, Default)]
 struct HostCursor {
     max: u64,
+    /// Newest `ts_ms` seen on this host (epoch-restart detection).
+    max_ts: u64,
     /// Seqs <= floor were evicted from `seen` and are treated as already applied.
     floor: u64,
     seen: BTreeSet<u64>,
@@ -155,9 +180,10 @@ impl HostCursor {
     fn is_dup(&self, seq: u64) -> bool {
         seq <= self.floor || self.seen.contains(&seq)
     }
-    fn record(&mut self, seq: u64) {
+    fn record(&mut self, seq: u64, ts_ms: u64) {
         self.seen.insert(seq);
         self.max = self.max.max(seq);
+        self.max_ts = self.max_ts.max(ts_ms);
         while self.seen.len() > SEEN_WINDOW {
             if let Some(first) = self.seen.pop_first() {
                 self.floor = self.floor.max(first);
@@ -211,6 +237,14 @@ impl AgentTracker {
     }
 
     /// Apply a live envelope. Returns the changes the app may announce.
+    ///
+    /// Seq epochs: if `shuai-agent`'s state on a host is wiped, its seq restarts at 1. An
+    /// envelope with `seq <= last_seq` whose `ts_ms` is more than 5 s newer than anything seen
+    /// on that host cannot be a duplicate or late event (those are older), so it starts a new
+    /// epoch: the host's dedupe window and per-session seq guards reset and pending permission
+    /// cards are cleared. Residual gap: a restart within 5 s of the last event, and the
+    /// `--since <old max>` resume after a wipe returns nothing until seq catches up; a stream
+    /// epoch id in the watch heartbeat would remove both (proto change, not done here).
     pub fn ingest(&mut self, env: &Envelope) -> Vec<TrackerChange> {
         self.apply(env)
     }
@@ -243,6 +277,14 @@ impl AgentTracker {
         v
     }
 
+    /// Sessions that look stuck in `Working`; see [`AgentSession::is_possibly_stale`].
+    pub fn stale_working(&self, now_ms: u64, ttl_ms: u64) -> Vec<&AgentSession> {
+        self.sessions
+            .values()
+            .filter(|s| s.is_possibly_stale(now_ms, ttl_ms))
+            .collect()
+    }
+
     pub fn attention_count(&self) -> usize {
         self.sessions
             .values()
@@ -269,13 +311,23 @@ impl AgentTracker {
     // ------------------------------------------------------------------ internals
 
     fn apply(&mut self, env: &Envelope) -> Vec<TrackerChange> {
-        let cursor = self.hosts.entry(env.host.clone()).or_default();
-        if cursor.is_dup(env.seq) {
-            return Vec::new();
-        }
-        cursor.record(env.seq);
-
         let mut changes = Vec::new();
+        let cursor = self.hosts.entry(env.host.clone()).or_default();
+        if cursor.max > 0
+            && env.seq <= cursor.max
+            && env.ts_ms > cursor.max_ts.saturating_add(EPOCH_MARGIN_MS)
+        {
+            // The seq counter went backwards while time moved forward: the agent's state was
+            // wiped. Forget the old window and per-session seq guards.
+            *cursor = HostCursor::default();
+            self.reset_epoch(&env.host, &mut changes);
+        }
+        let cursor = self.hosts.get_mut(&env.host).expect("inserted");
+        if cursor.is_dup(env.seq) {
+            return changes;
+        }
+        cursor.record(env.seq, env.ts_ms);
+
         let ev = &env.event;
         let sub = ev.ctx().is_some_and(is_subagent);
 
@@ -427,8 +479,21 @@ impl AgentTracker {
                     }
                 }
             }
-            AgentEvent::PostToolUse { .. } if !sub => {
+            AgentEvent::PostToolUse {
+                tool_name,
+                tool_input,
+                tool_use_id,
+                ..
+            } if !sub => {
                 s.current_tool = None;
+                // The tool ran, so its permission was granted (possibly at the terminal while
+                // `permission_resolved` was lost); other tools finishing in parallel say nothing.
+                if s.pending_permission
+                    .as_ref()
+                    .is_some_and(|p| p.matches_tool(tool_use_id, tool_name, tool_input))
+                {
+                    pending_cleared |= take_pending(s);
+                }
                 if s.pending_permission.is_none() {
                     s.state = SessionState::Working { tool: None };
                 }
@@ -437,9 +502,12 @@ impl AgentTracker {
                 request_id,
                 tool_name,
                 tool_input,
+                tool_use_id,
                 ..
             } => {
                 let p = PendingPermission {
+                    tool_use_id: tool_use_id.clone(),
+                    tool_input: tool_input.clone(),
                     request_id: request_id.clone(),
                     tool_name: tool_name.clone(),
                     input_preview: input_preview(tool_input),
@@ -553,6 +621,17 @@ impl AgentTracker {
             changes.push(TrackerChange::PermissionCleared { key });
         }
         changes
+    }
+
+    /// New seq epoch on `host`: per-session seq guards restart and pending permission cards are
+    /// dropped (the process that would receive the answer is gone).
+    fn reset_epoch(&mut self, host: &str, out: &mut Vec<TrackerChange>) {
+        for s in self.sessions.values_mut().filter(|s| s.host == host) {
+            s.last_seq = 0;
+            if take_pending(s) {
+                out.push(TrackerChange::PermissionCleared { key: s.key() });
+            }
+        }
     }
 
     fn evict_pane_others(

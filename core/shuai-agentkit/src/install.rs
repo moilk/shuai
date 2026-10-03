@@ -16,6 +16,10 @@ const TMUX_CONF: &str = "~/.tmux.conf";
 /// Markers around the block appended to `~/.tmux.conf`, so an executor can stay idempotent.
 pub const TMUX_BEGIN: &str = "# >>> shuai >>>";
 pub const TMUX_END: &str = "# <<< shuai <<<";
+/// The probe prints these lines around its `key=value` output; [`parse_probe`] ignores
+/// everything outside them (login banners, `.bashrc` chatter, trailing junk).
+pub const PROBE_BEGIN: &str = "__SHUAI_PROBE_BEGIN__";
+pub const PROBE_END: &str = "__SHUAI_PROBE_END__";
 
 /// What [`probe_script`] found on the remote host.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -31,6 +35,10 @@ pub struct ProbeResult {
     pub agent_version: Option<String>,
     pub plugin_installed: bool,
     pub codex_path: Option<String>,
+    /// First top-level `notify = ...` line of `~/.codex/config.toml`, if any.
+    pub codex_notify: Option<String>,
+    /// `~/.tmux.conf` (or the XDG one) already contains the [`TMUX_BEGIN`] marker.
+    pub tmux_conf_block: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +74,12 @@ pub enum InstallStep {
     ConfigureCodexNotify {
         config_path: String,
         notify_argv: Vec<String>,
+    },
+    /// The Codex config already has a `notify` that is not ours. Never overwritten: the app
+    /// should ask the user (chain it, replace it, or skip).
+    CodexNotifyConflict {
+        config_path: String,
+        existing: String,
     },
     /// Append `lines` (wrapped in [`TMUX_BEGIN`] / [`TMUX_END`]) unless the begin marker exists.
     AppendTmuxConf {
@@ -127,17 +141,28 @@ impl InstallPlan {
         }
 
         if probe.codex_path.is_some() {
-            steps.push(InstallStep::ConfigureCodexNotify {
-                config_path: CODEX_CONFIG.into(),
-                notify_argv: vec![
-                    agent_abs.clone(),
-                    "hook".into(),
-                    "codex-turn-complete".into(),
-                ],
-            });
+            match probe.codex_notify.as_deref().map(str::trim) {
+                None | Some("") => steps.push(InstallStep::ConfigureCodexNotify {
+                    config_path: CODEX_CONFIG.into(),
+                    notify_argv: vec![
+                        agent_abs.clone(),
+                        "hook".into(),
+                        "codex-turn-complete".into(),
+                    ],
+                }),
+                Some(existing) if existing.contains("shuai-agent") => {}
+                Some(existing) => steps.push(InstallStep::CodexNotifyConflict {
+                    config_path: CODEX_CONFIG.into(),
+                    existing: existing.into(),
+                }),
+            }
         }
 
-        if let Some(v) = &probe.tmux_version {
+        if let Some(v) = probe
+            .tmux_version
+            .as_ref()
+            .filter(|_| !probe.tmux_conf_block)
+        {
             steps.push(InstallStep::AppendTmuxConf {
                 path: TMUX_CONF.into(),
                 lines: tmux_conf_lines(TmuxVersion::parse(v)),
@@ -214,31 +239,60 @@ pub fn plugin_install_commands(claude_path: &str) -> Vec<String> {
     ]
 }
 
-/// Parse the `key=value` lines printed by [`probe_script`]. Lenient: unknown keys, noise
-/// (login banners) and CRLF are ignored; empty values mean "not found".
+/// Parse the `key=value` lines printed by [`probe_script`].
+///
+/// When the output contains [`PROBE_BEGIN`], only the lines up to the following [`PROBE_END`]
+/// (or the end of output if truncated) are read and values are kept verbatim apart from a
+/// trailing `\r`. Without sentinels (older scripts) every line is considered and values are
+/// trimmed. Unknown keys and malformed lines are ignored; empty values mean "not found".
 pub fn parse_probe(output: &str) -> ProbeResult {
+    let framed = output.lines().any(|l| l.trim_end() == PROBE_BEGIN);
+    let mut lines: Vec<&str> = output.lines().collect();
+    if framed {
+        let start = lines
+            .iter()
+            .position(|l| l.trim_end() == PROBE_BEGIN)
+            .map_or(0, |i| i + 1);
+        lines.drain(..start);
+        if let Some(end) = lines.iter().position(|l| l.trim_end() == PROBE_END) {
+            lines.truncate(end);
+        }
+    }
     let mut p = ProbeResult::default();
-    for line in output.lines() {
+    for line in lines {
         let Some((k, v)) = line.split_once('=') else {
             continue;
         };
-        let (k, v) = (k.trim(), v.trim());
-        let opt = || (!v.is_empty()).then(|| v.to_string());
+        let k = k.trim();
+        let v = if framed {
+            v.trim_end_matches('\r')
+        } else {
+            v.trim()
+        };
+        let opt = || (!v.trim().is_empty()).then(|| v.to_string());
         match k {
-            "uname_s" => p.uname_s = v.into(),
-            "uname_m" => p.uname_m = v.into(),
+            "uname_s" => p.uname_s = v.trim().into(),
+            "uname_m" => p.uname_m = v.trim().into(),
             "home" => p.home = v.into(),
             "shell" => p.shell = v.into(),
             "claude_path" => p.claude_path = opt(),
             "codex_path" => p.codex_path = opt(),
+            "codex_notify" => p.codex_notify = opt(),
+            "tmux_conf_block" => p.tmux_conf_block = matches!(v.trim(), "1" | "true" | "yes"),
             "tmux_version" => {
-                p.tmux_version = Some(v.strip_prefix("tmux").unwrap_or(v).trim().to_string())
-                    .filter(|s| !s.is_empty());
+                p.tmux_version = Some(
+                    v.trim()
+                        .strip_prefix("tmux")
+                        .unwrap_or(v)
+                        .trim()
+                        .to_string(),
+                )
+                .filter(|s| !s.is_empty());
             }
             "agent_version" => {
                 p.agent_version = v.split_whitespace().last().map(str::to_string);
             }
-            "plugin_installed" => p.plugin_installed = matches!(v, "1" | "true" | "yes"),
+            "plugin_installed" => p.plugin_installed = matches!(v.trim(), "1" | "true" | "yes"),
             _ => {}
         }
     }
@@ -256,11 +310,23 @@ pub fn probe_script() -> &'static str {
 }
 
 const PROBE_SCRIPT: &str = r#"#!/bin/sh
-# shuai remote probe: read-only, prints key=value lines.
+# shuai remote probe: read-only, prints key=value lines between sentinel lines.
 main() {
   home=${HOME:-}
   if [ -z "$home" ]; then home=$(cd ~ 2>/dev/null && pwd); fi
   emit() { printf '%s=%s\n' "$1" "$2"; }
+
+  # run_t CMD...: run with a 3 second watchdog (no `timeout` dependency, no temp files).
+  run_t() {
+    "$@" &
+    rt_pid=$!
+    ( sleep 3; pkill -P "$rt_pid"; kill "$rt_pid" ) >/dev/null 2>&1 &
+    rt_killer=$!
+    wait "$rt_pid"
+    rt_rc=$?
+    kill "$rt_killer" >/dev/null 2>&1
+    return "$rt_rc"
+  }
 
   # find_bin NAME: PATH first, then the places installers put things.
   find_bin() {
@@ -277,6 +343,7 @@ main() {
     return 1
   }
 
+  echo __SHUAI_PROBE_BEGIN__
   emit uname_s "$(uname -s 2>/dev/null | head -n 1)"
   emit uname_m "$(uname -m 2>/dev/null | head -n 1)"
   emit home "$home"
@@ -291,14 +358,14 @@ main() {
 
   tmux_bin=$(find_bin tmux)
   if [ -n "$tmux_bin" ]; then
-    emit tmux_version "$("$tmux_bin" -V 2>/dev/null | head -n 1)"
+    emit tmux_version "$(run_t "$tmux_bin" -V 2>/dev/null | head -n 1)"
   else
     emit tmux_version ""
   fi
 
   agent="$home/.shuai/bin/shuai-agent"
   if [ -f "$agent" ] && [ -x "$agent" ]; then
-    emit agent_version "$("$agent" --version 2>/dev/null | head -n 1)"
+    emit agent_version "$(run_t "$agent" --version 2>/dev/null | head -n 1)"
   else
     emit agent_version ""
   fi
@@ -307,6 +374,17 @@ main() {
   if grep -q '"shuai@' "$home/.claude/plugins/installed_plugins.json" 2>/dev/null; then plugin=1; fi
   if grep -q 'shuai-agent' "$home/.claude/settings.json" 2>/dev/null; then plugin=1; fi
   emit plugin_installed "$plugin"
+
+  # First top-level `notify =` line of the Codex config (tables start at the first `[`).
+  emit codex_notify "$(awk '/^[ \t]*\[/ { exit } /^[ \t]*notify[ \t]*=/ { print; exit }' \
+    "$home/.codex/config.toml" 2>/dev/null)"
+
+  block=0
+  for f in "$home/.tmux.conf" "$home/.config/tmux/tmux.conf"; do
+    if grep -qF '# >>> shuai >>>' "$f" 2>/dev/null; then block=1; fi
+  done
+  emit tmux_conf_block "$block"
+  echo __SHUAI_PROBE_END__
 }
 main </dev/null
 "#;
