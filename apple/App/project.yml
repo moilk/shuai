@@ -24,6 +24,11 @@ targets:
       - Sources
       - path: ../../fixtures/recordings/claude-cjk-120x40-pre-exit.out
         buildPhase: resources
+      # Prebuilt shuai-agent binaries (scripts/build-agent.sh, gitignored); optional so builds
+      # without them still work, the installer then reports the agent as unavailable.
+      - path: Resources/agent
+        optional: true
+        buildPhase: resources
     dependencies:
       - package: ShuaiKit
         product: ShuaiApp
