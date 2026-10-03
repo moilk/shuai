@@ -262,3 +262,49 @@ fn randomart_has_box_shape() {
     assert_eq!(lines[10], "+----[SHA256]-----+");
     assert!(lines.iter().all(|l| l.chars().count() == 19));
 }
+
+/// Rewrites the bcrypt rounds field of an encrypted OpenSSH key (a hostile-input DoS vector).
+fn with_rounds(pem: &str, rounds: u32) -> String {
+    use base64::Engine;
+    let b64: String = pem.lines().filter(|l| !l.starts_with("-----")).collect();
+    let mut blob = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+    let mut p = b"openssh-key-v1\0".len();
+    let rd =
+        |blob: &[u8], p: usize| u32::from_be_bytes(blob[p..p + 4].try_into().unwrap()) as usize;
+    for _ in 0..2 {
+        // ciphername, kdfname
+        p += 4 + rd(&blob, p);
+    }
+    p += 4; // kdfoptions length
+    p += 4 + rd(&blob, p); // salt
+    blob[p..p + 4].copy_from_slice(&rounds.to_be_bytes());
+    let enc = base64::engine::general_purpose::STANDARD.encode(blob);
+    format!("-----BEGIN OPENSSH PRIVATE KEY-----\n{enc}\n-----END OPENSSH PRIVATE KEY-----\n")
+}
+
+#[test]
+fn absurd_bcrypt_rounds_are_rejected_quickly() {
+    let evil = with_rounds(&fx("test_ed25519_enc"), u32::MAX);
+    assert!(matches!(
+        import_private_key(&evil, Some(PASS)),
+        Err(KeyError::Unsupported(_))
+    ));
+}
+
+#[test]
+fn randomart_matches_ssh_keygen() {
+    for (n, art) in [
+        ("test_ed25519_plain", "randomart_ed25519.txt"),
+        ("test_ecdsa_plain", "randomart_ecdsa.txt"),
+        ("test_rsa_plain", "randomart_rsa.txt"),
+    ] {
+        let k = import_private_key(&fx(n), None).unwrap();
+        assert_eq!(
+            randomart(k.public_key()).trim_end(),
+            fx(art).trim_end(),
+            "{n}"
+        );
+    }
+}

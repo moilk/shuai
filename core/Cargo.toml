@@ -24,3 +24,7 @@ hmac = "0.13"
 base64 = "0.22"
 thiserror = "2"
 proptest = "1"
+
+# Third-party crypto (bcrypt-pbkdf, rsa, ...) is unusably slow at opt-level 0 in tests.
+[profile.dev.package."*"]
+opt-level = 2
