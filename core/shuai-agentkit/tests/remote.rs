@@ -184,7 +184,9 @@ fn merge_settings_survives_a_hostile_agent_path() {
     std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755)).unwrap();
     let out = merge_claude_settings("{}", agent.to_str().unwrap()).unwrap();
     let v: Value = serde_json::from_str(&out).expect("still valid JSON");
-    let cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap();
+    let cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
     assert_eq!(sh(cmd).1, "hook|Stop|");
 }
 
@@ -200,8 +202,7 @@ fn remove_settings_hooks_keeps_user_hooks_sharing_a_group_and_empty_arrays() {
         }
     })
     .to_string();
-    let v: Value =
-        serde_json::from_str(&remove_claude_settings_hooks(&existing).unwrap()).unwrap();
+    let v: Value = serde_json::from_str(&remove_claude_settings_hooks(&existing).unwrap()).unwrap();
     assert_eq!(
         v,
         json!({"hooks": {

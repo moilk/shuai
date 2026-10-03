@@ -96,7 +96,8 @@ fn path_arg(path: &str) -> String {
     }
 }
 
-/// Append `lines` to `path` unless the begin marker is already there. Creates the file.
+/// Append `lines` to `path` unless the begin marker is already there. Creates the file; a
+/// last line without a trailing newline is terminated first so the markers stay on their own lines.
 pub fn append_tmux_block_command(path: &str, lines: &[String]) -> String {
     let p = path_arg(path);
     let body: String = lines
@@ -104,17 +105,24 @@ pub fn append_tmux_block_command(path: &str, lines: &[String]) -> String {
         .map(|l| format!(" {}", sh_quote(l)))
         .collect::<String>();
     format!(
-        "grep -qF {} {p} 2>/dev/null || printf '%s\\n'{body} >> {p}",
+        "grep -qF {} {p} 2>/dev/null || {{ [ -s {p} ] && [ -n \"$(tail -c1 {p})\" ] && printf '\\n' >> {p}; printf '%s\\n'{body} >> {p}; }}",
         sh_quote(TMUX_BEGIN)
     )
 }
 
-/// Delete the marker block from `path` (keeps a `.shuai-bak` copy; no error if the file is missing).
+/// Delete the marker block from `path` (no error if the file is missing). A begin marker
+/// without a matching end marker is left alone rather than deleting to the end of the file.
+/// Rewrites in place (`cat >`) so permissions and symlinks survive.
 pub fn remove_tmux_block_command(path: &str) -> String {
     let p = path_arg(path);
+    let awk = "skip { buf = buf $0 \"\\n\"; if ($0 == e) { skip = 0; buf = \"\" } next } \
+               $0 == b { skip = 1; buf = $0 \"\\n\"; next } { print } \
+               END { if (skip) printf \"%s\", buf }";
     format!(
-        "[ -f {p} ] && {{ sed -i.shuai-bak '/^{}$/,/^{}$/d' {p} && rm -f {p}.shuai-bak; }}; true",
-        TMUX_BEGIN, TMUX_END
+        "[ -f {p} ] && {{ awk -v b={} -v e={} {} {p} > {p}.shuai-tmp && cat {p}.shuai-tmp > {p}; rm -f {p}.shuai-tmp; }}; true",
+        sh_quote(TMUX_BEGIN),
+        sh_quote(TMUX_END),
+        sh_quote(awk)
     )
 }
 
@@ -129,6 +137,15 @@ fn is_ours(group: &Value) -> bool {
                     .is_some_and(|c| c.contains("shuai-agent"))
             })
         })
+}
+
+fn substitute_agent(v: &mut Value, agent: &str) {
+    match v {
+        Value::String(s) => *s = s.replace("$HOME/.shuai/bin/shuai-agent", agent),
+        Value::Array(a) => a.iter_mut().for_each(|x| substitute_agent(x, agent)),
+        Value::Object(o) => o.values_mut().for_each(|x| substitute_agent(x, agent)),
+        _ => {}
+    }
 }
 
 fn parse_settings(text: &str) -> Result<Map<String, Value>, String> {
@@ -151,9 +168,15 @@ fn render(o: Map<String, Value>) -> String {
 /// keeping everything else; entries of ours that already exist are not duplicated.
 pub fn merge_claude_settings(existing: &str, agent_path: &str) -> Result<String, String> {
     let mut root = parse_settings(existing)?;
-    let ours: Value =
-        serde_json::from_str(&HOOKS_JSON.replace("$HOME/.shuai/bin/shuai-agent", agent_path))
-            .map_err(|e| format!("bundled hooks.json: {e}"))?;
+    let mut ours: Value =
+        serde_json::from_str(HOOKS_JSON).map_err(|e| format!("bundled hooks.json: {e}"))?;
+    // The path lands inside double quotes of a shell command: escape it there (not in the JSON text).
+    let escaped = agent_path
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`");
+    substitute_agent(&mut ours, &escaped);
     let events = ours["hooks"].as_object().cloned().unwrap_or_default();
     let hooks = root
         .entry("hooks")
@@ -176,16 +199,40 @@ pub fn merge_claude_settings(existing: &str, agent_path: &str) -> Result<String,
     Ok(render(root))
 }
 
-/// Inverse of [`merge_claude_settings`]: drop hook groups that run `shuai-agent`.
+fn is_our_hook(h: &Value) -> bool {
+    h.get("command")
+        .and_then(Value::as_str)
+        .is_some_and(|c| c.contains("shuai-agent"))
+}
+
+/// Inverse of [`merge_claude_settings`]: drop the hook entries that run `shuai-agent` (and the
+/// groups / events / `hooks` key that become empty because of it; nothing else is touched).
 pub fn remove_claude_settings_hooks(existing: &str) -> Result<String, String> {
     let mut root = parse_settings(existing)?;
     if let Some(Value::Object(hooks)) = root.get_mut("hooks") {
-        for list in hooks.values_mut() {
-            if let Value::Array(a) = list {
-                a.retain(|g| !is_ours(g));
+        let mut emptied = Vec::new();
+        for (event, list) in hooks.iter_mut() {
+            let Value::Array(groups) = list else { continue };
+            if !groups.iter().any(is_ours) {
+                continue;
+            }
+            groups.retain_mut(|g| {
+                if !is_ours(g) {
+                    return true;
+                }
+                let Some(Value::Array(hs)) = g.get_mut("hooks") else {
+                    return true;
+                };
+                hs.retain(|h| !is_our_hook(h));
+                !hs.is_empty()
+            });
+            if groups.is_empty() {
+                emptied.push(event.clone());
             }
         }
-        hooks.retain(|_, v| !matches!(v, Value::Array(a) if a.is_empty()));
+        for e in emptied {
+            hooks.shift_remove(&e);
+        }
         if hooks.is_empty() {
             root.remove("hooks");
         }
