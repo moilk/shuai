@@ -3,6 +3,7 @@
 use serde::Deserialize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -32,6 +33,26 @@ fn env_f64(name: &str, default: f64) -> f64 {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
+}
+
+/// Create `dir` (and parents) and make sure it is `0700`: the state holds prompts, commands
+/// and the permission-response files, which must not be writable by other users.
+pub fn private_dir(dir: &Path) -> std::io::Result<()> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    if fs::metadata(dir)?.permissions().mode() & 0o777 != 0o700 {
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// `OpenOptions` that create files as `0600`.
+pub fn private_open() -> OpenOptions {
+    let mut o = OpenOptions::new();
+    o.mode(0o600);
+    o
 }
 
 pub fn now_ms() -> u64 {
@@ -71,7 +92,7 @@ impl State {
     }
 
     pub fn ensure(&self) -> std::io::Result<()> {
-        fs::create_dir_all(&self.dir)
+        private_dir(&self.dir)
     }
 
     pub fn events_path(&self) -> PathBuf {
@@ -126,7 +147,7 @@ impl State {
 
     pub fn touch_presence(&self) -> std::io::Result<()> {
         self.ensure()?;
-        let mut f = OpenOptions::new()
+        let mut f = private_open()
             .write(true)
             .create(true)
             .truncate(true)
@@ -141,7 +162,7 @@ impl State {
             if fs::metadata(self.log_path()).map(|m| m.len()).unwrap_or(0) > 512 * 1024 {
                 let _ = fs::rename(self.log_path(), self.dir.join("agent.log.1"));
             }
-            let mut f = OpenOptions::new()
+            let mut f = private_open()
                 .create(true)
                 .append(true)
                 .open(self.log_path())?;

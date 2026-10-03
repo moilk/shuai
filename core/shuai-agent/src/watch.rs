@@ -119,8 +119,12 @@ fn run_inner(
     }
 
     let mut next_beat = Instant::now() + heartbeat_every;
+    // Adaptive polling: fast while events flow, backing off to 4x when idle.
+    let base = state.poll_interval();
+    let mut idle: u32 = 0;
     loop {
-        std::thread::sleep(state.poll_interval());
+        std::thread::sleep(if idle > 20 { base * 4 } else { base });
+        let before = last;
         match cur.as_mut() {
             Some(t) => {
                 t.drain(&mut last, out)?;
@@ -144,6 +148,11 @@ fn run_inner(
                 }
             }
         }
+        idle = if last != before {
+            0
+        } else {
+            idle.saturating_add(1)
+        };
         if Instant::now() >= next_beat {
             heartbeat(state, out)?;
             next_beat = Instant::now() + heartbeat_every;

@@ -38,8 +38,20 @@ fn clip_strings(v: &mut Value) {
 }
 
 fn new_request_id() -> String {
-    let rnd = RandomState::new().build_hasher().finish() as u32;
-    format!("{:x}-{:x}-{:08x}", now_ms(), std::process::id(), rnd)
+    // 128 random bits: the id names the response file, so it must be unguessable.
+    let mut b = [0u8; 16];
+    let ok = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b))
+        .is_ok();
+    if !ok {
+        for chunk in b.chunks_mut(8) {
+            let mut h = RandomState::new().build_hasher();
+            h.write_u64(now_ms());
+            h.write_u32(std::process::id());
+            chunk.copy_from_slice(&h.finish().to_le_bytes());
+        }
+    }
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 /// Append an envelope for `event`; returns it (with its assigned seq).

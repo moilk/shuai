@@ -5,12 +5,39 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Run with stdin closed and a 5 s cap, so a slow login shell cannot hang `doctor`.
 fn out_of(cmd: &mut Command) -> Option<String> {
-    let o = cmd.output().ok()?;
-    if !o.status.success() {
-        return None;
-    }
-    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut s = Vec::new();
+        let _ = stdout.read_to_end(&mut s);
+        s
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        match child.try_wait().ok()? {
+            Some(s) => break s,
+            None if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            None => std::thread::sleep(Duration::from_millis(20)),
+        }
+    };
+    let out = reader.join().ok()?;
+    status
+        .success()
+        .then(|| String::from_utf8_lossy(&out).trim().to_string())
 }
 
 /// `claude` usually only lives on the login-shell PATH (~/.local/bin).

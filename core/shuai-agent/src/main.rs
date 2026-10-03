@@ -6,6 +6,9 @@ use std::io::Read;
 use std::process::ExitCode;
 use std::time::Duration;
 
+/// Hook payloads beyond this are cut (the event is then dropped as invalid JSON).
+const MAX_STDIN: u64 = 32 * 1024 * 1024;
+
 #[derive(Parser)]
 #[command(
     name = "shuai-agent",
@@ -81,10 +84,14 @@ fn main() -> ExitCode {
     match cli.cmd {
         Cmd::Hook { event, timeout } => {
             let r = std::panic::catch_unwind(|| {
+                // Bounded read: a hook must never balloon in memory on a giant payload.
                 let mut input = String::new();
                 std::io::stdin()
+                    .take(MAX_STDIN)
                     .read_to_string(&mut input)
                     .map_err(|e| format!("stdin: {e}"))?;
+                // Drain the rest so the writer never sees EPIPE.
+                let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
                 let st = State::from_env();
                 hook::run(
                     &st,
@@ -94,7 +101,10 @@ fn main() -> ExitCode {
                 )
             });
             match r {
-                Ok(Ok(Some(out))) => println!("{out}"),
+                Ok(Ok(Some(out))) => {
+                    use std::io::Write;
+                    let _ = writeln!(std::io::stdout(), "{out}"); // EPIPE must not panic
+                }
                 Ok(Ok(None)) => {}
                 Ok(Err(e)) => state.log(&format!("hook {event}: {e}")),
                 Err(_) => state.log(&format!("hook {event}: panic")),
