@@ -3,7 +3,10 @@ use common::*;
 use std::time::Duration;
 
 fn cfg(h: &std::path::Path, url: &str) {
-    write_config(h, &format!("[ntfy]\nserver = \"{url}\"\ntopic = \"my-topic\"\ntoken = \"tk_secret\"\n"));
+    write_config(
+        h,
+        &format!("[ntfy]\nserver = \"{url}\"\ntopic = \"my-topic\"\ntoken = \"tk_secret\"\n"),
+    );
 }
 
 #[test]
@@ -12,11 +15,28 @@ fn notify_posts_to_ntfy() {
     let m = mock_server();
     cfg(h.path(), &m.url);
     let out = agent(h.path())
-        .args(["notify", "--title", "Claude needs you", "--body", "Approve Bash?"])
-        .args(["--click", "shuai://host/dev/pane/%255", "--priority", "high", "--tags", "lock,robot"])
+        .args([
+            "notify",
+            "--title",
+            "Claude needs you",
+            "--body",
+            "Approve Bash?",
+        ])
+        .args([
+            "--click",
+            "shuai://host/dev/pane/%255",
+            "--priority",
+            "high",
+            "--tags",
+            "lock,robot",
+        ])
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let r = m.rx.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(r.request_line, "POST /my-topic HTTP/1.1");
     assert_eq!(r.body, "Approve Bash?");
@@ -30,7 +50,10 @@ fn notify_posts_to_ntfy() {
 #[test]
 fn notify_without_config_fails_cleanly() {
     let h = home();
-    let out = agent(h.path()).args(["notify", "--title", "t", "--body", "b"]).output().unwrap();
+    let out = agent(h.path())
+        .args(["notify", "--title", "t", "--body", "b"])
+        .output()
+        .unwrap();
     assert!(!out.status.success());
 }
 
@@ -39,14 +62,19 @@ fn notify_to_dead_server_fails_quickly() {
     let h = home();
     cfg(h.path(), "http://127.0.0.1:1");
     let t0 = std::time::Instant::now();
-    let out = agent(h.path()).args(["notify", "--title", "t", "--body", "b"]).output().unwrap();
+    let out = agent(h.path())
+        .args(["notify", "--title", "t", "--body", "b"])
+        .output()
+        .unwrap();
     assert!(!out.status.success());
     assert!(t0.elapsed() < Duration::from_secs(8));
 }
 
 fn hook_with_pane(h: &std::path::Path, event: &str, fx: &str) {
     let mut c = agent(h);
-    c.args(["hook", event]).env("TMUX_PANE", "%5").env("TMUX", "/tmp/tmux-1000/default,1,0");
+    c.args(["hook", event])
+        .env("TMUX_PANE", "%5")
+        .env("TMUX", "/tmp/tmux-1000/default,1,0");
     let out = run_with_stdin(c, &fixture(fx));
     assert_eq!(out.status.code(), Some(0));
     assert!(out.stdout.is_empty());
@@ -99,7 +127,10 @@ fn no_push_for_other_events_or_other_notification_types() {
     hook_with_pane(h.path(), "UserPromptSubmit", "user_prompt_submit");
     let mut c = agent(h.path());
     c.args(["hook", "Notification"]);
-    run_with_stdin(c, r#"{"session_id":"s","notification_type":"auth_success","message":"ok"}"#);
+    run_with_stdin(
+        c,
+        r#"{"session_id":"s","notification_type":"auth_success","message":"ok"}"#,
+    );
     assert!(m.rx.recv_timeout(Duration::from_millis(600)).is_err());
 }
 

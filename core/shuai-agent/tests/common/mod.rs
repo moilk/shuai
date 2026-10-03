@@ -144,7 +144,10 @@ impl Watcher {
 
     /// Wait for the first line so we know presence has been announced.
     pub fn ready(&self) {
-        assert!(self.next_line(Duration::from_secs(5)).is_some(), "watch produced nothing");
+        assert!(
+            self.next_line(Duration::from_secs(5)).is_some(),
+            "watch produced nothing"
+        );
     }
 }
 
@@ -196,7 +199,8 @@ pub fn mock_server() -> Mock {
                 .unwrap_or(0);
             let mut body = vec![0u8; n];
             let _ = r.read_exact(&mut body);
-            let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+            let _ =
+                s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
             let _ = tx.send(Req {
                 request_line: request_line.trim_end().to_string(),
                 headers,

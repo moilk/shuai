@@ -17,7 +17,11 @@ fn resolved(h: &std::path::Path) -> Vec<Value> {
 fn start_request(
     h: &std::path::Path,
     extra: &[&str],
-) -> (Watcher, std::sync::mpsc::Receiver<std::process::Output>, String) {
+) -> (
+    Watcher,
+    std::sync::mpsc::Receiver<std::process::Output>,
+    String,
+) {
     let w = Watcher::spawn(h, &[]);
     w.ready();
     let mut c = agent(h);
@@ -35,7 +39,10 @@ fn start_request(
 fn allow_flow() {
     let h = home();
     let (w, rx, id) = start_request(h.path(), &[]);
-    let out = agent(h.path()).args(["respond", &id, "allow"]).output().unwrap();
+    let out = agent(h.path())
+        .args(["respond", &id, "allow"])
+        .output()
+        .unwrap();
     assert!(out.status.success());
 
     let out = rx.recv_timeout(T).expect("hook should finish");
@@ -51,7 +58,12 @@ fn allow_flow() {
     assert_eq!(r["event"]["request_id"], id.as_str());
     assert_eq!(r["event"]["outcome"], "allowed");
     // response file is consumed
-    assert!(!h.path().join("responses").join(format!("{id}.json")).exists());
+    assert!(
+        !h.path()
+            .join("responses")
+            .join(format!("{id}.json"))
+            .exists()
+    );
 }
 
 #[test]
@@ -66,7 +78,10 @@ fn deny_flow_with_message() {
     let out = rx.recv_timeout(T).unwrap();
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "deny");
-    assert_eq!(v["hookSpecificOutput"]["decision"]["message"], "not on prod");
+    assert_eq!(
+        v["hookSpecificOutput"]["decision"]["message"],
+        "not on prod"
+    );
     assert_eq!(w.next_event(T).unwrap()["event"]["outcome"], "denied");
 }
 
@@ -75,7 +90,12 @@ fn timeout_falls_back_silently() {
     let h = home();
     touch_presence(h.path()); // pretend an app is watching
     let t0 = Instant::now();
-    let out = hook(h.path(), "PermissionRequest", &fixture("permission_request"), &["--timeout", "1"]);
+    let out = hook(
+        h.path(),
+        "PermissionRequest",
+        &fixture("permission_request"),
+        &["--timeout", "1"],
+    );
     assert!(t0.elapsed() >= Duration::from_millis(900));
     assert!(t0.elapsed() < Duration::from_secs(5));
     assert_eq!(out.status.code(), Some(0));
@@ -89,8 +109,17 @@ fn timeout_falls_back_silently() {
 fn no_presence_returns_immediately() {
     let h = home();
     let t0 = Instant::now();
-    let out = hook(h.path(), "PermissionRequest", &fixture("permission_request"), &["--timeout", "30"]);
-    assert!(t0.elapsed() < Duration::from_secs(3), "took {:?}", t0.elapsed());
+    let out = hook(
+        h.path(),
+        "PermissionRequest",
+        &fixture("permission_request"),
+        &["--timeout", "30"],
+    );
+    assert!(
+        t0.elapsed() < Duration::from_secs(3),
+        "took {:?}",
+        t0.elapsed()
+    );
     assert_eq!(out.status.code(), Some(0));
     assert!(out.stdout.is_empty());
     let evs = events(h.path());
@@ -123,7 +152,11 @@ fn app_disappearing_mid_wait_aborts_early() {
     c.args(["hook", "PermissionRequest", "--timeout", "60"]);
     let t0 = Instant::now();
     let out = run_with_stdin(c, &fixture("permission_request"));
-    assert!(t0.elapsed() < Duration::from_secs(10), "took {:?}", t0.elapsed());
+    assert!(
+        t0.elapsed() < Duration::from_secs(10),
+        "took {:?}",
+        t0.elapsed()
+    );
     assert!(out.stdout.is_empty());
     assert_eq!(resolved(h.path())[0]["event"]["outcome"], "not_present");
 }
@@ -141,10 +174,14 @@ fn garbage_response_file_is_ignored() {
 #[test]
 fn respond_writes_atomically_and_validates_id() {
     let h = home();
-    let out = agent(h.path()).args(["respond", "abc-1", "deny", "--message", "no"]).output().unwrap();
+    let out = agent(h.path())
+        .args(["respond", "abc-1", "deny", "--message", "no"])
+        .output()
+        .unwrap();
     assert!(out.status.success());
     let p = h.path().join("responses/abc-1.json");
-    let r: shuai_proto::PermissionResponse = serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
+    let r: shuai_proto::PermissionResponse =
+        serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
     assert_eq!(r.request_id, "abc-1");
     assert_eq!(r.behavior, shuai_proto::Behavior::Deny);
     assert_eq!(r.message.as_deref(), Some("no"));
@@ -154,8 +191,14 @@ fn respond_writes_atomically_and_validates_id() {
         .collect();
     assert_eq!(leftovers, vec!["abc-1.json"], "no tmp files left behind");
 
-    let bad = agent(h.path()).args(["respond", "../evil", "allow"]).output().unwrap();
+    let bad = agent(h.path())
+        .args(["respond", "../evil", "allow"])
+        .output()
+        .unwrap();
     assert!(!bad.status.success());
-    let bad = agent(h.path()).args(["respond", "abc", "maybe"]).output().unwrap();
+    let bad = agent(h.path())
+        .args(["respond", "abc", "maybe"])
+        .output()
+        .unwrap();
     assert!(!bad.status.success());
 }

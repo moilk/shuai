@@ -4,7 +4,10 @@ use serde_json::Value;
 
 #[test]
 fn version_flag_prints_version() {
-    let out = std::process::Command::new(BIN).arg("--version").output().unwrap();
+    let out = std::process::Command::new(BIN)
+        .arg("--version")
+        .output()
+        .unwrap();
     assert!(out.status.success());
     assert_eq!(
         String::from_utf8(out.stdout).unwrap().trim(),
@@ -151,7 +154,8 @@ fn concurrent_hooks_never_interleave_lines() {
     let h = home();
     let n = 40;
     let big = "y".repeat(20_000);
-    let payload = format!(r#"{{"session_id":"s","hook_event_name":"UserPromptSubmit","prompt":"{big}"}}"#);
+    let payload =
+        format!(r#"{{"session_id":"s","hook_event_name":"UserPromptSubmit","prompt":"{big}"}}"#);
     let handles: Vec<_> = (0..n)
         .map(|_| {
             let p = h.path().to_path_buf();
@@ -180,7 +184,9 @@ fn log_rotates_when_too_big() {
         run_with_stdin(c, &fixture("stop"));
     }
     assert!(h.path().join("events.jsonl.1").exists());
-    let size = std::fs::metadata(h.path().join("events.jsonl")).unwrap().len();
+    let size = std::fs::metadata(h.path().join("events.jsonl"))
+        .unwrap()
+        .len();
     assert!(size < 6000, "main file is {size}");
     let s = seqs(&events(h.path()));
     assert_eq!(*s.last().unwrap(), 30);

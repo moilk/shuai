@@ -46,9 +46,15 @@ fn watch_emits_heartbeats_and_touches_presence() {
     let first = w.next_line(T).unwrap();
     assert_eq!(first, serde_json::json!({"type": "heartbeat"}));
     assert!(w.next_line(T).unwrap()["type"] == "heartbeat");
-    let m1 = std::fs::metadata(h.path().join("presence")).unwrap().modified().unwrap();
+    let m1 = std::fs::metadata(h.path().join("presence"))
+        .unwrap()
+        .modified()
+        .unwrap();
     std::thread::sleep(Duration::from_millis(600));
-    let m2 = std::fs::metadata(h.path().join("presence")).unwrap().modified().unwrap();
+    let m2 = std::fs::metadata(h.path().join("presence"))
+        .unwrap()
+        .modified()
+        .unwrap();
     assert!(m2 > m1, "presence must be refreshed by heartbeats");
 }
 
@@ -62,8 +68,14 @@ fn watch_follows_across_rotation_without_loss() {
         let mut c = agent(h.path());
         c.args(["hook", "Stop"]).env("SHUAI_MAX_LOG_BYTES", "2500");
         run_with_stdin(c, &fixture("stop"));
+        // The log keeps only one rotated file, so a follower must see each file before it is
+        // rotated away a second time; pace the writers like a (very busy) real session.
+        std::thread::sleep(Duration::from_millis(25));
     }
-    assert!(h.path().join("events.jsonl.1").exists(), "rotation should have happened");
+    assert!(
+        h.path().join("events.jsonl.1").exists(),
+        "rotation should have happened"
+    );
     let mut got = Vec::new();
     while got.len() < n as usize {
         match w.next_event(T) {
