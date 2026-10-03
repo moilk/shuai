@@ -23,8 +23,25 @@ public final class TerminalView: UITerminalView {
 
     /// Show the docked bar over the software keyboard (default on).
     public var showsDockedAccessoryBar = true {
-        // Idempotent: reloading input views re-lays-out the keyboard, so only do it on a real change.
-        didSet { if oldValue != showsDockedAccessoryBar { reloadInputViews() } }
+        // Idempotent and deferred: this is set from SwiftUI's `updateUIView`, and reloading input views
+        // lays out the keyboard window synchronously, which re-enters the hosting view mid-update
+        // (AttributeGraph cycle, main thread hang). Coalesce to one reload on the next run loop turn.
+        didSet { if oldValue != showsDockedAccessoryBar { scheduleInputViewsReload() } }
+    }
+
+    /// Number of `reloadInputViews()` calls made for the docked-bar toggle (tests).
+    var inputViewsReloadCount = 0
+    private var inputViewsReloadScheduled = false
+
+    private func scheduleInputViewsReload() {
+        guard !inputViewsReloadScheduled else { return }
+        inputViewsReloadScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            inputViewsReloadScheduled = false
+            inputViewsReloadCount += 1
+            reloadInputViews()
+        }
     }
 
     private var mirroringSticky = false
