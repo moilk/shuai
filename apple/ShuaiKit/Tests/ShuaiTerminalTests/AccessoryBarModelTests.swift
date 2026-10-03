@@ -21,6 +21,21 @@ struct AccessoryBarStickyTests {
         #expect(m.ctrl == .off)
     }
 
+    @Test func slowSecondTapCancelsInsteadOfLocking() {
+        var m = AccessoryBarModel()
+        let t0 = Date(timeIntervalSince1970: 1000)
+        _ = m.press(.ctrl, at: t0)
+        #expect(m.ctrl == .oneShot)
+        _ = m.press(.ctrl, at: t0.addingTimeInterval(0.2))
+        #expect(m.ctrl == .locked)
+        _ = m.press(.ctrl, at: t0.addingTimeInterval(5))
+        #expect(m.ctrl == .off)
+
+        _ = m.press(.alt, at: t0.addingTimeInterval(6))
+        _ = m.press(.alt, at: t0.addingTimeInterval(7)) // slower than the double-tap window
+        #expect(m.alt == .off)
+    }
+
     @Test func ctrlAndAltAreIndependent() {
         var m = AccessoryBarModel()
         _ = m.press(.ctrl)
