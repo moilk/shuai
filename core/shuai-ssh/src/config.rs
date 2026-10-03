@@ -97,7 +97,10 @@ pub struct ConnectConfig {
     pub auth: Vec<AuthMethod>,
     /// Interval between `keepalive@openssh.com` probes.
     pub keepalive_interval: Duration,
-    /// Number of unanswered probes tolerated before the session is declared dead.
+    /// Number of consecutive unanswered probes tolerated: the session is declared dead when
+    /// the probe after the `keepalive_max`-th unanswered one is due (russh semantics), i.e.
+    /// after `keepalive_max + 1` silent intervals, roughly
+    /// `keepalive_interval * (keepalive_max + 1)`. `0` disables the check.
     pub keepalive_max: u32,
     /// Budget for TCP connect plus SSH handshake (not authentication).
     pub connect_timeout: Duration,

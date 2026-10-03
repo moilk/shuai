@@ -229,9 +229,10 @@ impl Session {
     /// `config.auth` in order.
     ///
     /// `config.connect_timeout` bounds TCP connect plus the SSH handshake. Keepalives
-    /// (`keepalive@openssh.com`) start once authenticated: the session is torn down after
-    /// `keepalive_max` consecutive unanswered intervals (a `keepalive_max` of 0 disables the
-    /// check).
+    /// (`keepalive@openssh.com`) start once authenticated: the session is torn down once more
+    /// than `keepalive_max` consecutive probes went unanswered (a `keepalive_max` of 0
+    /// disables the check); [`Session::closed`] then reports
+    /// `SessionLost(KeepaliveTimeout)`.
     ///
     /// # Errors
     /// [`SshError::Connect`], [`SshError::Timeout`], [`SshError::HostKeyRejected`],
@@ -753,6 +754,15 @@ impl ExecChannel {
             .data_bytes(data.to_vec())
             .await
             .map_err(|_| SshError::ChannelClosed)
+    }
+
+    /// Sends EOF on the command's stdin (like closing a pipe) without closing the channel, so
+    /// output and the exit status can still be read.
+    pub async fn eof(&self) -> Result<()> {
+        if self.closed.is_set() {
+            return Err(SshError::ChannelClosed);
+        }
+        self.write.eof().await.map_err(|_| SshError::ChannelClosed)
     }
 
     /// Closes the channel.
