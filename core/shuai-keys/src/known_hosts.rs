@@ -209,6 +209,27 @@ impl KnownHosts {
         }
     }
 
+    /// Removes the plain (non-marker) entries that are specific to `host:port`: a single
+    /// literal host pattern or a hashed host that matches. Wildcard, negated, multi-host and
+    /// `@revoked` lines are never edited (they may cover other hosts). Returns the number of
+    /// lines removed.
+    pub fn remove_host(&mut self, host: &str, port: u16) -> usize {
+        let target = host_string(host, port);
+        let before = self.lines.len();
+        self.lines.retain(|line| {
+            let Some(e) = parse_entry(line) else {
+                return true;
+            };
+            let specific = if e.hosts.starts_with("|1|") {
+                hashed_matches(e.hosts, &target)
+            } else {
+                is_plain_host(e.hosts) && e.hosts.eq_ignore_ascii_case(&target)
+            };
+            !(matches!(e.marker, Marker::None) && specific)
+        });
+        before - self.lines.len()
+    }
+
     /// Appends an entry (see [`add_entry`]) and returns the line added.
     pub fn add(&mut self, host: &str, port: u16, key: &PublicKey, hashed: bool) -> String {
         let line = add_entry(host, port, key, hashed);

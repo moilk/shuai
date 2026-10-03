@@ -176,6 +176,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-compat"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c97d7ff3c25d6c10d64170c12acaf5d4245e76dece3779c1d92b153a64f11df"
+dependencies = [
+ "futures-core",
+ "futures-io",
+ "once_cell",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2091,7 +2104,15 @@ dependencies = [
 name = "shuai-ffi"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "shuai-keys",
  "shuai-proto",
+ "shuai-ssh",
+ "shuai-testkit",
+ "shuai-tmux",
+ "tempfile",
+ "thiserror",
+ "tokio",
  "uniffi",
 ]
 
@@ -2135,7 +2156,17 @@ dependencies = [
  "proptest",
  "rand 0.10.3",
  "russh",
+ "shuai-testkit",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "shuai-testkit"
+version = "0.1.0"
+dependencies = [
+ "rand 0.10.3",
+ "russh",
  "tokio",
 ]
 
@@ -2493,6 +2524,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7530ae8efeaaa488622865966763fe0294832779fff80508c36d69c6a874a6a"
 dependencies = [
  "anyhow",
+ "async-compat",
  "bytes",
  "once_cell",
  "static_assertions",

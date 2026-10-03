@@ -8,6 +8,23 @@ publish.workspace = true
 [lib]
 crate-type = ["lib", "staticlib"]
 
+[features]
+default = []
+# Exports `start_test_ssh_server()` (in-process SSH server) for Swift host tests.
+# Only enabled for the macOS slice by `SHUAI_FFI_TESTKIT=1 scripts/build-xcframework.sh`.
+testkit = ["dep:shuai-testkit"]
+
 [dependencies]
-uniffi.workspace = true
+uniffi = { workspace = true, features = ["tokio"] }
 shuai-proto.workspace = true
+shuai-keys = { path = "../shuai-keys" }
+shuai-ssh = { path = "../shuai-ssh" }
+shuai-tmux = { path = "../shuai-tmux" }
+shuai-testkit = { path = "../shuai-testkit", optional = true }
+tokio.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+shuai-testkit = { path = "../shuai-testkit" }
+tempfile.workspace = true
