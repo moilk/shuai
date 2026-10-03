@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-    "shuai-proto", "shuai-keys", "shuai-ssh", "shuai-tmux",
+    "shuai-proto", "shuai-keys", "shuai-ssh", "shuai-tmux", "shuai-testkit",
     "shuai-agentkit", "shuai-ffi", "shuai-agent", "uniffi-bindgen",
 ]
 
