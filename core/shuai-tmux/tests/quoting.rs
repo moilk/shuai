@@ -86,11 +86,15 @@ fn leading_tilde_and_dash_are_neutralised() {
     assert_eq!(c.argv(), ["rename-window", "-t", "=s:", "--", "-x"]);
 }
 
-const SOCK: &str = "shuairev";
+/// Per-process socket so concurrent test runs on one machine never share a server.
+fn sock() -> &'static str {
+    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    S.get_or_init(|| format!("shuairev-{}", std::process::id()))
+}
 
 fn tmux(args: &[&str]) -> std::process::Output {
     Command::new("tmux")
-        .args(["-L", SOCK, "-f", "/dev/null"])
+        .args(["-L", sock(), "-f", "/dev/null"])
         .args(args)
         .output()
         .unwrap()
@@ -114,7 +118,7 @@ fn run_control(lines: &[String]) {
     let mut child = Command::new("tmux")
         .args([
             "-L",
-            SOCK,
+            sock(),
             "-f",
             "/dev/null",
             "-C",

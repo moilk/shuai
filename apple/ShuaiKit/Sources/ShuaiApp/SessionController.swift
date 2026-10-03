@@ -69,6 +69,9 @@ public final class SessionController {
     @ObservationIgnored private var connection: RemoteConnection?
     @ObservationIgnored private var shell: RemoteShell?
     @ObservationIgnored private var commands: AsyncStream<Command>.Continuation?
+    /// Non-nil while the tmux -> plain shell switch is in flight: keystrokes typed meanwhile wait here
+    /// and are replayed into the new shell (resizes are dropped; the new shell opens at the current size).
+    @ObservationIgnored private var inputDuringSwitch: [Data]?
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var writerTask: Task<Void, Never>?
     @ObservationIgnored private var closedTask: Task<Void, Never>?
@@ -136,12 +139,12 @@ public final class SessionController {
 
     private func wireEngine() {
         engine.onInput = { [weak self] data in
-            MainActor.assumeIsolated { _ = self?.commands?.yield(.write(data)) }
+            MainActor.assumeIsolated { self?.enqueue(.write(data)) }
         }
         engine.onResize = { [weak self] grid in
             MainActor.assumeIsolated {
                 guard grid.isValid else { return }
-                self?.commands?.yield(.resize(cols: UInt32(grid.cols), rows: UInt32(grid.rows)))
+                self?.enqueue(.resize(cols: UInt32(grid.cols), rows: UInt32(grid.rows)))
             }
         }
         engine.onTitleChange = { [weak self] t in MainActor.assumeIsolated { self?.title = t } }
@@ -153,7 +156,15 @@ public final class SessionController {
     public func dismissNotice() { notice = nil }
 
     /// Types text into the remote (debug scripting, tests).
-    public func sendInput(_ text: String) { commands?.yield(.write(Data(text.utf8))) }
+    public func sendInput(_ text: String) { enqueue(.write(Data(text.utf8))) }
+
+    private func enqueue(_ command: Command) {
+        if let commands {
+            commands.yield(command)
+        } else if inputDuringSwitch != nil, case .write(let data) = command {
+            inputDuringSwitch?.append(data)
+        }
+    }
 
     // MARK: - Public lifecycle
 
@@ -483,6 +494,8 @@ public final class SessionController {
         guard gen == generation, let conn = connection else { return }
         tmuxUnavailable = true
         notice = Self.tmuxMissingNotice
+        inputDuringSwitch = []
+        defer { inputDuringSwitch = nil }
         await stopTmuxMonitor()
         commands?.finish(); commands = nil
         writerTask = nil
@@ -496,6 +509,7 @@ public final class SessionController {
             guard gen == generation else { await plain.close(); return }
             startShell(plain, gen: gen, tmuxAttempt: false)
             typeStartupCommand()
+            for data in inputDuringSwitch ?? [] { enqueue(.write(data)) }
         } catch {
             guard gen == generation else { return }
             generation += 1

@@ -12,7 +12,11 @@ use shuai_tmux::controller::{ControllerEvent, TmuxController};
 use shuai_tmux::parse::parse_topology;
 use shuai_tmux::{Direction, Target, TmuxCommand, TmuxTopology, TmuxVersion, WindowId, cmd};
 
-const SOCKET: &str = "shuaim4";
+/// Per-process socket so concurrent test runs on one machine never share a server.
+fn socket() -> &'static str {
+    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    S.get_or_init(|| format!("shuaim4-{}", std::process::id()))
+}
 
 fn tmux_bin() -> Option<String> {
     [
@@ -51,9 +55,12 @@ impl Server {
     fn base(&self) -> Command {
         let mut c = Command::new(&self.bin);
         // CI runners have no TERM; tmux needs one for its client side.
-        c.env_remove("TMUX")
-            .env("TERM", "xterm-256color")
-            .args(["-L", SOCKET, "-f", "/dev/null"]);
+        c.env_remove("TMUX").env("TERM", "xterm-256color").args([
+            "-L",
+            socket(),
+            "-f",
+            "/dev/null",
+        ]);
         c
     }
     fn run(&self, c: &TmuxCommand) -> String {
@@ -307,7 +314,7 @@ fn switch_client_moves_the_pty_client_not_the_control_client() {
         let attach = [
             bin.as_str(),
             "-L",
-            SOCKET,
+            socket(),
             "-f",
             "/dev/null",
             "attach",

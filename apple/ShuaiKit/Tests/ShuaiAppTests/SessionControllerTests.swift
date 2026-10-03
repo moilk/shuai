@@ -607,11 +607,30 @@ private struct Harness {
         #expect(h.controller.state == .connected)
         #expect(h.factory.attempts == 1 && conn.disconnects.get == 0)
         h.controller.sendInput("ls\r")
-        #expect(await waitUntil { conn.shell.writtenText == "ls\r" })
+        #expect(await waitUntil(timeout: .seconds(20)) { conn.shell.writtenText == "ls\r" })
         conn.shell.emit("file\r\n")
         #expect(await waitUntil { h.engine.fedText.contains("file") })
         h.controller.dismissNotice()
         #expect(h.controller.notice == nil)
+    }
+
+    @Test func inputTypedWhileTheFallbackShellOpensIsReplayedIntoIt() async {
+        let h = Harness()
+        await h.controller.connect()
+        let conn = h.factory.last!
+        let gate = Latch()
+        conn.laterOpensGate.with { $0 = gate }
+        let dead = conn.shell
+        failTmux(conn)
+        // The notice is set before the plain shell exists: this is the window where typing used to be dropped.
+        #expect(await waitUntil { h.controller.notice != nil && conn.opens.get.count == 2 })
+        h.controller.sendInput("ls")
+        h.controller.sendInput("\r")
+        gate.open()
+        #expect(await waitUntil { conn.shell !== dead && conn.shell.writtenText == "ls\r" })
+        #expect(dead.writtenText.isEmpty)
+        h.controller.sendInput("pwd\r") // later input still flows in order
+        #expect(await waitUntil { conn.shell.writtenText == "ls\rpwd\r" })
     }
 
     @Test func exitStatus127AloneTriggersTheFallback() async {

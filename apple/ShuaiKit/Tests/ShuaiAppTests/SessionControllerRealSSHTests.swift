@@ -62,10 +62,11 @@ import ShuaiTerminal
         let (c, engine, known) = makeController(server, tmux: true)
         try known.add(host: "127.0.0.1", port: server.port(), publicKeyLine: server.hostPublicKeyLine())
         await c.connect()
-        #expect(await waitUntil { c.notice == SessionController.tmuxMissingNotice })
+        // Bounded safety-net timeouts only; typed input is buffered across the fallback switch, so no sleep is needed.
+        #expect(await waitUntil(timeout: .seconds(20)) { c.notice == SessionController.tmuxMissingNotice })
         #expect(c.state == .connected)
         engine.onInput?(Data("hello\r".utf8))
-        #expect(await waitUntil { engine.fedText.contains("hello") })
+        #expect(await waitUntil(timeout: .seconds(20)) { engine.fedText.contains("hello") })
         await c.disconnect()
     }
 

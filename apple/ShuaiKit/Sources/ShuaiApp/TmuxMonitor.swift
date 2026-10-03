@@ -58,6 +58,8 @@ public final class TmuxMonitor {
 
     @ObservationIgnored private let ptySize: @MainActor () -> (cols: UInt32, rows: UInt32)
     @ObservationIgnored private let debounce: Duration
+    /// Debounce timer; injectable so tests can fire it by hand instead of racing the wall clock.
+    @ObservationIgnored private let debounceSleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private let pollInterval: Duration
     @ObservationIgnored private let attachRetries: Int
     @ObservationIgnored private let attachRetryDelay: Duration
@@ -99,8 +101,10 @@ public final class TmuxMonitor {
         ptySize: @escaping @MainActor () -> (cols: UInt32, rows: UInt32) = { (80, 24) },
         debounce: Duration = .milliseconds(100), pollInterval: Duration = .seconds(2),
         attachRetries: Int = 8, attachRetryDelay: Duration = .milliseconds(150),
-        attachProbeTimeout: Duration = .seconds(5)
+        attachProbeTimeout: Duration = .seconds(5),
+        debounceSleep: (@Sendable (Duration) async throws -> Void)? = nil
     ) {
+        self.debounceSleep = debounceSleep ?? { try await Task.sleep(for: $0) }
         self.sessionName = sessionName
         self.ptySize = ptySize
         self.debounce = debounce
@@ -376,13 +380,16 @@ public final class TmuxMonitor {
 
     // MARK: - Refresh
 
+    /// True while a refresh is queued behind the debounce timer or running (tests wait for idle).
+    var isRefreshBusy: Bool { refreshing || refreshTask != nil }
+
     private func scheduleRefresh() {
         if refreshing { refreshAgain = true; return }
         guard refreshTask == nil else { return } // a refresh is already queued: this burst joins it
         let gen = generation
         refreshTask = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(for: self.debounce)
+            try? await self.debounceSleep(self.debounce)
             guard !Task.isCancelled, gen == self.generation else { return }
             self.refreshTask = nil
             await self.refreshNow()
