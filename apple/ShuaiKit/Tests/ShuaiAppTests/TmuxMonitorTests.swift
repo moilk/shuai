@@ -4,6 +4,33 @@ import ShuaiPlatform
 import Testing
 @testable import ShuaiApp
 
+/// A debounce timer the test fires by hand: every `sleep` suspends until `fire()` (or cancellation).
+final class ManualSleeper: @unchecked Sendable {
+    private let state = Locked<(calls: Int, nextID: Int, waiters: [Int: CheckedContinuation<Void, Error>])>((0, 0, [:]))
+    var calls: Int { state.get.calls }
+
+    @Sendable func sleep(_ d: Duration) async throws {
+        let id = state.with { s -> Int in s.calls += 1; s.nextID += 1; return s.nextID }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                if Task.isCancelled { cont.resume(throwing: CancellationError()); return }
+                state.with { $0.waiters[id] = cont }
+            }
+        } onCancel: {
+            let c = state.with { $0.waiters.removeValue(forKey: id) }
+            c?.resume(throwing: CancellationError())
+        }
+    }
+
+    func fire() {
+        let all = state.with { s -> [CheckedContinuation<Void, Error>] in
+            defer { s.waiters = [:] }
+            return Array(s.waiters.values)
+        }
+        all.forEach { $0.resume() }
+    }
+}
+
 @MainActor
 @Suite struct TmuxMonitorTests {
     static let us = "\u{1f}"
@@ -12,7 +39,8 @@ import Testing
     /// A connection whose `tmux -V` works and whose control channel is served by `server`.
     func rig(
         version: String = "tmux 3.6a", debounce: Duration = .milliseconds(30), pollInterval: Duration = .milliseconds(20),
-        attachRetryDelay: Duration = .milliseconds(1)
+        attachRetryDelay: Duration = .milliseconds(1),
+        debounceSleep: (@Sendable (Duration) async throws -> Void)? = nil
     ) -> (FakeConnection, FakeControlServer, TmuxMonitor) {
         let conn = FakeConnection()
         let server = FakeControlServer(panes: listPanes)
@@ -25,7 +53,7 @@ import Testing
         conn.execStreamSetup.with { $0 = { exec, _ in server.install(on: exec) } }
         let monitor = TmuxMonitor(
             sessionName: "main", ptySize: { (120, 40) }, debounce: debounce, pollInterval: pollInterval,
-            attachRetries: 5, attachRetryDelay: attachRetryDelay)
+            attachRetries: 5, attachRetryDelay: attachRetryDelay, debounceSleep: debounceSleep)
         return (conn, server, monitor)
     }
 
@@ -117,16 +145,37 @@ import Testing
     }
 
     @Test func structuralBurstsAreDebouncedIntoOneRefresh() async throws {
-        let (conn, server, monitor) = rig(debounce: .milliseconds(80))
+        let timer = ManualSleeper()
+        let (conn, server, monitor) = rig(debounceSleep: timer.sleep)
         await monitor.start(on: conn)
         let exec = conn.execStreams.get[0]
-        for i in 0 ..< 6 {
-            exec.emit("%window-add @\(10 + i)\n")
-            try? await Task.sleep(for: .milliseconds(5))
+        let window = try #require(monitor.topology?.sessions[0].windows.first)
+        var renames = 0
+        // A rename is patched in place, in stream order: once it shows, everything before it was processed.
+        func barrier() async {
+            renames += 1
+            exec.emit("%window-renamed \(window.id) barrier-\(renames)\n")
+            #expect(await waitUntil(timeout: .seconds(20)) { monitor.topology?.sessions[0].windows.first?.name == "barrier-\(renames)" })
         }
-        #expect(await waitUntil { server.listPanesCount >= 2 })
-        try? await Task.sleep(for: .milliseconds(200))
-        #expect(server.listPanesCount == 2) // initial + exactly one
+
+        // burst 1: six notifications inside the window -> one timer, no refresh until it fires
+        for i in 0 ..< 6 { exec.emit("%window-add @\(10 + i)\n") }
+        await barrier()
+        #expect(timer.calls == 1)
+        #expect(server.listPanesCount == 1)
+        timer.fire()
+        #expect(await waitUntil(timeout: .seconds(20)) { server.listPanesCount == 2 })
+
+        // burst 2 after the window: a fresh timer and exactly one more refresh
+        for i in 0 ..< 3 { exec.emit("%window-add @\(20 + i)\n") }
+        await barrier()
+        #expect(timer.calls == 2)
+        #expect(server.listPanesCount == 2)
+        timer.fire()
+        #expect(await waitUntil(timeout: .seconds(20)) { server.listPanesCount == 3 })
+        await barrier()
+        #expect(timer.calls == 2)
+        #expect(server.listPanesCount == 3)
         await monitor.stop()
     }
 
