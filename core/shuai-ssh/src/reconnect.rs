@@ -26,7 +26,7 @@ pub enum FailureKind {
 impl FailureKind {
     /// Whether retrying could possibly succeed without user intervention.
     pub fn is_retriable(self) -> bool {
-        todo!()
+        !matches!(self, FailureKind::AuthFailed | FailureKind::HostKeyRejected)
     }
 }
 
@@ -110,8 +110,13 @@ impl Jitter for NoJitter {
 pub struct HalfJitter;
 
 impl Jitter for HalfJitter {
-    fn apply(&self, _d: Duration) -> Duration {
-        todo!()
+    fn apply(&self, d: Duration) -> Duration {
+        let half = d / 2;
+        let spread = (d - half).as_nanos() as u64;
+        if spread == 0 {
+            return d;
+        }
+        half + Duration::from_nanos(rand::random_range(0..=spread))
     }
 }
 
@@ -145,14 +150,45 @@ impl ReconnectPolicy {
 
     /// Nominal (pre-jitter) delay after `attempt` failures: `min(cap, base * 2^(attempt-1))`.
     pub fn nominal_delay(&self, attempt: u32) -> Duration {
-        let _ = attempt;
-        todo!()
+        let exp = attempt.saturating_sub(1).min(32);
+        self.base.saturating_mul(1u32 << exp.min(31)).min(self.cap)
     }
 
     /// Computes the next state and action for `event` in `state`.
     pub fn transition(&self, state: &ReconnectState, event: ReconnectEvent) -> Transition {
-        let _ = (state, event);
-        todo!()
+        use ReconnectAction as A;
+        use ReconnectEvent as E;
+        use ReconnectState as S;
+        let go = |state, action| Transition { state, action };
+        let stay = go(*state, A::None);
+        match (*state, event) {
+            (S::Idle | S::GaveUp, E::Connect) => go(S::Connecting { attempt: 1 }, A::StartConnect),
+            (S::GaveUp, E::UserCancel) => go(S::Idle, A::None),
+            (S::Connecting { .. } | S::Connected | S::Backoff { .. }, E::UserCancel) => {
+                go(S::Idle, A::Cancel)
+            }
+            (S::Connecting { .. }, E::ConnectOk) => go(S::Connected, A::None),
+            (S::Connecting { attempt }, E::ConnectFailed(kind)) => {
+                let exhausted = self.max_attempts.is_some_and(|m| attempt >= m);
+                if !kind.is_retriable() || exhausted {
+                    go(S::GaveUp, A::None)
+                } else {
+                    let delay = self.jitter.apply(self.nominal_delay(attempt)).min(self.cap);
+                    go(S::Backoff { attempt, delay }, A::ScheduleRetry(delay))
+                }
+            }
+            (S::Connected, E::Dropped) => go(S::Connecting { attempt: 1 }, A::StartConnect),
+            (S::Backoff { attempt, .. }, E::BackoffElapsed) => go(
+                S::Connecting {
+                    attempt: attempt.saturating_add(1),
+                },
+                A::StartConnect,
+            ),
+            (S::Backoff { .. }, E::NetworkChanged | E::AppForegrounded) => {
+                go(S::Connecting { attempt: 1 }, A::StartConnect)
+            }
+            _ => stay,
+        }
     }
 }
 
