@@ -80,6 +80,14 @@ fn host_string(host: &str, port: u16) -> String {
     }
 }
 
+fn is_plain_host(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with(['|', '@', '#', '!'])
+        && !s
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, ',' | '*' | '?'))
+}
+
 fn hmac_sha1(salt: &[u8], data: &str) -> Vec<u8> {
     let mut mac =
         <Hmac<Sha1> as KeyInit>::new_from_slice(salt).expect("HMAC accepts any key length");
@@ -98,14 +106,36 @@ fn hashed_matches(pattern: &str, target: &str) -> bool {
     hmac_sha1(&salt, target) == hash
 }
 
-/// Glob match with `*` and `?`, case-insensitive (both sides pre-lowercased by caller).
+/// Glob match with `*` and `?` (both sides pre-lowercased by caller). Iterative with
+/// single-point backtracking, so hostile patterns cannot cause exponential blow-up.
 fn glob(pattern: &[u8], text: &[u8]) -> bool {
-    match pattern.split_first() {
-        None => text.is_empty(),
-        Some((b'*', rest)) => (0..=text.len()).any(|i| glob(rest, &text[i..])),
-        Some((b'?', rest)) => !text.is_empty() && glob(rest, &text[1..]),
-        Some((c, rest)) => text.first() == Some(c) && glob(rest, &text[1..]),
+    let (mut p, mut t) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while t < text.len() {
+        match pattern.get(p) {
+            Some(b'*') => {
+                star = Some((p, t));
+                p += 1;
+            }
+            Some(b'?') => {
+                p += 1;
+                t += 1;
+            }
+            Some(&c) if c == text[t] => {
+                p += 1;
+                t += 1;
+            }
+            _ => match star {
+                Some((sp, st)) => {
+                    p = sp + 1;
+                    t = st + 1;
+                    star = Some((sp, st + 1));
+                }
+                None => return false,
+            },
+        }
     }
+    pattern[p..].iter().all(|&c| c == b'*')
 }
 
 fn hosts_match(hosts: &str, target: &str) -> bool {
@@ -189,10 +219,14 @@ impl KnownHosts {
 
 /// Builds a `known_hosts` line (no trailing newline) for `host:port`, without the key comment.
 ///
-/// Port 22 is written as the bare host, other ports as `[host]:port`. With `hashed`, the host
+/// Port 22 is written as the bare host, other ports as `[host]:port`. Hosts that are not safe to
+/// write in plain text (whitespace, `,*?!`, leading `|@#`) are always hashed. With `hashed`, the host
 /// field is `|1|salt|HMAC-SHA1` with a fresh random salt, like `ssh-keygen -H`.
 pub fn add_entry(host: &str, port: u16, key: &PublicKey, hashed: bool) -> String {
     let target = host_string(host, port);
+    // A host containing whitespace, list/pattern syntax or a leading marker would inject
+    // extra lines/wildcards into the file; hashing makes any string safe.
+    let hashed = hashed || !is_plain_host(&target);
     let field = if hashed {
         let mut salt = [0u8; 20];
         rand::rng().fill_bytes(&mut salt);

@@ -245,13 +245,13 @@ fn pkcs8_decrypt(der: &[u8], pass: &str) -> Result<pkcs8::SecretDocument, KeyErr
 /// OpenSSL `EVP_BytesToKey(MD5, salt = iv[..8], count = 1)`.
 fn evp_bytes_to_key(pass: &[u8], salt: &[u8], len: usize) -> Zeroizing<Vec<u8>> {
     let mut out = Zeroizing::new(Vec::with_capacity(len + 16));
-    let mut prev: Vec<u8> = Vec::new();
+    let mut prev: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
     while out.len() < len {
         let mut ctx = md5::Context::new();
         ctx.consume(&prev);
         ctx.consume(pass);
         ctx.consume(salt);
-        prev = ctx.finalize().0.to_vec();
+        prev = Zeroizing::new(ctx.finalize().0.to_vec());
         out.extend_from_slice(&prev);
     }
     out.truncate(len);
