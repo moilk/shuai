@@ -81,7 +81,8 @@ struct AgentInstallerTests {
         let inst = installer(remote)
         let probe = try await inst.probe()
         let log = Locked<[InstallProgress]>([])
-        let report = await inst.run(probe: probe, progress: { p in log.with { $0.append(p) } })
+        let report = await inst.run(
+            probe: probe, options: InstallOptions(pluginSource: .local), progress: { p in log.with { $0.append(p) } })
         #expect(report.ok)
         #expect(report.doctor?.pluginInstalled == true)
         #expect(report.doctor?.version == expectedAgentVersion())
@@ -187,6 +188,18 @@ struct AgentInstallerTests {
         let report = await inst.run(probe: try await inst.probe())
         #expect(report.ok)
         #expect(!remote.uploads.get.contains { $0.path.hasSuffix("settings.json") })
+    }
+
+    @Test func defaultPluginSourceIsTheGitHubMarketplace() async throws {
+        let remote = host(probe: probeText())
+        let inst = installer(remote)
+        let report = await inst.run(probe: try await inst.probe())
+        #expect(report.ok)
+        let cmds = remote.commands.get
+        #expect(cmds.contains { $0.hasSuffix("plugin marketplace add moilk/shuai") })
+        #expect(cmds.contains { $0.hasSuffix("plugin install shuai@shuai") })
+        #expect(!cmds.contains { $0.contains(".shuai/plugin-marketplace") }, "local fallback unused")
+        #expect(!remote.uploads.get.contains { $0.path.contains("plugin-marketplace") })
     }
 
     @Test func githubPluginSourceFallsBackToLocalWhenPrivate() async throws {
