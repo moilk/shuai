@@ -44,7 +44,7 @@ public enum TmuxTree {
             let allPanes = s.windows.flatMap { $0.panes.map(\.id) }
             return SessionRow(
                 id: s.id, name: s.name, viewed: s.id == viewedSessionID, windows: rows,
-                badge: PaneBadge.aggregate(panes: allPanes, host: host, provider: badges))
+                badge: PaneBadge.aggregate(panes: allPanes, host: host.uuidString, provider: badges))
         }
     }
 
@@ -58,14 +58,14 @@ public enum TmuxTree {
                     PaneRow(
                         id: p.id, index: Int(p.index),
                         title: "\(p.currentCommand) \u{2014} \(SwitcherItem.basename(p.currentPath))", active: p.active,
-                        badge: badges.badge(host: host, pane: p.id))
+                        badge: badges.badge(host: host.uuidString, pane: p.id))
                 }
                 : []
             return WindowRow(
                 id: w.id, index: Int(w.index), name: w.name, title: "\(w.index): \(w.name)", active: w.active,
                 zoomed: w.flags.contains("Z"), paneCount: w.panes.count,
                 activePaneID: (w.panes.first(where: \.active) ?? w.panes.first)?.id, panes: panes,
-                badge: PaneBadge.aggregate(panes: paneIDs, host: host, provider: badges))
+                badge: PaneBadge.aggregate(panes: paneIDs, host: host.uuidString, provider: badges))
         }
     }
 }

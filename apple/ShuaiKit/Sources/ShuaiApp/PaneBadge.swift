@@ -1,45 +1,71 @@
 import Foundation
 
-/// A small status marker shown next to a pane/window/session row in the sidebar and in the
-/// quick switcher. Producers (M5's agent monitor) decide the content; the tmux UI only renders
-/// it and sorts by `priority`.
-public struct PaneBadge: Equatable, Hashable, Sendable {
+// `PaneBadge` (the agent state of a pane) and `PaneBadgeProvider` are defined in AgentHooks.swift;
+// this file adds the presentation/ordering the tmux sidebar and quick switcher need.
+
+extension PaneBadge {
     public enum Tint: String, Sendable { case neutral, info, success, warning, danger }
 
     /// SF Symbol name.
-    public var symbol: String
-    /// Short accessibility/tooltip text ("needs approval").
-    public var label: String
-    public var tint: Tint
-    /// Higher wins when badges are aggregated (window = max of its panes).
-    public var priority: Int
-    /// The user is being waited for: the quick switcher may list these first.
-    public var needsAttention: Bool
-
-    public init(symbol: String, label: String, tint: Tint = .neutral, priority: Int = 0, needsAttention: Bool = false) {
-        self.symbol = symbol
-        self.label = label
-        self.tint = tint
-        self.priority = priority
-        self.needsAttention = needsAttention
+    public var symbol: String {
+        switch self {
+        case .working: "gearshape"
+        case .needsPermission: "hand.raised"
+        case .needsInput: "questionmark.bubble"
+        case .done: "checkmark.circle"
+        case .failed: "exclamationmark.triangle"
+        case .idle: "moon.zzz"
+        }
     }
 
-    /// The badge with the highest priority among `panes` (nil when none has one).
+    /// Short accessibility/tooltip text.
+    public var label: String {
+        switch self {
+        case .working: "working"
+        case .needsPermission: "needs approval"
+        case .needsInput: "needs input"
+        case .done: "done"
+        case .failed: "failed"
+        case .idle: "idle"
+        }
+    }
+
+    public var tint: Tint {
+        switch self {
+        case .working: .info
+        case .needsPermission: .warning
+        case .needsInput: .warning
+        case .done: .success
+        case .failed: .danger
+        case .idle: .neutral
+        }
+    }
+
+    /// Higher wins when badges are aggregated (window = max of its panes).
+    public var priority: Int {
+        switch self {
+        case .needsPermission: 5
+        case .needsInput: 4
+        case .failed: 3
+        case .working: 2
+        case .done: 1
+        case .idle: 0
+        }
+    }
+
+    /// The user is being waited for: the quick switcher may list these first.
+    public var needsAttention: Bool { self == .needsPermission || self == .needsInput }
+
+    /// The badge with the highest priority among `panes` (nil when none has one). `host` is the
+    /// provider's host key (what `AgentMonitor.host` is).
     @MainActor
-    public static func aggregate(panes: [String], host: UUID, provider: any PaneBadgeProvider) -> PaneBadge? {
+    public static func aggregate(panes: [String], host: String, provider: any PaneBadgeProvider) -> PaneBadge? {
         panes.compactMap { provider.badge(host: host, pane: $0) }.max { $0.priority < $1.priority }
     }
 }
 
-/// Hook for per-pane badges. The default is `NoPaneBadges`; the agent monitor (M5) supplies
-/// its own implementation (`@Observable` state read inside `badge` is tracked by SwiftUI).
-@MainActor
-public protocol PaneBadgeProvider {
-    /// `host` is `HostProfile.id`, `pane` a tmux pane id (`%3`).
-    func badge(host: UUID, pane: String) -> PaneBadge?
-}
-
+/// Default provider: no badges.
 public struct NoPaneBadges: PaneBadgeProvider {
     public init() {}
-    public func badge(host _: UUID, pane _: String) -> PaneBadge? { nil }
+    @MainActor public func badge(host _: String, pane _: String) -> PaneBadge? { nil }
 }

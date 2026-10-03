@@ -23,8 +23,8 @@ import Testing
     }
 
     struct Badges: PaneBadgeProvider {
-        func badge(host _: UUID, pane: String) -> PaneBadge? {
-            pane == "%1" ? PaneBadge(symbol: "hand.raised", label: "needs approval", tint: .warning, priority: 5, needsAttention: true) : nil
+        func badge(host _: String, pane: String) -> PaneBadge? {
+            pane == "%1" ? .needsPermission : nil
         }
     }
 

@@ -186,10 +186,10 @@ import Testing
             func rank(_ candidates: [RankedCandidate]) -> [SwitcherItem] { seen = candidates; return candidates.map(\.item) }
         }
         let spy = Spy()
-        let badge = PaneBadge(symbol: "exclamationmark", label: "needs approval", priority: 10)
+        let badge = PaneBadge.needsPermission
         struct One: PaneBadgeProvider {
             let badge: PaneBadge
-            func badge(host: UUID, pane: String) -> PaneBadge? { pane == "%1" ? badge : nil }
+            func badge(host: String, pane: String) -> PaneBadge? { pane == "%1" ? badge : nil }
         }
         let model = QuickSwitcherModel(items: try items(), ranker: spy, badges: One(badge: badge))
         model.query = "nvim"
@@ -203,21 +203,21 @@ import Testing
 @Suite struct PaneBadgeTests {
     @Test func defaultProviderHasNoBadges() {
         let p = NoPaneBadges()
-        #expect(p.badge(host: UUID(), pane: "%1") == nil)
+        #expect(p.badge(host: "h", pane: "%1") == nil)
     }
 
     @Test func windowBadgeIsTheHighestPriorityPaneBadge() {
         struct P: PaneBadgeProvider {
-            func badge(host: UUID, pane: String) -> PaneBadge? {
+            func badge(host: String, pane: String) -> PaneBadge? {
                 switch pane {
-                case "%1": PaneBadge(symbol: "a", label: "low", priority: 1)
-                case "%2": PaneBadge(symbol: "b", label: "high", priority: 5)
+                case "%1": .done
+                case "%2": .needsPermission
                 default: nil
                 }
             }
         }
-        let b = PaneBadge.aggregate(panes: ["%1", "%2", "%3"], host: UUID(), provider: P())
-        #expect(b?.label == "high")
-        #expect(PaneBadge.aggregate(panes: ["%3"], host: UUID(), provider: P()) == nil)
+        let b = PaneBadge.aggregate(panes: ["%1", "%2", "%3"], host: "h", provider: P())
+        #expect(b == .needsPermission)
+        #expect(PaneBadge.aggregate(panes: ["%3"], host: "h", provider: P()) == nil)
     }
 }

@@ -194,7 +194,7 @@ public final class QuickSwitcherModel {
             guard let score = Self.score(tokens: tokens, item: item) else { continue }
             candidates.append(RankedCandidate(
                 item: item, fuzzyScore: score, recency: history.lastUsed(item.id),
-                badge: PaneBadge.aggregate(panes: item.paneIDs, host: item.hostID, provider: badges)))
+                badge: PaneBadge.aggregate(panes: item.paneIDs, host: item.hostID.uuidString, provider: badges)))
         }
         results = ranker.rank(candidates)
         if selectedIndex >= results.count { selectedIndex = 0 }
