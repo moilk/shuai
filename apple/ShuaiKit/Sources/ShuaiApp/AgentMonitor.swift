@@ -33,19 +33,44 @@ public struct PendingPermissionItem: Equatable, Sendable, Identifiable {
     public let session: FfiAgentSession
 }
 
-/// Splits a byte stream into UTF-8 lines.
+/// Splits a byte stream into UTF-8 lines. A line longer than `maxLine` bytes is dropped (up to
+/// its newline) so a runaway stream cannot grow the buffer without bound.
 struct LineSplitter {
+    static let maxLine = 1 << 20
     private var buffer = Data()
+    private var discarding = false
+    var bufferedBytes: Int { buffer.count }
+
     mutating func push(_ data: Data) -> [String] {
         buffer.append(data)
         var out: [String] = []
-        while let nl = buffer.firstIndex(of: 0x0A) {
-            let line = buffer[buffer.startIndex..<nl]
-            buffer = Data(buffer[buffer.index(after: nl)...])
-            if !line.isEmpty { out.append(String(decoding: line, as: UTF8.self)) }
+        var start = buffer.startIndex
+        while let nl = buffer[start...].firstIndex(of: 0x0A) {
+            if discarding {
+                discarding = false
+            } else if nl > start, nl - start <= Self.maxLine {
+                out.append(String(decoding: buffer[start..<nl], as: UTF8.self))
+            }
+            start = buffer.index(after: nl)
+        }
+        buffer = Data(buffer[start...])
+        if discarding || buffer.count > Self.maxLine {
+            buffer = Data()
+            discarding = true
         }
         return out
     }
+}
+
+/// Shared between the watch loop and its watchdog.
+private final class WatchActivity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last = ContinuousClock.now
+    private var fired = false
+    func touch() { lock.lock(); last = .now; lock.unlock() }
+    var idle: Duration { lock.lock(); defer { lock.unlock() }; return .now - last }
+    func fire() { lock.lock(); fired = true; lock.unlock() }
+    var timedOut: Bool { lock.lock(); defer { lock.unlock() }; return fired }
 }
 
 /// Follows one host's agent events: runs `shuai-agent watch --since <cursor>` over an exec
@@ -84,6 +109,7 @@ public final class AgentMonitor: PaneBadgeProvider {
 
     @ObservationIgnored public let tracker: AgentTracker
     @ObservationIgnored private let reconcileInterval: Duration
+    @ObservationIgnored private let heartbeatTimeout: Duration
     @ObservationIgnored private let now: @Sendable () -> UInt64
     @ObservationIgnored private var remote: AgentRemote?
     @ObservationIgnored private var claudePath: String?
@@ -97,12 +123,14 @@ public final class AgentMonitor: PaneBadgeProvider {
         tracker: AgentTracker = AgentTracker(),
         banners: AttentionBannerQueue = AttentionBannerQueue(),
         reconcileInterval: Duration = .seconds(60),
+        heartbeatTimeout: Duration = .seconds(25),
         now: @escaping @Sendable () -> UInt64 = { UInt64(Date().timeIntervalSince1970 * 1000) }
     ) {
         self.host = host
         self.tracker = tracker
         self.banners = banners
         self.reconcileInterval = reconcileInterval
+        self.heartbeatTimeout = heartbeatTimeout
         self.now = now
     }
 
@@ -118,11 +146,12 @@ public final class AgentMonitor: PaneBadgeProvider {
         self.claudePath = claudePath
         state = .connecting
         lastError = nil
-        watchTask = Task { [weak self] in await self?.runWatch(remote: remote, generation: gen) }
-        if let claudePath {
-            reconcileTask = Task { [weak self] in
-                await self?.reconcileLoop(remote: remote, claudePath: claudePath, generation: gen)
-            }
+        watchTask = Task { [weak self] in
+            // A watch that went silent is torn down by its watchdog and restarted from the cursor.
+            while !Task.isCancelled, let self, await self.runWatch(remote: remote, generation: gen) {}
+        }
+        reconcileTask = Task { [weak self] in
+            await self?.reconcileLoop(remote: remote, claudePath: claudePath, generation: gen)
         }
     }
 
@@ -149,19 +178,35 @@ public final class AgentMonitor: PaneBadgeProvider {
 
     // MARK: Watch loop
 
-    private func runWatch(remote: AgentRemote, generation gen: Int) async {
+    /// Returns true when the watch was cut off by the heartbeat watchdog and should be restarted.
+    private func runWatch(remote: AgentRemote, generation gen: Int) async -> Bool {
         let since = tracker.lastSeq(host: host) ?? 0
         let stream: AgentStream
         do {
             stream = try await remote.execStream(watchCommand(since: since))
         } catch {
-            guard gen == generation else { return }
+            guard gen == generation else { return false }
             state = .failed(error.localizedDescription)
             publish()
-            return
+            return false
         }
-        guard gen == generation else { await stream.close(); return }
+        guard gen == generation else { await stream.close(); return false }
         self.stream = stream
+        let activity = WatchActivity()
+        let timeout = heartbeatTimeout
+        // The agent beats every 5 s; no bytes at all for `timeout` means the channel is dead.
+        let watchdog = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: timeout / 4)
+                guard !Task.isCancelled else { return }
+                if activity.idle > timeout {
+                    activity.fire()
+                    await stream.close()
+                    return
+                }
+            }
+        }
+        defer { watchdog.cancel() }
 
         var splitter = LineSplitter()
         var heartbeats = 0
@@ -173,6 +218,7 @@ public final class AgentMonitor: PaneBadgeProvider {
             guard gen == generation else { break }
             switch event {
             case .stdout(let data):
+                activity.touch()
                 var live: [FfiTrackerChange] = []
                 for line in splitter.push(data) {
                     switch classifyWatchLine(line: line) {
@@ -206,9 +252,14 @@ public final class AgentMonitor: PaneBadgeProvider {
                 break
             }
         }
-        guard gen == generation else { return }
+        guard gen == generation else { return false }
         self.stream = nil
         isReplaying = false
+        if activity.timedOut {
+            state = .connecting
+            publish()
+            return true
+        }
         if sawExit, exitStatus == 127 {
             state = .notInstalled
         } else if sawExit, exitStatus != 0 {
@@ -218,6 +269,7 @@ public final class AgentMonitor: PaneBadgeProvider {
             state = .disconnected
         }
         publish()
+        return false
     }
 
     private func announce(_ changes: [FfiTrackerChange]) {
@@ -227,15 +279,20 @@ public final class AgentMonitor: PaneBadgeProvider {
 
     // MARK: Reconcile
 
-    private func reconcileLoop(remote: AgentRemote, claudePath: String, generation gen: Int) async {
+    private func reconcileLoop(remote: AgentRemote, claudePath: String?, generation gen: Int) async {
         while !Task.isCancelled {
             try? await Task.sleep(for: reconcileInterval)
             guard !Task.isCancelled, gen == generation else { return }
             guard state == .watching, !isReplaying else { continue }
-            guard let out = try? await remote.exec(claudeAgentsCommand(claudePath: claudePath)), out.ok,
-                gen == generation
-            else { continue }
-            _ = try? tracker.applyClaudeAgentsJson(host: host, json: out.stdout, nowMs: now())
+            if let claudePath {
+                if let out = try? await remote.exec(claudeAgentsCommand(claudePath: claudePath)), out.ok,
+                    gen == generation
+                {
+                    _ = try? tracker.applyClaudeAgentsJson(host: host, json: out.stdout, nowMs: now())
+                }
+                guard gen == generation else { return }
+            }
+            // Bounded memory on a long-running watch, with or without the claude CLI.
             _ = tracker.pruneEnded(nowMs: now(), ttlMs: 60 * 60 * 1000)
             publish()
         }

@@ -266,7 +266,14 @@ private final class Runner: @unchecked Sendable {
         if hadOriginal {
             try await sh("[ -e \(q(path + ".shuai-bak")) ] || cp \(q(path)) \(q(path + ".shuai-bak"))", what: "backup of \(path)")
         }
-        try await remote.upload(Data(text.utf8), to: path, mode: 0o600)
+        // Atomic replace: a concurrent reader (Claude Code) sees the old or the new file, never a
+        // half-written one. A symlinked file (dotfile managers) is written through instead of
+        // being replaced by a regular file.
+        let tmp = path + ".shuai-tmp"
+        try await remote.upload(Data(text.utf8), to: tmp, mode: 0o600)
+        try await sh(
+            "if [ -L \(q(path)) ]; then cat \(q(tmp)) > \(q(path)) && rm -f \(q(tmp)); else mv -f \(q(tmp)) \(q(path)); fi",
+            what: "replace \(path)")
     }
 
     // MARK: install actions
