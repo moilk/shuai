@@ -23,6 +23,14 @@ LIB=libshuai_ffi.a
 FEATURES=()
 if [ "${SHUAI_FFI_TESTKIT:-0}" = "1" ]; then
   FEATURES=(--features testkit)
+  {
+    echo "################################################################"
+    echo "# WARNING: SHUAI_FFI_TESTKIT=1 -- building a TESTKIT xcframework."
+    echo "# It embeds an in-process SSH server with hard-coded credentials."
+    echo "# NEVER ship or archive this build. Release builds must run"
+    echo "# scripts/check-no-testkit.sh (it fails on this build)."
+    echo "################################################################"
+  } >&2
 fi
 
 rm -rf "$OUT" "$XCF" "$GEN_SWIFT"
@@ -52,4 +60,9 @@ for t in "${TARGETS[@]}"; do
   args+=(-library "target/$t/release/$LIB" -headers "$HEADERS")
 done
 xcodebuild -create-xcframework "${args[@]}" -output "$XCF"
-echo "==> done: $XCF"
+if [ "${SHUAI_FFI_TESTKIT:-0}" = "1" ]; then
+  echo "==> done (TESTKIT build, dev/CI only): $XCF" >&2
+else
+  "$ROOT/scripts/check-no-testkit.sh" "$XCF"
+  echo "==> done: $XCF"
+fi

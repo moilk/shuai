@@ -21,6 +21,7 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: cargo test -p shuai-ffi --features testkit
 
   apple:
     runs-on: macos-latest
@@ -33,8 +34,20 @@ jobs:
         with:
           workspaces: core
       - run: brew install xcodegen
-      - run: scripts/build-xcframework.sh
-      - name: swift test
+      - name: Script self-tests
+        run: scripts/test-check-no-testkit.sh
+      # 1) testkit build (in-process SSH server) for the real-SSH Swift tests. Never shipped.
+      - name: Build xcframework (testkit)
+        run: SHUAI_FFI_TESTKIT=1 scripts/build-xcframework.sh
+      - name: swift test (testkit)
+        working-directory: apple/ShuaiKit
+        run: SHUAI_FFI_TESTKIT=1 swift test
+      # 2) the normal build, which is what the App is tested against and what could ship.
+      - name: Build xcframework (release configuration, no testkit)
+        run: scripts/build-xcframework.sh
+      - name: Guard - no testkit symbols in the xcframework
+        run: scripts/check-no-testkit.sh
+      - name: swift test (no testkit)
         working-directory: apple/ShuaiKit
         run: swift test
       - name: Generate Xcode project
