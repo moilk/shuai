@@ -18,7 +18,7 @@ public final class AgentInstallModel {
     public private(set) var log: [InstallProgress] = []
     public private(set) var report: InstallReport?
     public var codexResolution: CodexConflictResolution = .skip
-    public var pluginSource: PluginSource = .local
+    public var pluginSource: PluginSource = .github
 
     @ObservationIgnored private let installer: AgentInstaller
 

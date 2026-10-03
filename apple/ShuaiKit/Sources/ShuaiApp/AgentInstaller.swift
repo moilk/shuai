@@ -3,9 +3,9 @@ import ShuaiCore
 
 // "Enable AI integration on this host": probe -> plan (Rust, `installPlan`) -> execute over SSH.
 //
-// Plugin install path. The GitHub repo (moilk/shuai) may be private, in which case
-// `claude plugin marketplace add moilk/shuai` cannot work on the host. So the default is a LOCAL
-// marketplace: the app embeds the repo's marketplace + plugin files (Rust `plugin_bundle()`),
+// Plugin install path. Default (`.github`): `claude plugin marketplace add moilk/shuai` +
+// `claude plugin install shuai@shuai` (the repo is public). If that fails (offline host, no GitHub
+// access) it falls back to a LOCAL marketplace: the app embeds the repo's marketplace + plugin files (Rust `plugin_bundle()`),
 // uploads them to `~/.shuai/plugin-marketplace` and runs
 //   claude plugin marketplace add ~/.shuai/plugin-marketplace && claude plugin install shuai@shuai
 // (verified: `claude plugin marketplace add` accepts a local path). `PluginSource.github` tries the
@@ -26,7 +26,7 @@ public struct InstallOptions: Sendable {
     public var pluginSource: PluginSource
     public var codexConflict: CodexConflictResolution
 
-    public init(dryRun: Bool = false, pluginSource: PluginSource = .local, codexConflict: CodexConflictResolution = .skip) {
+    public init(dryRun: Bool = false, pluginSource: PluginSource = .github, codexConflict: CodexConflictResolution = .skip) {
         self.dryRun = dryRun
         self.pluginSource = pluginSource
         self.codexConflict = codexConflict
@@ -351,7 +351,11 @@ private final class Runner: @unchecked Sendable {
             let cmds = pluginInstallCommands(claudePath: claude)
             log("Trying the GitHub marketplace")
             var ok = true
-            for c in cmds where ok { ok = (try? await remote.exec(c))?.ok == true }
+            for c in cmds where ok {
+                let o = try? await remote.exec(c)
+                // Re-running after a previous install: the marketplace is already registered.
+                ok = o?.ok == true || o?.stderr.localizedCaseInsensitiveContains("already") == true
+            }
             if ok { return .done }
             log("GitHub marketplace unavailable (private repository?); using the local one")
         }
