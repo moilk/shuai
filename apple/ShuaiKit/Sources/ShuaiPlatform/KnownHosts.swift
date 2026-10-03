@@ -33,6 +33,16 @@ public final class KnownHostsStore: @unchecked Sendable {
         try new.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    /// Replaces the entries specific to `host:port` with one for `publicKeyLine`. Used only
+    /// after the user explicitly accepted a *changed* host key.
+    public func replace(host: String, port: UInt16, publicKeyLine: String, hashed: Bool = false) throws {
+        lock.lock(); defer { lock.unlock() }
+        let new = try knownHostsReplace(
+            text: readText(), host: host, port: port, publicKeyLine: publicKeyLine, hashed: hashed)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try new.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func readText() -> String {
         (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
@@ -54,32 +64,52 @@ public struct HostKeyChallenge: Sendable, Equatable {
     public var kind: Kind
 }
 
-/// Trust-on-first-use host key verifier. Known keys pass silently, revoked keys fail, and
-/// unknown or changed keys are put to `decide` (typically a UI prompt); accepted keys are
-/// remembered in the `KnownHostsStore`.
+/// Trust-on-first-use host key verifier.
+///
+/// - Known keys pass silently; revoked keys fail.
+/// - Unknown keys (first contact) are put to `decide` (typically a UI prompt) and remembered
+///   when accepted.
+/// - **Changed keys are rejected unless `decideChanged` is supplied and says yes.** `decide`
+///   is never consulted for them, so a "trust anything new" prompt cannot silently accept a
+///   possible man-in-the-middle. The `HostKeyChallenge` handed to `decideChanged` carries the
+///   presented fingerprint and the expected (recorded) ones; an accepted key replaces the
+///   old entries.
 public final class TOFUVerifier: HostKeyVerifierCallback {
     private let store: KnownHostsStore
     private let decide: @Sendable (HostKeyChallenge) async -> Bool
+    private let decideChanged: (@Sendable (HostKeyChallenge) async -> Bool)?
 
-    public init(store: KnownHostsStore, decide: @escaping @Sendable (HostKeyChallenge) async -> Bool) {
+    public init(
+        store: KnownHostsStore,
+        decide: @escaping @Sendable (HostKeyChallenge) async -> Bool,
+        decideChanged: (@Sendable (HostKeyChallenge) async -> Bool)? = nil
+    ) {
         self.store = store
         self.decide = decide
+        self.decideChanged = decideChanged
     }
 
     public func verify(host: String, port: UInt16, publicKeyLine: String) async -> Bool {
         guard let status = try? store.check(host: host, port: port, publicKeyLine: publicKeyLine),
               let fingerprint = try? publicKeyFingerprint(publicKeyLine: publicKeyLine)
         else { return false }
-        let kind: HostKeyChallenge.Kind
-        switch status {
-        case .trusted: return true
-        case .revoked: return false
-        case .unknown: kind = .unknown
-        case .mismatch(let expected): kind = .changed(expectedFingerprints: expected)
+        func challenge(_ kind: HostKeyChallenge.Kind) -> HostKeyChallenge {
+            HostKeyChallenge(
+                host: host, port: port, publicKeyLine: publicKeyLine, fingerprint: fingerprint, kind: kind)
         }
-        let challenge = HostKeyChallenge(
-            host: host, port: port, publicKeyLine: publicKeyLine, fingerprint: fingerprint, kind: kind)
-        guard await decide(challenge) else { return false }
-        return (try? store.add(host: host, port: port, publicKeyLine: publicKeyLine)) != nil
+        switch status {
+        case .trusted:
+            return true
+        case .revoked:
+            return false
+        case .unknown:
+            guard await decide(challenge(.unknown)) else { return false }
+            return (try? store.add(host: host, port: port, publicKeyLine: publicKeyLine)) != nil
+        case .mismatch(let expected):
+            guard let decideChanged,
+                  await decideChanged(challenge(.changed(expectedFingerprints: expected)))
+            else { return false }
+            return (try? store.replace(host: host, port: port, publicKeyLine: publicKeyLine)) != nil
+        }
     }
 }

@@ -210,11 +210,12 @@ private func eventually(timeout: Duration = .seconds(5), _ cond: @Sendable () as
 
     @Test func coreKeepsItsOwnerAliveAndReleasesItOnShutdown() async {
         final class Owner {}
-        weak var weakOwner: Owner?
+        final class Weak: @unchecked Sendable { weak var owner: Owner? }
+        let weakOwner = Weak()
         var core: PumpCore<Ev>?
         do {
             let owner = Owner()
-            weakOwner = owner
+            weakOwner.owner = owner
             core = PumpCore<Ev>(
                 capacityBytes: 100, maxMergedBytes: 100, owner: owner,
                 next: {
@@ -223,9 +224,9 @@ private func eventually(timeout: Duration = .seconds(5), _ cond: @Sendable () as
                 },
                 close: {})
         }
-        #expect(weakOwner != nil)
+        #expect(weakOwner.owner != nil)
         core = nil
-        #expect(await eventually { weakOwner == nil })
+        #expect(await eventually { weakOwner.owner == nil })
         _ = core
     }
 }

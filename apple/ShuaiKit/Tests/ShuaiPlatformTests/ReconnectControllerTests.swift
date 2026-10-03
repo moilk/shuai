@@ -262,7 +262,7 @@ private struct Harness {
         #expect(ReconnectController.classify(FfiSshError.AuthFailed(triedMethods: [])) == .authFailed)
         #expect(ReconnectController.classify(FfiSshError.HostKeyRejected) == .hostKeyRejected)
         #expect(ReconnectController.classify(FfiSshError.InvalidKey(message: "x")) == .authFailed)
-        #expect(ReconnectController.classify(FfiSshError.Protocol(message: "x")) == .other)
+        #expect(ReconnectController.classify(FfiSshError.Unsupported(message: "x")) == .other)
         #expect(ReconnectController.classify(CancellationError()) == .other)
     }
 }

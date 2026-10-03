@@ -34,16 +34,22 @@ public final class KeychainKeyStore: KeyStore, @unchecked Sendable {
         return q
     }
 
-    public func save(privatePem: String, record: KeyRecord) throws {
-        // Replace atomically enough for our purposes: delete then add.
-        try deleteItem(id: record.id)
+    /// The `SecItemAdd` attributes for a key (internal so tests can pin the security posture
+    /// even on hosts whose keychain does not report accessibility back).
+    func addQuery(privatePem: String, record: KeyRecord) -> [String: Any] {
         var q = baseQuery(account: record.id)
         q[kSecValueData as String] = Data(privatePem.utf8)
         q[kSecAttrAccessible as String] = synchronizable
             ? kSecAttrAccessibleAfterFirstUnlock
             : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         q[kSecAttrLabel as String] = "shuai key \(record.name)"
-        let st = SecItemAdd(q as CFDictionary, nil)
+        return q
+    }
+
+    public func save(privatePem: String, record: KeyRecord) throws {
+        // Replace atomically enough for our purposes: delete then add.
+        try deleteItem(id: record.id)
+        let st = SecItemAdd(addQuery(privatePem: privatePem, record: record) as CFDictionary, nil)
         guard st == errSecSuccess else { throw KeyStoreError.keychain(st) }
         try metadata.upsert(record)
     }

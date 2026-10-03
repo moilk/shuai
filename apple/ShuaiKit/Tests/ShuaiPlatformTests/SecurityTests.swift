@@ -85,9 +85,32 @@ private final class Calls: @unchecked Sendable {
         let k = try generateKey(alg: .ed25519, comment: "")
         try store.save(privatePem: k.privatePem, record: KeyRecord(id: "k", name: "K", material: k, createdAt: Date()))
         let attrs = try attributes(service: service, account: "k")
-        #expect(attrs[kSecAttrAccessible as String] as? String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        // The macOS file-based keychain (swift test host) does not report accessibility back;
+        // iOS does. Whenever it is reported it must be the ThisDeviceOnly class.
+        if let accessible = attrs[kSecAttrAccessible as String] as? String {
+            #expect(accessible == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        }
         let sync = attrs[kSecAttrSynchronizable as String]
         #expect(sync == nil || (sync as? NSNumber)?.boolValue == false)
+    }
+
+    @Test func addQueryIsAfterFirstUnlockThisDeviceOnlyAndNotSynchronizableByDefault() throws {
+        let k = try generateKey(alg: .ed25519, comment: "")
+        let record = KeyRecord(id: "k", name: "K", material: k, createdAt: Date())
+        let store = KeychainKeyStore(service: "s", metadataURL: tempURL("keys.json"))
+        let q = store.addQuery(privatePem: k.privatePem, record: record)
+        #expect(q[kSecAttrAccessible as String] as? String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        #expect(q[kSecAttrSynchronizable as String] as? Bool == false)
+        #expect(q[kSecClass as String] as? String == kSecClassGenericPassword as String)
+    }
+
+    @Test func synchronizableIsOptInAndDropsThisDeviceOnly() throws {
+        let k = try generateKey(alg: .ed25519, comment: "")
+        let record = KeyRecord(id: "k", name: "K", material: k, createdAt: Date())
+        let store = KeychainKeyStore(service: "s", synchronizable: true, metadataURL: tempURL("keys.json"))
+        let q = store.addQuery(privatePem: k.privatePem, record: record)
+        #expect(q[kSecAttrSynchronizable as String] as? Bool == true)
+        #expect(q[kSecAttrAccessible as String] as? String == kSecAttrAccessibleAfterFirstUnlock as String)
     }
 
     @Test func publicDescriptionsNeverContainThePem() throws {

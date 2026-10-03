@@ -56,7 +56,7 @@ private final class Counter: @unchecked Sendable {
         let b = try generateKey(alg: .ed25519, comment: "")
         try store.add(host: "h", port: 22, publicKeyLine: a.publicLine)
         let seen = Counter()
-        let v = TOFUVerifier(store: store) { c in seen.add(c); return false }
+        let v = TOFUVerifier(store: store, decide: { _ in true }, decideChanged: { c in seen.add(c); return false })
         #expect(await v.verify(host: "h", port: 22, publicKeyLine: b.publicLine) == false)
         #expect(seen.challenges[0].kind == .changed(expectedFingerprints: [a.fingerprint]))
     }

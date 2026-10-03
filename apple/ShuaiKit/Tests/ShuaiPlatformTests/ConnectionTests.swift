@@ -103,6 +103,40 @@ private func collect(_ shell: Shell, until needle: String) async throws -> Strin
         #expect(closed)
     }
 
+    @Test func tinyBufferStillDeliversEverythingInOrder() async throws {
+        let server = await startTestSshServer()
+        let conn = try await Connection.connect(
+            config: config(server), verifier: TOFUVerifier(store: KnownHostsStore(fileURL: tempFile())) { _ in true })
+        let stream = try await conn.execStream("stream", bufferBytes: 1)
+        var out = ""
+        for try await ev in stream.events {
+            if case .stdout(let b) = ev { out += String(decoding: b, as: UTF8.self) }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(out == "line 0\nline 1\nline 2\n")
+    }
+
+    @Test func largeUploadSucceeds() async throws {
+        let server = await startTestSshServer()
+        let conn = try await Connection.connect(
+            config: config(server), verifier: TOFUVerifier(store: KnownHostsStore(fileURL: tempFile())) { _ in true })
+        try await conn.upload(Data(repeating: 9, count: 4 * 1024 * 1024), to: "/tmp/it's a file", mode: 0o600)
+        await conn.disconnect()
+    }
+
+    @Test func aShellKeepsItsConnectionAliveAfterTheCallerDropsIt() async throws {
+        let server = await startTestSshServer()
+        let shell: Shell
+        do {
+            let conn = try await Connection.connect(
+                config: config(server), verifier: TOFUVerifier(store: KnownHostsStore(fileURL: tempFile())) { _ in true })
+            shell = try await conn.openShell(cols: 80, rows: 24)
+        }
+        try await shell.write(Data("echo alive\n".utf8))
+        #expect(try await collect(shell, until: "alive").contains("alive"))
+        try await shell.close()
+    }
+
     @Test func shellEventsFinishAfterClose() async throws {
         let server = await startTestSshServer()
         let conn = try await Connection.connect(

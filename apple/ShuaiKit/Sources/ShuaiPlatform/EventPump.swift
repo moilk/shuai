@@ -115,6 +115,36 @@ actor EventQueue<E: PumpEvent> {
     }
 }
 
+/// The consumer side of a pump: an `AsyncSequence` that pulls from the bounded queue, so a
+/// slow consumer exerts back-pressure instead of letting a buffer grow without bound.
+public struct EventStream<Element: Sendable>: AsyncSequence, Sendable {
+    private let pop: @Sendable () async -> Element?
+    private let cancel: @Sendable () -> Void
+    // Keeps the pump alive for as long as the sequence is.
+    private let keepAlive: any Sendable
+
+    init(
+        keepAlive: any Sendable,
+        pop: @escaping @Sendable () async -> Element?,
+        cancel: @escaping @Sendable () -> Void
+    ) {
+        self.keepAlive = keepAlive
+        self.pop = pop
+        self.cancel = cancel
+    }
+
+    public struct AsyncIterator: AsyncIteratorProtocol {
+        fileprivate let pop: @Sendable () async -> Element?
+        fileprivate let cancel: @Sendable () -> Void
+        public mutating func next() async -> Element? {
+            let pop = pop, cancel = cancel
+            return await withTaskCancellationHandler { await pop() } onCancel: { cancel() }
+        }
+    }
+
+    public func makeAsyncIterator() -> AsyncIterator { AsyncIterator(pop: pop, cancel: cancel) }
+}
+
 /// Owns a pump task and the queue it feeds; shuts both (and the underlying Rust stream) down
 /// when the consumer cancels or when the last reference goes away.
 ///
@@ -129,7 +159,6 @@ final class PumpCore<E: PumpEvent>: @unchecked Sendable {
     private let owner: AnyObject?
     private let lock = NSLock()
     private var isShutDown = false
-    private var _events: AsyncThrowingStream<E, Error>?
 
     init(
         capacityBytes: Int,
@@ -152,16 +181,11 @@ final class PumpCore<E: PumpEvent>: @unchecked Sendable {
         }
     }
 
-    /// Events in order, ending after the terminal event. Cancelling the consumer shuts the
-    /// core down. (The stream references the core, so keep either alive to keep it running.)
-    var events: AsyncThrowingStream<E, Error> {
-        lock.lock(); defer { lock.unlock() }
-        if let e = _events { return e }
-        let e = AsyncThrowingStream<E, Error>(
-            unfolding: { [self] in await queue.pop() },
-            onCancel: { [self] in shutdown() })
-        _events = e
-        return e
+    /// Events in order, ending after the terminal event. Cancelling the consuming task shuts
+    /// the core down. The sequence references the core, so keeping either alive keeps the
+    /// pump (and the owner, e.g. the `Connection`) alive.
+    var events: EventStream<E> {
+        EventStream(keepAlive: self, pop: { [queue] in await queue.pop() }, cancel: { [self] in shutdown() })
     }
 
     func shutdown() {
