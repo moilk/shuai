@@ -109,7 +109,15 @@ fn run_inner(
 ) -> io::Result<()> {
     state.ensure()?;
     heartbeat(state, out)?;
-    let mut last = since;
+    // A cursor ahead of the agent's own seq counter can only come from before the state dir
+    // was wiped (seq restarted at 1): replay everything instead of waiting for seq to catch up.
+    let current = std::fs::read_to_string(state.seq_path())
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok());
+    let mut last = match current {
+        Some(c) if since > c => 0,
+        _ => since,
+    };
 
     // Open the current file first so a rotation during replay cannot hide events.
     let mut cur = Tail::open(state);
