@@ -39,7 +39,9 @@ pub struct TmuxTopology {
     pub sessions: Vec<TmuxSession>,
 }
 
-/// One difference between two topologies. Windows/panes are keyed by
+/// One difference between two topologies. `SessionAdded` / `WindowAdded` imply the
+/// whole new subtree (their windows/panes are not reported individually; read them from
+/// the new topology). Windows/panes are keyed by
 /// `(session, window[, pane])` because a window can be linked into several sessions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TopologyChange {
