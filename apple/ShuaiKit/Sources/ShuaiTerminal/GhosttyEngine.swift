@@ -108,6 +108,15 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
         try? await Task.sleep(for: .milliseconds(60))
     }
 
+    /// View size in points that yields exactly `cols` x `rows` at the current font (nil until the first
+    /// layout reports cell metrics). Use with `.frame` in SwiftUI instead of `resize(cols:rows:)`.
+    public func pointSize(cols: Int, rows: Int) -> CGSize? {
+        guard let m = metrics, m.cellWidthPixels > 0, m.cellHeightPixels > 0 else { return nil }
+        let scale = view.window?.screen.scale ?? UIScreen.main.scale
+        return CGSize(width: (CGFloat(m.cellWidthPixels) * (CGFloat(cols) + 0.25)) / scale,
+                      height: (CGFloat(m.cellHeightPixels) * (CGFloat(rows) + 0.25)) / scale)
+    }
+
     // MARK: Fixed-grid mode
 
     private func applyFixedGrid() {

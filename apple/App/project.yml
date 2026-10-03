@@ -17,10 +17,15 @@ targets:
   Shuai:
     type: application
     platform: iOS
-    sources: [Sources]
+    sources:
+      - Sources
+      - path: ../../fixtures/recordings/claude-cjk-120x40-pre-exit.out
+        buildPhase: resources
     dependencies:
       - package: ShuaiKit
         product: ShuaiCore
+      - package: ShuaiKit
+        product: ShuaiTerminal
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai
