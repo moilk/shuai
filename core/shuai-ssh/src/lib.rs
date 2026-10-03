@@ -16,4 +16,7 @@ pub use config::{
 };
 pub use error::{Result, SshError};
 pub use russh::keys;
-pub use session::{ExecChannel, ExecEvent, ExecOutput, Session, ShellChannel};
+pub use session::{
+    CloseReason, ExecChannel, ExecEvent, ExecOutput, Session, SessionLostKind, ShellChannel,
+    ShellEvent,
+};

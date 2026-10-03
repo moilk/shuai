@@ -433,11 +433,11 @@ async fn exec_stream_yields_events_over_time() {
     let mut stdout = Vec::new();
     let mut exit = None;
     let started = std::time::Instant::now();
-    let mut closed = None;
+    let closed;
     loop {
         match timeout(T, ch.next()).await.unwrap() {
             ExecEvent::Closed(r) => {
-                closed = Some(r);
+                closed = r;
                 break;
             }
             ExecEvent::Stdout(d) => stdout.extend(d),
@@ -447,7 +447,7 @@ async fn exec_stream_yields_events_over_time() {
             other => panic!("unexpected {other:?}"),
         }
     }
-    assert_eq!(closed, Some(CloseReason::Remote));
+    assert_eq!(closed, CloseReason::Remote);
     assert_eq!(
         String::from_utf8(stdout).unwrap(),
         "line 0\nline 1\nline 2\n"

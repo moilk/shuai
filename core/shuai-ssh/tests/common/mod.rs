@@ -247,13 +247,7 @@ impl russh::server::Handler for Srv {
                 return Ok(());
             }
             b"EXITSIG" => {
-                session.exit_signal_request(
-                    channel,
-                    russh::Sig::KILL,
-                    false,
-                    "".into(),
-                    "en".into(),
-                )?;
+                session.exit_signal_request(channel, russh::Sig::KILL, false, "", "en")?;
                 session.eof(channel)?;
                 session.close(channel)?;
                 return Ok(());

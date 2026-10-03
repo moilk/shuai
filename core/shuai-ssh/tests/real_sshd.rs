@@ -73,11 +73,13 @@ async fn real_sshd_smoke() {
     let needle = "中文".as_bytes();
     let mut acc = Vec::new();
     while count(&acc, needle) < 2 {
-        let chunk = timeout(Duration::from_secs(15), shell.read())
+        match timeout(Duration::from_secs(15), shell.read())
             .await
             .expect("timed out waiting for shell output")
-            .expect("shell closed early");
-        acc.extend(chunk);
+        {
+            shuai_ssh::ShellEvent::Data(d) => acc.extend(d),
+            other => panic!("shell ended early: {other:?}"),
+        }
     }
 
     shell.close().await.unwrap();

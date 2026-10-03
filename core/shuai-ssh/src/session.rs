@@ -2,7 +2,9 @@
 
 use std::ops::Deref;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use russh::client::{self, Msg};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
@@ -28,8 +30,41 @@ pub struct ExecOutput {
     pub exit_signal: Option<String>,
 }
 
-/// One event from an [`ExecChannel`].
+/// Why a channel or session ended.
+///
+/// Lets callers tell an orderly end (show the exit status, prompt to reopen) from a dead
+/// connection (trigger a reconnect).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CloseReason {
+    /// The server ended it deliberately: the channel was closed by the peer, or (for
+    /// [`Session::closed`]) the server sent an SSH disconnect message.
+    Remote,
+    /// This side closed the channel or disconnected the session.
+    Local,
+    /// The session died underneath the channel.
+    SessionLost(SessionLostKind),
+}
+
+/// How a session was lost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SessionLostKind {
+    /// More than `keepalive_max` consecutive keepalive probes went unanswered.
+    KeepaliveTimeout,
+    /// The server sent an SSH disconnect message (seen from a channel's point of view;
+    /// [`Session::closed`] itself reports this as [`CloseReason::Remote`]).
+    RemoteDisconnect,
+    /// The transport broke (reset, EOF, send/receive failure).
+    Io,
+    /// A protocol error ended the session.
+    Protocol,
+}
+
+/// One event from an [`ExecChannel`]. The stream always ends with exactly one
+/// [`ExecEvent::Closed`], which is then returned by every later call.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ExecEvent {
     /// Bytes on stdout.
     Stdout(Vec<u8>),
@@ -39,6 +74,28 @@ pub enum ExecEvent {
     ExitStatus(u32),
     /// The remote command was terminated by this signal (name without `SIG`, e.g. `KILL`).
     ExitSignal(String),
+    /// Terminal event: the channel ended for this reason.
+    Closed(CloseReason),
+}
+
+/// One event from a [`ShellChannel`]. The stream always ends with exactly one
+/// [`ShellEvent::Closed`], which is then returned by every later call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ShellEvent {
+    /// Terminal output bytes (stdout and stderr are merged by the PTY). Chunk boundaries are
+    /// arbitrary: a multi-byte UTF-8 sequence may be split across chunks.
+    Data(Vec<u8>),
+    /// The remote shell exited. Either field (or neither) may be set: `status` for a normal
+    /// exit, `signal` (name without `SIG`, e.g. `KILL`) if it was killed.
+    Exit {
+        /// Exit status, if reported.
+        status: Option<u32>,
+        /// Terminating signal, if any.
+        signal: Option<String>,
+    },
+    /// Terminal event: the channel ended for this reason.
+    Closed(CloseReason),
 }
 
 /// Maximum keyboard-interactive rounds before the method is considered failed.
@@ -49,7 +106,20 @@ struct ClientHandler {
     host: String,
     port: u16,
     rejected: Arc<AtomicBool>,
-    closed_tx: watch::Sender<Option<SshError>>,
+    closed_tx: watch::Sender<Option<CloseReason>>,
+    local_disconnect: Arc<AtomicBool>,
+}
+
+/// Records the first close reason; later ones are ignored.
+fn set_once(tx: &watch::Sender<Option<CloseReason>>, reason: CloseReason) {
+    tx.send_if_modified(|cur| {
+        if cur.is_none() {
+            *cur = Some(reason);
+            true
+        } else {
+            false
+        }
+    });
 }
 
 impl client::Handler for ClientHandler {
@@ -74,7 +144,25 @@ impl client::Handler for ClientHandler {
         &mut self,
         reason: client::DisconnectReason<Self::Error>,
     ) -> std::result::Result<(), Self::Error> {
-        let _ = self.closed_tx.send(Some(SshError::Disconnected));
+        let local = self.local_disconnect.load(Ordering::SeqCst);
+        let why = match &reason {
+            _ if local => CloseReason::Local,
+            client::DisconnectReason::ReceivedDisconnect(_) => CloseReason::Remote,
+            client::DisconnectReason::Error(russh::Error::KeepaliveTimeout) => {
+                CloseReason::SessionLost(SessionLostKind::KeepaliveTimeout)
+            }
+            client::DisconnectReason::Error(
+                russh::Error::IO(_)
+                | russh::Error::HUP
+                | russh::Error::SendError
+                | russh::Error::RecvError
+                | russh::Error::Disconnect,
+            ) => CloseReason::SessionLost(SessionLostKind::Io),
+            client::DisconnectReason::Error(_) => {
+                CloseReason::SessionLost(SessionLostKind::Protocol)
+            }
+        };
+        set_once(&self.closed_tx, why);
         match reason {
             client::DisconnectReason::ReceivedDisconnect(_) => Ok(()),
             client::DisconnectReason::Error(e) => Err(e),
@@ -131,7 +219,9 @@ enum AuthStep {
 /// different tasks.
 pub struct Session {
     handle: client::Handle<ClientHandler>,
-    closed_rx: watch::Receiver<Option<SshError>>,
+    closed_tx: watch::Sender<Option<CloseReason>>,
+    closed_rx: watch::Receiver<Option<CloseReason>>,
+    local_disconnect: Arc<AtomicBool>,
 }
 
 impl Session {
@@ -152,12 +242,14 @@ impl Session {
     ) -> Result<Session> {
         let rejected = Arc::new(AtomicBool::new(false));
         let (closed_tx, closed_rx) = watch::channel(None);
+        let local_disconnect = Arc::new(AtomicBool::new(false));
         let handler = ClientHandler {
             verifier,
             host: config.host.clone(),
             port: config.port,
             rejected: rejected.clone(),
-            closed_tx,
+            closed_tx: closed_tx.clone(),
+            local_disconnect: local_disconnect.clone(),
         };
         let rcfg = Arc::new(client::Config {
             keepalive_interval: Some(config.keepalive_interval),
@@ -182,7 +274,12 @@ impl Session {
         };
 
         authenticate(&mut handle, &config).await?;
-        Ok(Session { handle, closed_rx })
+        Ok(Session {
+            handle,
+            closed_tx,
+            closed_rx,
+            local_disconnect,
+        })
     }
 
     /// Opens a PTY-backed interactive shell.
@@ -209,6 +306,7 @@ impl Session {
             read: Mutex::new(read),
             write: Writer::new(write),
             closed: CloseFlag::new(),
+            ending: Ending::new(self.closed_rx.clone()),
         })
     }
 
@@ -216,20 +314,18 @@ impl Session {
     pub async fn exec(&self, cmd: &str) -> Result<ExecOutput> {
         let ch = self.exec_stream(cmd).await?;
         let mut out = ExecOutput::default();
-        while let Some(ev) = ch.next().await {
-            match ev {
+        loop {
+            match ch.next().await {
                 ExecEvent::Stdout(d) => out.stdout.extend(d),
                 ExecEvent::Stderr(d) => out.stderr.extend(d),
                 ExecEvent::ExitStatus(c) => out.exit_status = Some(c),
                 ExecEvent::ExitSignal(n) => out.exit_signal = Some(n),
+                // Only an orderly close by the peer counts as completion; output that merely
+                // stopped (session died) must not look like a command that finished.
+                ExecEvent::Closed(CloseReason::Remote) => return Ok(out),
+                ExecEvent::Closed(_) => return Err(SshError::Disconnected),
             }
         }
-        // Output that merely stopped (session died, channel dropped under us) must not look
-        // like a command that finished without reporting a status.
-        if !ch.peer_closed.load(Ordering::SeqCst) {
-            return Err(SshError::Disconnected);
-        }
-        Ok(out)
     }
 
     /// Starts `cmd` and returns a channel streaming its output as it is produced.
@@ -249,7 +345,7 @@ impl Session {
             read: Mutex::new(read),
             write: Writer::new(write),
             closed: CloseFlag::new(),
-            peer_closed: AtomicBool::new(false),
+            ending: Ending::new(self.closed_rx.clone()),
         })
     }
 
@@ -258,27 +354,36 @@ impl Session {
         self.handle.is_closed() || self.closed_rx.borrow().is_some()
     }
 
-    /// Resolves when the session ends and says why. Currently always
-    /// [`SshError::Disconnected`].
-    pub async fn closed(&self) -> SshError {
-        let mut rx = self.closed_rx.clone();
-        loop {
-            if let Some(e) = rx.borrow_and_update().clone() {
-                return e;
-            }
-            // The sender lives in the connection task's handler; dropping it means it ended.
-            if rx.changed().await.is_err() {
-                return SshError::Disconnected;
-            }
-        }
+    /// Resolves when the session ends and says why: [`CloseReason::Local`] after
+    /// [`disconnect`](Self::disconnect), [`CloseReason::Remote`] when the server sent a
+    /// disconnect message, [`CloseReason::SessionLost`] for keepalive timeouts and transport
+    /// or protocol failures.
+    pub async fn closed(&self) -> CloseReason {
+        wait_session_closed(self.closed_rx.clone()).await
     }
 
     /// Politely closes the connection.
     pub async fn disconnect(&self) -> Result<()> {
+        self.local_disconnect.store(true, Ordering::SeqCst);
+        set_once(&self.closed_tx, CloseReason::Local);
         self.handle
             .disconnect(Disconnect::ByApplication, "", "en")
             .await?;
         Ok(())
+    }
+}
+
+async fn wait_session_closed(mut rx: watch::Receiver<Option<CloseReason>>) -> CloseReason {
+    loop {
+        if let Some(r) = *rx.borrow_and_update() {
+            return r;
+        }
+        // The sender lives in the connection task's handler; dropping it means it ended.
+        if rx.changed().await.is_err() {
+            return rx
+                .borrow()
+                .unwrap_or(CloseReason::SessionLost(SessionLostKind::Io));
+        }
     }
 }
 
@@ -420,6 +525,46 @@ impl CloseFlag {
     }
 }
 
+/// The first reason a channel ended; sticky.
+struct Ending {
+    reason: OnceLock<CloseReason>,
+    session: watch::Receiver<Option<CloseReason>>,
+}
+
+impl Ending {
+    fn new(session: watch::Receiver<Option<CloseReason>>) -> Self {
+        Self {
+            reason: OnceLock::new(),
+            session,
+        }
+    }
+
+    fn get(&self) -> Option<CloseReason> {
+        self.reason.get().copied()
+    }
+
+    /// Records `r` unless an earlier reason exists; returns the effective reason.
+    fn finish(&self, r: CloseReason) -> CloseReason {
+        *self.reason.get_or_init(|| r)
+    }
+
+    /// The channel's message stream ended without a `Close`: the session is gone.
+    async fn finish_session_lost(&self) -> CloseReason {
+        // The connection task records the reason before dropping channel senders, but do not
+        // depend on it: bound the wait.
+        let why = tokio::time::timeout(
+            Duration::from_secs(1),
+            wait_session_closed(self.session.clone()),
+        )
+        .await
+        .unwrap_or(CloseReason::SessionLost(SessionLostKind::Io));
+        self.finish(match why {
+            CloseReason::Remote => CloseReason::SessionLost(SessionLostKind::RemoteDisconnect),
+            other => other,
+        })
+    }
+}
+
 /// Write half of a channel that closes the remote channel when dropped without an explicit
 /// [`Writer::close`]; otherwise a dropped channel would leave the remote process running.
 struct Writer {
@@ -471,6 +616,7 @@ pub struct ShellChannel {
     read: Mutex<ChannelReadHalf>,
     write: Writer,
     closed: CloseFlag,
+    ending: Ending,
 }
 
 impl ShellChannel {
@@ -500,25 +646,58 @@ impl ShellChannel {
             .map_err(|_| SshError::ChannelClosed)
     }
 
-    /// Next chunk of terminal output (stdout and stderr are merged by the PTY). Returns
-    /// `None` once the remote side closes the channel or the session ends.
-    pub async fn read(&self) -> Option<Vec<u8>> {
+    /// Next event: terminal output, the shell's exit status/signal, and finally
+    /// [`ShellEvent::Closed`] with the reason (returned again by every later call).
+    ///
+    /// Must be called continuously, see the crate-level docs on draining channels.
+    pub async fn read(&self) -> ShellEvent {
+        if let Some(r) = self.ending.get() {
+            return ShellEvent::Closed(r);
+        }
         let mut read = self.read.lock().await;
         loop {
-            match self.closed.guard(read.wait()).await?? {
-                ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
-                    return Some(data.to_vec());
+            let Some(msg) = self.closed.guard(read.wait()).await else {
+                return ShellEvent::Closed(self.ending.finish(CloseReason::Local));
+            };
+            match msg {
+                Some(ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. }) => {
+                    return ShellEvent::Data(data.to_vec());
                 }
-                ChannelMsg::Eof | ChannelMsg::Close => return None,
-                _ => {}
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    return ShellEvent::Exit {
+                        status: Some(exit_status),
+                        signal: None,
+                    };
+                }
+                Some(ChannelMsg::ExitSignal { signal_name, .. }) => {
+                    return ShellEvent::Exit {
+                        status: None,
+                        signal: Some(sig_name(signal_name)),
+                    };
+                }
+                Some(ChannelMsg::Close) => {
+                    return ShellEvent::Closed(self.ending.finish(CloseReason::Remote));
+                }
+                // Keep reading past EOF: the exit status may still follow.
+                Some(_) => {}
+                None => return ShellEvent::Closed(self.ending.finish_session_lost().await),
             }
         }
     }
 
-    /// Closes the channel. Pending [`read`](Self::read) calls end with `None`.
+    /// Closes the channel. Pending [`read`](Self::read) calls end with
+    /// `Closed(CloseReason::Local)`.
     pub async fn close(&self) -> Result<()> {
+        self.ending.finish(CloseReason::Local);
         self.closed.set();
         self.write.close().await
+    }
+}
+
+fn sig_name(sig: russh::Sig) -> String {
+    match sig {
+        russh::Sig::Custom(c) => c,
+        other => format!("{other:?}"),
     }
 }
 
@@ -527,35 +706,40 @@ pub struct ExecChannel {
     read: Mutex<ChannelReadHalf>,
     write: Writer,
     closed: CloseFlag,
-    /// Set once the peer's orderly `Close` was seen (as opposed to the session vanishing).
-    peer_closed: AtomicBool,
+    ending: Ending,
 }
 
 impl ExecChannel {
-    /// Next event; `None` once the channel is closed (after the exit status, if any).
-    pub async fn next(&self) -> Option<ExecEvent> {
+    /// Next event; the stream ends with [`ExecEvent::Closed`] (returned again by every later
+    /// call), after the exit status if any.
+    ///
+    /// Must be called continuously, see the crate-level docs on draining channels.
+    pub async fn next(&self) -> ExecEvent {
+        if let Some(r) = self.ending.get() {
+            return ExecEvent::Closed(r);
+        }
         let mut read = self.read.lock().await;
         loop {
-            match self.closed.guard(read.wait()).await?? {
-                ChannelMsg::Data { data } => return Some(ExecEvent::Stdout(data.to_vec())),
-                ChannelMsg::ExtendedData { data, .. } => {
-                    return Some(ExecEvent::Stderr(data.to_vec()));
+            let Some(msg) = self.closed.guard(read.wait()).await else {
+                return ExecEvent::Closed(self.ending.finish(CloseReason::Local));
+            };
+            match msg {
+                Some(ChannelMsg::Data { data }) => return ExecEvent::Stdout(data.to_vec()),
+                Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    return ExecEvent::Stderr(data.to_vec());
                 }
-                ChannelMsg::ExitStatus { exit_status } => {
-                    return Some(ExecEvent::ExitStatus(exit_status));
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    return ExecEvent::ExitStatus(exit_status);
                 }
-                ChannelMsg::ExitSignal { signal_name, .. } => {
-                    return Some(ExecEvent::ExitSignal(match signal_name {
-                        russh::Sig::Custom(c) => c,
-                        other => format!("{other:?}"),
-                    }));
+                Some(ChannelMsg::ExitSignal { signal_name, .. }) => {
+                    return ExecEvent::ExitSignal(sig_name(signal_name));
                 }
-                ChannelMsg::Close => {
-                    self.peer_closed.store(true, Ordering::SeqCst);
-                    return None;
+                Some(ChannelMsg::Close) => {
+                    return ExecEvent::Closed(self.ending.finish(CloseReason::Remote));
                 }
                 // Keep reading past EOF: the exit status may still follow.
-                _ => {}
+                Some(_) => {}
+                None => return ExecEvent::Closed(self.ending.finish_session_lost().await),
             }
         }
     }
@@ -573,6 +757,7 @@ impl ExecChannel {
 
     /// Closes the channel.
     pub async fn close(&self) -> Result<()> {
+        self.ending.finish(CloseReason::Local);
         self.closed.set();
         self.write.close().await
     }
