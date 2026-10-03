@@ -214,6 +214,18 @@ struct AgentHubTests {
         #expect(h.target(for: FfiSessionKey(host: "nope", sessionId: "x")) == nil)
     }
 
+    @Test func markSeenByPaneClearsTheSessionThatLivesThere() async {
+        let h = hub()
+        let r = remote()
+        await h.hostConnected(id: a, remote: r)
+        await feed(r, lines: 0..<8)  // done, unseen, pane %0
+        #expect(await waitUntil { h.attentionTargets().count == 1 })
+        h.markSeen(profileID: a, paneID: "%7")  // another pane: nothing happens
+        #expect(h.attentionTargets().count == 1)
+        h.markSeen(profileID: a, paneID: "%0")
+        #expect(h.attentionTargets().isEmpty)
+    }
+
     @Test func markSeenOnArrivalDropsADoneSessionFromTheList() async {
         let h = hub()
         let r = remote()

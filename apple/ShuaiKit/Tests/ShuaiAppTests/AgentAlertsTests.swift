@@ -109,3 +109,15 @@ struct AttentionNotificationPolicyTests {
         #expect(a?.identifier == "session-h-s1")
     }
 }
+
+@Suite("FfiTrackerChange.sessionKey")
+struct TrackerChangeKeyTests {
+    @Test func everyChangeNamesItsSession() {
+        let req = FfiPendingPermission(requestId: "r", toolName: "Bash", inputPreview: "", toolInputJson: "{}", since: 0)
+        let changes: [FfiTrackerChange] = [
+            .sessionAdded(key: key), .sessionRemoved(key: key), .stateChanged(key: key, from: .done, to: .ended),
+            .permissionRequested(key: key, request: req), .permissionCleared(key: key),
+        ]
+        #expect(changes.allSatisfy { $0.sessionKey == key })
+    }
+}

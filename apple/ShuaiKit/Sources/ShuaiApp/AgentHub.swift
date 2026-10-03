@@ -195,6 +195,14 @@ public final class AgentHub: PaneAgentInfoProvider {
         return targets.first { $0.key == key }
     }
 
+    /// The session `key` (e.g. of a banner) as a jump target, whatever its state.
+    public func target(for key: FfiSessionKey) -> AttentionTarget? {
+        guard let id = profileID(for: key),
+            let s = monitors[id]?.sessions.first(where: { $0.host == key.host && $0.sessionId == key.sessionId })
+        else { return nil }
+        return AttentionTarget(profileID: id, key: key, session: s)
+    }
+
     public func markSeen(_ target: AttentionTarget) {
         monitors[target.profileID]?.markSeen(target.key)
     }
