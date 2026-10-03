@@ -148,3 +148,15 @@ fn watch_marks_end_of_replay_with_caught_up() {
     hook(h.path(), "Stop", &fixture("stop"), &[]);
     assert_eq!(w.next_event(T).unwrap()["seq"], 3);
 }
+
+#[test]
+fn watch_since_beyond_the_agents_seq_means_state_was_wiped_and_replays_all() {
+    let h = home();
+    for _ in 0..2 {
+        hook(h.path(), "Stop", &fixture("stop"), &[]);
+    }
+    // The app remembers seq 500 from before the agent's state dir was wiped.
+    let w = Watcher::spawn(h.path(), &["--since", "500"]);
+    assert_eq!(w.next_event(T).unwrap()["seq"], 1);
+    assert_eq!(w.next_event(T).unwrap()["seq"], 2);
+}
