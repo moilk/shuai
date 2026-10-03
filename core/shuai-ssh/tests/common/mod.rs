@@ -22,6 +22,8 @@ pub const USER: &str = "alice";
 pub const PASSWORD: &str = "secret";
 pub const KBD_USER: &str = "kbd";
 pub const KBD_CODE: &str = "123456";
+pub const HANG_USER: &str = "hang";
+pub const BIG_LEN: usize = 20 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct ServerLog {
@@ -98,6 +100,10 @@ impl russh::server::Handler for Srv {
     type Error = russh::Error;
 
     async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
+        if user == HANG_USER {
+            // Authentication never completes.
+            std::future::pending::<()>().await;
+        }
         if user == USER && password == PASSWORD {
             self.log.users.lock().unwrap().push(user.into());
             Ok(Auth::Accept)
@@ -232,7 +238,46 @@ impl russh::server::Handler for Srv {
             // Never answer anything again: blocks this connection's event loop.
             std::future::pending::<()>().await;
         }
+        // Shell-mode scripted endings.
+        match data {
+            b"EXIT3" => {
+                session.exit_status_request(channel, 3)?;
+                session.eof(channel)?;
+                session.close(channel)?;
+                return Ok(());
+            }
+            b"EXITSIG" => {
+                session.exit_signal_request(
+                    channel,
+                    russh::Sig::KILL,
+                    false,
+                    "".into(),
+                    "en".into(),
+                )?;
+                session.eof(channel)?;
+                session.close(channel)?;
+                return Ok(());
+            }
+            // Clean close without any exit status.
+            b"BYE" => {
+                session.eof(channel)?;
+                session.close(channel)?;
+                return Ok(());
+            }
+            _ => {}
+        }
         session.data(channel, data.to_vec())
+    }
+
+    async fn channel_eof(
+        &mut self,
+        channel: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        // `cat`-like exec: stdin EOF ends the command.
+        session.exit_status_request(channel, 0)?;
+        session.eof(channel)?;
+        session.close(channel)
     }
 
     async fn window_change_request(
@@ -293,6 +338,33 @@ impl russh::server::Handler for Srv {
                 let _ = handle.eof(channel).await;
                 let _ = handle.close(channel).await;
             }
+            // Split a multi-byte UTF-8 character (U+4F60 = e4 bd a0) across packets.
+            "utf8" => {
+                tokio::spawn(async move {
+                    let _ = handle.data(channel, vec![b'a', 0xe4, 0xbd]).await;
+                    tokio::time::sleep(Duration::from_millis(80)).await;
+                    let _ = handle.data(channel, vec![0xa0, b'z']).await;
+                    let _ = handle.exit_status_request(channel, 0).await;
+                    let _ = handle.eof(channel).await;
+                    let _ = handle.close(channel).await;
+                });
+            }
+            // 20 MiB of output.
+            "big" => {
+                tokio::spawn(async move {
+                    let chunk = vec![b'x'; 32 * 1024];
+                    for _ in 0..(BIG_LEN / chunk.len()) {
+                        if handle.data(channel, chunk.clone()).await.is_err() {
+                            return;
+                        }
+                    }
+                    let _ = handle.exit_status_request(channel, 0).await;
+                    let _ = handle.eof(channel).await;
+                    let _ = handle.close(channel).await;
+                });
+            }
+            // Echoes stdin (see `data`) and exits 0 on stdin EOF (see `channel_eof`).
+            "cat" => {}
             // Accept and then stay silent forever.
             "hold" => {}
             // Emit some output, then kill the connection without an exit status.

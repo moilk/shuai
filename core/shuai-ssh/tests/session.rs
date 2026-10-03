@@ -8,8 +8,8 @@ use common::*;
 use russh::keys::signature::Signer as _;
 use russh::keys::{PrivateKey, PublicKey};
 use shuai_ssh::{
-    AuthMethod, ExecEvent, KbdInteractivePrompter, KbdPrompt, PtyRequest, Session, SshError,
-    SshSigner,
+    AuthMethod, CloseReason, ExecEvent, KbdInteractivePrompter, KbdPrompt, PtyRequest, Session,
+    SessionLostKind, ShellEvent, SshError, SshSigner,
 };
 use tokio::time::timeout;
 
@@ -34,11 +34,10 @@ fn auth_failed(methods: &[&str]) -> SshError {
 async fn read_until(shell: &shuai_ssh::ShellChannel, needle: &[u8]) -> Vec<u8> {
     let mut acc = Vec::new();
     while !acc.windows(needle.len()).any(|w| w == needle) {
-        let chunk = timeout(T, shell.read())
-            .await
-            .expect("read timed out")
-            .expect("channel ended");
-        acc.extend(chunk);
+        match timeout(T, shell.read()).await.expect("read timed out") {
+            ShellEvent::Data(d) => acc.extend(d),
+            other => panic!("unexpected {other:?}"),
+        }
     }
     acc
 }
@@ -367,14 +366,22 @@ async fn shell_resize_reaches_server() {
 }
 
 #[tokio::test]
-async fn shell_read_returns_none_after_close() {
+async fn shell_read_reports_local_close() {
     let server = start(ServerOpts::default()).await;
     let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
         .await
         .unwrap();
     let shell = s.open_shell(PtyRequest::xterm(80, 24)).await.unwrap();
     shell.close().await.unwrap();
-    assert_eq!(timeout(T, shell.read()).await.unwrap(), None);
+    assert_eq!(
+        timeout(T, shell.read()).await.unwrap(),
+        ShellEvent::Closed(CloseReason::Local)
+    );
+    // Terminal state is sticky.
+    assert_eq!(
+        timeout(T, shell.read()).await.unwrap(),
+        ShellEvent::Closed(CloseReason::Local)
+    );
     assert!(shell.write(b"x").await.is_err());
 }
 
@@ -426,14 +433,21 @@ async fn exec_stream_yields_events_over_time() {
     let mut stdout = Vec::new();
     let mut exit = None;
     let started = std::time::Instant::now();
-    while let Some(ev) = timeout(T, ch.next()).await.unwrap() {
-        match ev {
+    let mut closed = None;
+    loop {
+        match timeout(T, ch.next()).await.unwrap() {
+            ExecEvent::Closed(r) => {
+                closed = Some(r);
+                break;
+            }
             ExecEvent::Stdout(d) => stdout.extend(d),
             ExecEvent::ExitStatus(c) => exit = Some(c),
             ExecEvent::Stderr(_) => panic!("unexpected stderr"),
             ExecEvent::ExitSignal(s) => panic!("unexpected signal {s}"),
+            other => panic!("unexpected {other:?}"),
         }
     }
+    assert_eq!(closed, Some(CloseReason::Remote));
     assert_eq!(
         String::from_utf8(stdout).unwrap(),
         "line 0\nline 1\nline 2\n"
@@ -454,7 +468,7 @@ async fn local_disconnect_closes_session() {
         .await
         .unwrap();
     s.disconnect().await.unwrap();
-    timeout(T, s.closed()).await.unwrap();
+    assert_eq!(timeout(T, s.closed()).await.unwrap(), CloseReason::Local);
     assert!(s.is_closed());
     assert!(s.exec("ok").await.is_err());
 }
@@ -471,9 +485,15 @@ async fn server_side_disconnect_is_detected() {
     let why = timeout(T, s.closed())
         .await
         .expect("disconnect not detected");
-    assert_eq!(why, SshError::Disconnected);
+    assert!(matches!(
+        why,
+        CloseReason::Remote | CloseReason::SessionLost(_)
+    ));
     assert!(s.is_closed());
-    assert_eq!(timeout(T, shell.read()).await.unwrap(), None);
+    assert_eq!(
+        timeout(T, shell.read()).await.unwrap(),
+        ShellEvent::Closed(why)
+    );
 }
 
 #[tokio::test]
@@ -492,8 +512,15 @@ async fn keepalive_timeout_reports_disconnect() {
     let why = timeout(Duration::from_secs(3), s.closed())
         .await
         .expect("keepalive never fired");
-    assert_eq!(why, SshError::Disconnected);
+    assert_eq!(
+        why,
+        CloseReason::SessionLost(SessionLostKind::KeepaliveTimeout)
+    );
     assert!(s.is_closed());
+    assert_eq!(
+        timeout(T, shell.read()).await.unwrap(),
+        ShellEvent::Closed(why)
+    );
 }
 
 // ---------- resource hygiene / failure reporting ----------
@@ -549,4 +576,132 @@ async fn exec_reports_exit_signal() {
     let out = s.exec("sig").await.unwrap();
     assert_eq!(out.exit_status, None);
     assert_eq!(out.exit_signal.as_deref(), Some("KILL"));
+}
+
+// ---------- end-of-stream reasons ----------
+
+async fn next_non_data(shell: &shuai_ssh::ShellChannel) -> ShellEvent {
+    loop {
+        match timeout(T, shell.read()).await.unwrap() {
+            ShellEvent::Data(_) => {}
+            ev => return ev,
+        }
+    }
+}
+
+#[tokio::test]
+async fn shell_reports_exit_status_then_remote_close() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let shell = s.open_shell(PtyRequest::xterm(80, 24)).await.unwrap();
+    shell.write(b"EXIT3").await.unwrap();
+    assert_eq!(
+        next_non_data(&shell).await,
+        ShellEvent::Exit {
+            status: Some(3),
+            signal: None
+        }
+    );
+    assert_eq!(
+        next_non_data(&shell).await,
+        ShellEvent::Closed(CloseReason::Remote)
+    );
+    assert!(!s.is_closed(), "only the channel ended, not the session");
+}
+
+#[tokio::test]
+async fn shell_reports_exit_signal() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let shell = s.open_shell(PtyRequest::xterm(80, 24)).await.unwrap();
+    shell.write(b"EXITSIG").await.unwrap();
+    assert_eq!(
+        next_non_data(&shell).await,
+        ShellEvent::Exit {
+            status: None,
+            signal: Some("KILL".into())
+        }
+    );
+}
+
+#[tokio::test]
+async fn shell_clean_remote_close_without_status() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let shell = s.open_shell(PtyRequest::xterm(80, 24)).await.unwrap();
+    shell.write(b"BYE").await.unwrap();
+    assert_eq!(
+        next_non_data(&shell).await,
+        ShellEvent::Closed(CloseReason::Remote)
+    );
+}
+
+#[tokio::test]
+async fn shell_session_loss_is_distinguished_from_remote_close() {
+    let server = start(ServerOpts::default()).await;
+    let mut c = cfg(&server, vec![AuthMethod::Password(PASSWORD.into())]);
+    c.keepalive_interval = Duration::from_millis(100);
+    c.keepalive_max = 1;
+    let s = Session::connect(c, Arc::new(AcceptAll::default()))
+        .await
+        .unwrap();
+    let shell = s.open_shell(PtyRequest::xterm(80, 24)).await.unwrap();
+    shell.write(b"HANG").await.unwrap();
+    assert_eq!(
+        next_non_data(&shell).await,
+        ShellEvent::Closed(CloseReason::SessionLost(SessionLostKind::KeepaliveTimeout))
+    );
+}
+
+#[tokio::test]
+async fn local_session_disconnect_closes_channels_as_local() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    let shell = s.open_shell(PtyRequest::xterm(80, 24)).await.unwrap();
+    s.disconnect().await.unwrap();
+    assert_eq!(
+        next_non_data(&shell).await,
+        ShellEvent::Closed(CloseReason::Local)
+    );
+}
+
+#[tokio::test]
+async fn exec_stream_ends_with_closed_reasons() {
+    let server = start(ServerOpts::default()).await;
+    let s = connect(&server, vec![AuthMethod::Password(PASSWORD.into())])
+        .await
+        .unwrap();
+    // Local close.
+    let ch = s.exec_stream("hold").await.unwrap();
+    ch.close().await.unwrap();
+    assert_eq!(
+        timeout(T, ch.next()).await.unwrap(),
+        ExecEvent::Closed(CloseReason::Local)
+    );
+    // Session death mid-command.
+    let ch = s.exec_stream("cut").await.unwrap();
+    let last;
+    loop {
+        match timeout(T, ch.next()).await.unwrap() {
+            ExecEvent::Closed(r) => {
+                last = r;
+                break;
+            }
+            ExecEvent::Stdout(_) => {}
+            other => panic!("{other:?}"),
+        }
+    }
+    assert!(matches!(
+        last,
+        CloseReason::Remote | CloseReason::SessionLost(_)
+    ));
+    assert!(s.is_closed());
 }
