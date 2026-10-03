@@ -8,6 +8,7 @@
 
 pub mod cmd;
 pub mod control;
+pub mod controller;
 pub mod ids;
 pub mod layout;
 pub mod parse;

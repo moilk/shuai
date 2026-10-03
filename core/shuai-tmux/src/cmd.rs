@@ -218,6 +218,52 @@ pub fn refresh_client_size(cols: u32, rows: u32) -> TmuxCommand {
     TmuxCommand::new(["refresh-client", "-C"]).arg(format!("{cols}x{rows}"))
 }
 
+/// `display-message -p [-t T] -- FORMAT`: print an expanded format (`FORMAT` is passed
+/// verbatim, it is the format itself, not data).
+pub fn display_message(t: Option<&Target>, format: &str) -> TmuxCommand {
+    let c = TmuxCommand::new(["display-message", "-p"]);
+    let c = match t {
+        Some(t) => c.target(t),
+        None => c,
+    };
+    c.arg("--").arg(format)
+}
+
+fn check_sub_name(name: &str) -> Result<(), String> {
+    if name.is_empty() || name.contains(':') {
+        Err(format!("invalid subscription name: {name:?}"))
+    } else {
+        Ok(())
+    }
+}
+
+/// `refresh-client -B NAME:WHAT:FORMAT` (tmux >= 3.2). `what` is `%*`, `@*`, `%1`, `@1`...
+/// or empty for the session. The name may not contain `:`.
+pub fn refresh_client_subscribe(
+    name: &str,
+    what: &str,
+    format: &str,
+) -> Result<TmuxCommand, String> {
+    check_sub_name(name)?;
+    Ok(TmuxCommand::new(["refresh-client", "-B"]).arg(format!("{name}:{what}:{format}")))
+}
+
+/// `refresh-client -B NAME` removes a subscription.
+pub fn refresh_client_unsubscribe(name: &str) -> Result<TmuxCommand, String> {
+    check_sub_name(name)?;
+    Ok(TmuxCommand::new(["refresh-client", "-B"]).arg(name))
+}
+
+/// `refresh-client -f pause-after=SECS` (tmux >= 3.2).
+pub fn refresh_client_pause_after(secs: u32) -> TmuxCommand {
+    refresh_client_flags("-f", &format!("pause-after={secs}"))
+}
+
+/// `refresh-client -A %N:continue` resumes a paused pane (tmux >= 3.2).
+pub fn continue_pane(pane: PaneId) -> TmuxCommand {
+    TmuxCommand::new(["refresh-client", "-A"]).arg(format!("{pane}:continue"))
+}
+
 /// `refresh-client -f|-F FLAGS` (used by [`crate::version`]).
 pub(crate) fn refresh_client_flags(flag: &str, flags: &str) -> TmuxCommand {
     TmuxCommand::new(["refresh-client", flag, flags])

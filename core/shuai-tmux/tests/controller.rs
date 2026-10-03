@@ -105,9 +105,8 @@ fn user_replies_carry_token_and_exit_is_reported() {
     c.on_connected();
     let (tok, line) = c.send(&cmd::list_panes_all());
     assert!(line.starts_with("list-panes -a -F"));
-    let ev = c.push(
-        b"%begin 1 1 1\n%end 1 1 1\n%begin 3 3 1\nrow\n%end 3 3 1\n%exit server exited\n",
-    );
+    let ev =
+        c.push(b"%begin 1 1 1\n%end 1 1 1\n%begin 3 3 1\nrow\n%end 3 3 1\n%exit server exited\n");
     assert_eq!(ev.len(), 2, "{ev:?}");
     match &ev[0] {
         E::Reply(r) => {

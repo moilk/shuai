@@ -127,6 +127,28 @@ pub enum TopologyChange {
 }
 
 impl TmuxTopology {
+    /// Rename a window in every session it is linked into; returns how many copies changed.
+    pub fn rename_window(&mut self, id: WindowId, name: &str) -> usize {
+        let mut n = 0;
+        for w in self.sessions.iter_mut().flat_map(|s| &mut s.windows) {
+            if w.id == id {
+                w.name = name.to_string();
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// Rename a session; returns how many sessions matched (0 or 1).
+    pub fn rename_session(&mut self, id: SessionId, name: &str) -> usize {
+        let mut n = 0;
+        for s in self.sessions.iter_mut().filter(|s| s.id == id) {
+            s.name = name.to_string();
+            n += 1;
+        }
+        n
+    }
+
     /// Changes needed to go from `self` to `new`: removals first, then additions, then
     /// modifications, each in tree order.
     pub fn diff(&self, new: &TmuxTopology) -> Vec<TopologyChange> {
