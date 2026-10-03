@@ -201,6 +201,19 @@ struct AgentHubTests {
         #expect(h.nextNeedingAttention(after: first?.key)?.key == first?.key)
     }
 
+    @Test func targetForAKeyResolvesAnySessionNeedingAttentionOrNot() async {
+        let h = hub()
+        let r = remote()
+        await h.hostConnected(id: a, remote: r)
+        await feed(r, lines: 0..<3)  // working, no attention
+        #expect(await waitUntil { h.monitor(for: a)?.sessions.count == 1 })
+        let key = FfiSessionKey(host: GoldenTranscript.host, sessionId: GoldenTranscript.sessionID)
+        let t = h.target(for: key)
+        #expect(t?.profileID == a)
+        #expect(t?.paneID == "%0")
+        #expect(h.target(for: FfiSessionKey(host: "nope", sessionId: "x")) == nil)
+    }
+
     @Test func markSeenOnArrivalDropsADoneSessionFromTheList() async {
         let h = hub()
         let r = remote()
