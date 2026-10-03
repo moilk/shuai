@@ -7,8 +7,13 @@ struct ShuaiMain: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        let args = ProcessInfo.processInfo.arguments
-        _model = State(initialValue: AppModel(ephemeral: args.contains("-uiTesting")))
+        #if DEBUG
+        // UI tests: temp files and in-memory secrets. Not available in Release builds.
+        let ephemeral = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        #else
+        let ephemeral = false
+        #endif
+        _model = State(initialValue: AppModel(ephemeral: ephemeral))
     }
 
     var body: some Scene {
