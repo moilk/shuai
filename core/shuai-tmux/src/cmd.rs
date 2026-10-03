@@ -111,6 +111,26 @@ pub enum Direction {
     Vertical,
 }
 
+/// Direction for `select-pane -L/-R/-U/-D`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// `select-pane -L|-R|-U|-D -t T`: the neighbour of the active pane of window `T`.
+pub fn select_pane_direction(t: &Target, d: PaneDirection) -> TmuxCommand {
+    let flag = match d {
+        PaneDirection::Left => "-L",
+        PaneDirection::Right => "-R",
+        PaneDirection::Up => "-U",
+        PaneDirection::Down => "-D",
+    };
+    TmuxCommand::new(["select-pane", flag]).target(t)
+}
+
 pub fn tmux_version() -> TmuxCommand {
     TmuxCommand::new(["-V"])
 }

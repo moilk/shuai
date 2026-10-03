@@ -167,10 +167,7 @@ fn m4_builders() {
         ["last-window", "-t", "=dev:"]
     );
     let c = tmux_switch_client("/dev/ttys004".into(), "$2".into()).unwrap();
-    assert_eq!(
-        c.argv,
-        ["switch-client", "-c", "/dev/ttys004", "-t", "$2"]
-    );
+    assert_eq!(c.argv, ["switch-client", "-c", "/dev/ttys004", "-t", "$2"]);
     assert!(tmux_switch_client("/dev/x".into(), "main".into()).is_err());
     assert_eq!(tmux_list_clients().argv[0], "list-clients");
     assert_eq!(
@@ -214,7 +211,10 @@ fn clients_parse_and_pick() {
             cs.clone(),
             "other".into(),
             Some(11),
-            Some(FfiSize { cols: 120, rows: 40 })
+            Some(FfiSize {
+                cols: 120,
+                rows: 40
+            })
         ),
         None
     );
