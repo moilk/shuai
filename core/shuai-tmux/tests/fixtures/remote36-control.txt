@@ -1,0 +1,46 @@
+%begin 1791017759 286 0
+%end 1791017759 286 0
+%session-changed $0 main
+%begin 1791017760 291 1
+@0 sh
+%end 1791017760 291 1
+%begin 1791017760 292 1
+%end 1791017760 292 1
+%session-window-changed $0 @2
+%window-add @2
+%output %2 $ 
+%begin 1791017760 295 1
+%end 1791017760 295 1
+%window-renamed @2 renamed
+%begin 1791017760 297 1
+%end 1791017760 297 1
+%window-pane-changed @2 %3
+%layout-change @2 f926,120x40,0,0{60x40,0,0,2,59x40,61,0,3} f926,120x40,0,0{60x40,0,0,2,59x40,61,0,3} *
+%output %3 $ 
+%begin 1791017760 300 1
+parse error: unknown command: bogus-command
+%error 1791017760 300 1
+%begin 1791017761 301 1
+%end 1791017761 301 1
+%session-window-changed $0 @0
+%begin 1791017761 303 1
+%end 1791017761 303 1
+%output %0 echo out-$((1+2))\015\012out-3\015\012$ 
+%begin 1791017761 304 1
+%end 1791017761 304 1
+%session-renamed $1 renamed-sess
+%begin 1791017761 306 1
+%end 1791017761 306 1
+%unlinked-window-close @2
+%begin 1791017762 308 1
+%end 1791017762 308 1
+%layout-change @0 a87d,100x30,0,0,0 a87d,100x30,0,0,0 *
+%begin 1791017762 311 1
+%end 1791017762 311 1
+%unlinked-window-add @3
+%sessions-changed
+%begin 1791017762 314 1
+%end 1791017762 314 1
+%sessions-changed
+%unlinked-window-close @3
+%exit

@@ -1,0 +1,52 @@
+%begin 1791017741 286 0
+%end 1791017741 286 0
+%session-changed $0 main
+%begin 1791017742 291 1
+@0 bash
+%end 1791017742 291 1
+%begin 1791017742 292 1
+%end 1791017742 292 1
+%session-window-changed $0 @2
+%window-add @2
+%output %2 $ 
+%begin 1791017742 295 1
+%end 1791017742 295 1
+%window-renamed @2 renamed
+%begin 1791017742 297 1
+%end 1791017742 297 1
+%window-pane-changed @2 %3
+%layout-change @2 f926,120x40,0,0{60x40,0,0,2,59x40,61,0,3} f926,120x40,0,0{60x40,0,0,2,59x40,61,0,3} *
+%output %2 \015\033[K$ 
+%output %3 $ 
+%begin 1791017743 300 1
+parse error: unknown command: bogus-command
+%error 1791017743 300 1
+%begin 1791017743 301 1
+%end 1791017743 301 1
+%session-window-changed $0 @0
+%begin 1791017743 303 1
+%end 1791017743 303 1
+%output %0 ec
+%output %0 ho out-$((1+2))\015\012
+%output %0 out-3\015\012
+%output %0 $ 
+%begin 1791017743 304 1
+%end 1791017743 304 1
+%session-renamed $1 renamed-sess
+%begin 1791017744 306 1
+%end 1791017744 306 1
+%unlinked-window-close @2
+%begin 1791017744 308 1
+%end 1791017744 308 1
+%layout-change @0 a87d,100x30,0,0,0 a87d,100x30,0,0,0 *
+%output %0 \015\033[K$ 
+%begin 1791017744 311 1
+%end 1791017744 311 1
+%unlinked-window-add @3
+%sessions-changed
+%unlinked-window-renamed @3 tmux
+%begin 1791017744 315 1
+%end 1791017744 315 1
+%sessions-changed
+%unlinked-window-close @3
+%exit
