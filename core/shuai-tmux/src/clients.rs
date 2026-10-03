@@ -6,7 +6,6 @@
 
 use std::fmt;
 
-use crate::cmd::FIELD_SEP;
 use crate::ids::SessionId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +62,7 @@ pub fn parse_clients(text: &str) -> Result<Vec<TmuxClient>, ClientParseError> {
         if raw.trim().is_empty() {
             continue;
         }
-        let f: Vec<&str> = raw.split(FIELD_SEP).collect();
+        let f = crate::parse::split_fields(raw);
         if f.len() != FIELDS {
             return Err(ClientParseError::FieldCount {
                 line,
