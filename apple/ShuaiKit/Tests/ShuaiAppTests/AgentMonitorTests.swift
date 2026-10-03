@@ -174,6 +174,50 @@ struct AgentMonitorTests {
         try? await Task.sleep(for: .milliseconds(100))
         #expect(remote.ran(containing: "agents").isEmpty)
     }
+
+    @Test func endedSessionsArePrunedEvenWithoutClaudePath() async {
+        let remote = FakeAgentRemote()
+        let m = AgentMonitor(
+            host: GoldenTranscript.host, reconcileInterval: .milliseconds(20), now: { 1_791_018_700_000 + 3 * 3_600_000 })
+        m.attach(remote: remote, claudePath: nil)
+        #expect(await waitUntil { remote.lastStream != nil })
+        let end = #"{"v":1,"seq":26,"ts_ms":1791018770100,"host":"e2e-host","source":"claude","event":{"type":"session_end","session_id":"\#(GoldenTranscript.sessionID)","reason":"other","raw":{}}}"#
+        remote.lastStream!.emitLines([GoldenTranscript.caughtUp] + lines + [end])
+        #expect(await waitUntil { m.lastSeq == 26 })
+        #expect(await waitUntil { m.sessions.isEmpty }, "an ended session older than the ttl must be dropped")
+    }
+
+    @Test func silentWatchIsRestartedAfterHeartbeatTimeout() async {
+        let remote = FakeAgentRemote()
+        let m = AgentMonitor(
+            host: GoldenTranscript.host, reconcileInterval: .seconds(3600), heartbeatTimeout: .milliseconds(150))
+        m.attach(remote: remote, claudePath: nil)
+        #expect(await waitUntil { remote.lastStream != nil })
+        remote.lastStream!.emitLines([GoldenTranscript.heartbeat] + Array(lines[0..<4]) + [GoldenTranscript.caughtUp])
+        #expect(await waitUntil { m.lastSeq == 4 })
+        // The first stream now goes silent (half-open TCP): no data, no exit.
+        #expect(await waitUntil { remote.streams.get.count >= 2 })
+        #expect(remote.streams.get[0].closeCalls.get >= 1)
+        #expect(remote.streams.get[1].command == "~/.shuai/bin/shuai-agent watch --since 4")
+        // The restarted stream is replaying again: nothing it sends is announced.
+        let live = Locked<[FfiTrackerChange]>([])
+        m.onLiveChanges = { c in live.with { $0 += c } }
+        remote.streams.get[1].emitLines([GoldenTranscript.heartbeat] + Array(lines[4..<6]) + [GoldenTranscript.caughtUp])
+        #expect(await waitUntil { m.lastSeq == 6 })
+        #expect(live.get.isEmpty)
+        m.detach()
+    }
+
+    @Test func lineSplitterBoundsAnUnterminatedLine() {
+        var s = LineSplitter()
+        let chunk = Data(repeating: UInt8(ascii: "x"), count: 512 * 1024)
+        var total = 0
+        for _ in 0..<12 { total += s.push(chunk).count }
+        #expect(total == 0)
+        #expect(s.bufferedBytes <= 2 * 1024 * 1024)
+        // The rest of the oversized line is discarded, the next one is intact.
+        #expect(s.push(Data("tail\nok\n".utf8)) == ["ok"])
+    }
 }
 
 @Suite("AgentMonitor permission flow")
