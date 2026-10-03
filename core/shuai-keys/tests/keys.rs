@@ -135,20 +135,112 @@ fn garbage_is_malformed() {
     }
 }
 
-#[test]
-fn legacy_rsa_pem_is_unsupported_not_panic() {
-    assert!(matches!(
-        import_private_key(&fx("test_rsa_legacy_pem"), None),
-        Err(KeyError::Unsupported(_))
-    ));
+fn pem_fp(name: &str) -> String {
+    for line in fx("pem_fingerprints.txt").lines() {
+        let mut p = line.split_whitespace();
+        if p.next() == Some(name) {
+            return p.next().unwrap().to_string();
+        }
+    }
+    panic!("no pem fingerprint for {name}");
+}
+
+/// Imports fixture `name` and checks the fingerprint equals what `ssh-keygen`/openssl gave.
+fn check_pem(name: &str, pass: Option<&str>, alg: &str) {
+    let k = import_private_key(&fx(name), pass).unwrap_or_else(|e| panic!("{name}: {e}"));
+    assert_eq!(k.algorithm().as_str(), alg, "{name}");
+    assert_eq!(fingerprint(k.public_key()), pem_fp(name), "{name}");
 }
 
 #[test]
-fn pkcs8_is_unsupported_not_panic() {
-    assert!(matches!(
-        import_private_key(&fx("test_ed25519_pkcs8"), None),
-        Err(KeyError::Unsupported(_))
-    ));
+fn pkcs1_rsa_plain() {
+    check_pem("test_rsa_pkcs1", None, "ssh-rsa");
+    check_pem("test_rsa_legacy_pem", None, "ssh-rsa");
+}
+
+#[test]
+fn pkcs1_rsa_legacy_encrypted() {
+    for n in ["test_rsa_pkcs1_aes128", "test_rsa_pkcs1_des3"] {
+        check_pem(n, Some(PASS), "ssh-rsa");
+        assert_eq!(
+            import_private_key(&fx(n), None).unwrap_err(),
+            KeyError::NeedsPassphrase
+        );
+        assert_eq!(
+            import_private_key(&fx(n), Some("wrong")).unwrap_err(),
+            KeyError::WrongPassphrase
+        );
+    }
+}
+
+#[test]
+fn pkcs8_plain() {
+    check_pem("test_rsa_pkcs8", None, "ssh-rsa");
+    check_pem("test_ed25519_pkcs8", None, "ssh-ed25519");
+    check_pem("test_p256_pkcs8", None, "ecdsa-sha2-nistp256");
+    check_pem("test_p384_pkcs8", None, "ecdsa-sha2-nistp384");
+}
+
+#[test]
+fn pkcs8_encrypted() {
+    for (n, alg) in [
+        ("test_rsa_pkcs8_enc", "ssh-rsa"),
+        ("test_rsa_pkcs8_enc_sha256", "ssh-rsa"),
+        ("test_ed25519_pkcs8_enc", "ssh-ed25519"),
+    ] {
+        check_pem(n, Some(PASS), alg);
+        assert_eq!(
+            import_private_key(&fx(n), None).unwrap_err(),
+            KeyError::NeedsPassphrase
+        );
+        assert_eq!(
+            import_private_key(&fx(n), Some("wrong")).unwrap_err(),
+            KeyError::WrongPassphrase
+        );
+    }
+}
+
+#[test]
+fn sec1_ec() {
+    check_pem("test_p256_sec1", None, "ecdsa-sha2-nistp256");
+    check_pem("test_p384_sec1", None, "ecdsa-sha2-nistp384");
+    check_pem("test_p256_sec1_aes128", Some(PASS), "ecdsa-sha2-nistp256");
+}
+
+#[test]
+fn pem_import_tolerates_crlf_and_leading_whitespace() {
+    let crlf = format!("\n  {}", fx("test_rsa_pkcs1").replace('\n', "\r\n"));
+    let k = import_private_key(&crlf, None).unwrap();
+    assert_eq!(fingerprint(k.public_key()), pem_fp("test_rsa_pkcs1"));
+}
+
+#[test]
+fn truncated_pem_is_malformed_not_panic() {
+    for n in [
+        "test_rsa_pkcs1",
+        "test_rsa_pkcs8",
+        "test_p256_sec1",
+        "test_rsa_pkcs8_enc",
+    ] {
+        let full = fx(n);
+        let cut = &full[..full.len() / 2];
+        assert!(import_private_key(cut, Some(PASS)).is_err(), "{n}");
+        let mid = full.replacen("MI", "MJ", 1);
+        let _ = import_private_key(&mid, Some(PASS));
+    }
+}
+
+#[test]
+fn dsa_and_ppk_stay_unsupported() {
+    for s in [
+        "-----BEGIN DSA PRIVATE KEY-----\nAAAA\n-----END DSA PRIVATE KEY-----\n",
+        "PuTTY-User-Key-File-3: ssh-rsa\nEncryption: none\n",
+    ] {
+        assert!(matches!(
+            import_private_key(s, None),
+            Err(KeyError::Unsupported(_))
+        ));
+    }
 }
 
 proptest! {
