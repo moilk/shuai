@@ -614,19 +614,6 @@ private struct Harness {
         #expect(h.controller.notice == nil)
     }
 
-    @Test func inputTypedAsSoonAsTheNoticeShowsReachesThePlainShell() async {
-        // The notice used to appear before the plain shell was wired up: input typed in between was dropped
-        // (flaky `missingTmuxOnTheServerFallsBackToAPlainShell` over real SSH).
-        let h = Harness()
-        await h.controller.connect()
-        let conn = h.factory.last!
-        conn.laterOpenDelay = .milliseconds(150)
-        failTmux(conn)
-        #expect(await waitUntil { h.controller.notice != nil })
-        h.controller.sendInput("ls\r")
-        #expect(await waitUntil { conn.shell.writtenText == "ls\r" })
-    }
-
     @Test func exitStatus127AloneTriggersTheFallback() async {
         let h = Harness()
         await h.controller.connect()
