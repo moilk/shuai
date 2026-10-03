@@ -6,11 +6,13 @@
 
 mod error;
 mod keys;
+mod known_hosts;
 
 pub use error::KeyError;
 pub use keys::{
     KeyAlgorithm, authorized_keys_line, export_private_key, fingerprint, generate,
     import_private_key, randomart,
 };
+pub use known_hosts::{HostKeyStatus, KnownHosts, add_entry};
 pub use ssh_key;
 pub use ssh_key::{PrivateKey, PublicKey};
