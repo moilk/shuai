@@ -72,3 +72,4 @@ xcode-select may point at CommandLineTools. Always prefix Xcode commands with
 
 ## CI
 CI uses Xcode 26.6, older than the local Xcode 27. Avoid constructs only the newer compiler accepts (e.g. a single-expression closure whose value type mismatches `Void`: write `_ = expr`). Check new Swift against that when in doubt.
+- PTY client targeting: with several clients on one session (laptop etc.) `TmuxMonitor` picks ours via `ClientProcessTree` (`ps -A -o pid= -o ppid=` on the host: the candidate sharing the deepest ancestor with the control client, both being children of our SSH connection), falling back to the Rust heuristic (size, age). The tty is sticky per `start`, forgotten on every restart. `PaneBadge`/`PaneBadgeProvider` live in `AgentHooks.swift` (M5); `PaneBadge.swift` only adds symbol/tint/priority. Kill window/pane always go through `TmuxActions.pendingConfirmation`.
