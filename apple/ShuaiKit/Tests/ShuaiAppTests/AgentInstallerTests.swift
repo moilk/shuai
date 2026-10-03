@@ -233,7 +233,8 @@ struct AgentInstallerTests {
         let report = await inst.run(probe: try await inst.probe())
         #expect(report.ok)
         let up = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml" }
-        #expect(String(decoding: up?.data ?? Data(), as: UTF8.self).hasPrefix("notify = [\"/home/u/.shuai/bin/shuai-agent\", \"codex-notify\"]\n"))
+        let upText = String(decoding: up?.data ?? Data(), as: UTF8.self)
+        #expect(upText.hasPrefix("notify = [\"/home/u/.shuai/bin/shuai-agent\", \"codex-notify\"]\n"))
     }
 
     @Test func missingBinaryStopsTheInstall() async throws {
@@ -279,7 +280,8 @@ struct AgentInstallerTests {
         #expect(cmds.contains { $0.contains("sed -i.shuai-bak") && $0.contains("~/.tmux.conf") })
         #expect(cmds.contains("rm -rf /home/u/.shuai/bin /home/u/.shuai/plugin-marketplace"))
         let s = remote.uploads.get.first { $0.path == "/home/u/.claude/settings.json" }
-        #expect(!String(decoding: s?.data ?? Data(), as: UTF8.self).contains("shuai-agent"))
+        let sText = String(decoding: s?.data ?? Data(), as: UTF8.self)
+        #expect(!sText.contains("shuai-agent"))
         let c = remote.uploads.get.first { $0.path == "/home/u/.codex/config.toml" }
         #expect(String(decoding: c?.data ?? Data(), as: UTF8.self) == "model = 1\n")
     }
