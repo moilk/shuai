@@ -168,7 +168,7 @@ fn codex_notify_uses_absolute_agent_path() {
     let steps = InstallPlan::for_probe(&p);
     assert!(steps.contains(&InstallStep::ConfigureCodexNotify {
         config_path: "~/.codex/config.toml".into(),
-        notify_argv: vec![AGENT.into(), "hook".into(), "codex-turn-complete".into()],
+        notify_argv: vec![AGENT.into(), "codex-notify".into()],
     }));
     assert!(
         !InstallPlan::for_probe(&probe())
