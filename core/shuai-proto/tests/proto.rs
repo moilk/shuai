@@ -328,3 +328,42 @@ fn watch_line_decodes_heartbeat_and_event() {
     );
     assert!(WatchLine::decode("nope").is_err());
 }
+
+/// Golden transcript recorded from real Claude Code 2.1.288 (see shuai-agent e2e).
+#[test]
+fn real_claude_transcript_decodes() {
+    let text = include_str!("../../shuai-agent/tests/fixtures/e2e-claude-2.1.288.jsonl");
+    let mut types = Vec::new();
+    let mut last = 0;
+    for l in text.lines() {
+        let WatchLine::Event(env) = WatchLine::decode(l).unwrap() else {
+            panic!("heartbeat in event log")
+        };
+        assert!(env.seq > last);
+        last = env.seq;
+        assert!(
+            !matches!(env.event, AgentEvent::Other { .. }),
+            "unmodelled event {l}"
+        );
+        types.push(
+            serde_json::to_value(&env.event).unwrap()["type"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+    assert_eq!(
+        &types[..9],
+        [
+            "session_start",
+            "user_prompt_submit",
+            "pre_tool_use",
+            "permission_request",
+            "notification",
+            "permission_resolved",
+            "post_tool_use",
+            "stop",
+            "subagent_stop"
+        ]
+    );
+}
