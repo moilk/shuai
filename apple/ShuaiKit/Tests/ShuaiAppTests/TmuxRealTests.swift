@@ -7,7 +7,7 @@ import Testing
 /// A `RemoteConnection` that runs everything on a private local tmux server (`-L shuaim4 -f /dev/null`,
 /// through a `tmux` shim first on PATH), so the monitor and actions are verified against real tmux.
 final class LocalTmuxConnection: RemoteConnection, @unchecked Sendable {
-    static let socket = "shuaim4"
+    static let socket = "shuaim4-\(ProcessInfo.processInfo.processIdentifier)"
     let shimDir: URL
 
     static var realTmux: String? {
