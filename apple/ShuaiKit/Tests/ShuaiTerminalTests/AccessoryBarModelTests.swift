@@ -51,7 +51,7 @@ struct AccessoryBarStickyTests {
         var m = AccessoryBarModel()
         _ = m.press(.ctrl)
         _ = m.press(.alt)
-        #expect(m.press(.arrow(.left)) == [KeyStroke(.arrow(.left), [.ctrl, .alt])])
+        #expect(m.press(.left) == [KeyStroke(.arrow(.left), [.ctrl, .alt])])
         #expect(!m.hasActiveModifiers)
     }
 
