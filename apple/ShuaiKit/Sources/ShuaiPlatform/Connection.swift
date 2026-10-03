@@ -90,6 +90,17 @@ public actor Connection {
             owner: self, bufferBytes: bufferBytes)
     }
 
+    /// Runs `command` directly on a PTY (no login shell, nothing typed or echoed), e.g.
+    /// `tmux new -A -s NAME`. Behaves like a shell: write/resize/events.
+    public func openPtyExec(
+        command: String, cols: UInt32, rows: UInt32, term: String = "xterm-256color",
+        env: [FfiEnvVar] = Connection.defaultEnv, bufferBytes: Int = Connection.defaultStreamBufferBytes
+    ) async throws -> Shell {
+        Shell(
+            stream: try await inner.openPtyExec(command: command, cols: cols, rows: rows, term: term, env: env),
+            owner: self, bufferBytes: bufferBytes)
+    }
+
     public func exec(_ command: String) async throws -> ExecResult {
         try await inner.exec(cmd: command)
     }
