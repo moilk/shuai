@@ -239,6 +239,32 @@ fn window_and_session_notifications() {
     );
 }
 
+/// tmux prints names in notifications with its output sanitising (`\\`, `\ooo`, `\n`);
+/// verified against tmux 3.6 `%window-renamed` after `rename-window 'a\b'`.
+#[test]
+fn names_in_notifications_are_unescaped() {
+    assert_eq!(
+        parse("%window-renamed @1 a\\\\b\\037c\\nd\n"),
+        vec![E::WindowRenamed {
+            window: WindowId(1),
+            name: "a\\b\u{1f}c\nd".into()
+        }]
+    );
+    assert_eq!(
+        parse("%session-changed $0 x\\\\y\n%session-renamed $1 p\\\\q\n"),
+        vec![
+            E::SessionChanged {
+                session: SessionId(0),
+                name: "x\\y".into()
+            },
+            E::SessionRenamed {
+                session: Some(SessionId(1)),
+                name: "p\\q".into()
+            },
+        ]
+    );
+}
+
 #[test]
 fn layout_change_parses_layout() {
     let ev = parse(
