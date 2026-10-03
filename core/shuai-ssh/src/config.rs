@@ -114,7 +114,7 @@ pub struct ConnectConfig {
 }
 
 impl ConnectConfig {
-    /// Config with sensible defaults (port 22, 15 s keepalive x 3, 10 s connect timeout).
+    /// Config with sensible defaults (port 22, 15 s keepalive x 3, 10 s connect timeout, 60 s auth timeout).
     pub fn new(host: impl Into<String>, username: impl Into<String>) -> Self {
         Self {
             host: host.into(),

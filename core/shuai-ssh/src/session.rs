@@ -228,7 +228,8 @@ impl Session {
     /// Connects, verifies the host key via `verifier`, and authenticates using the methods in
     /// `config.auth` in order.
     ///
-    /// `config.connect_timeout` bounds TCP connect plus the SSH handshake. Keepalives
+    /// `config.connect_timeout` bounds TCP connect plus the SSH handshake and
+    /// `config.auth_timeout` the whole authentication phase. Keepalives
     /// (`keepalive@openssh.com`) start once authenticated: the session is torn down once more
     /// than `keepalive_max` consecutive probes went unanswered (a `keepalive_max` of 0
     /// disables the check); [`Session::closed`] then reports
