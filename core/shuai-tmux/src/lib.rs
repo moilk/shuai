@@ -6,6 +6,7 @@
 //! * [`layout`] parses tmux layout strings (`%layout-change`).
 //! * [`version`] parses `tmux -V` and maps versions to capabilities.
 
+pub mod clients;
 pub mod cmd;
 pub mod control;
 pub mod controller;

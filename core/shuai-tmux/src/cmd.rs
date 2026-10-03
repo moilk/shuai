@@ -145,6 +145,34 @@ pub fn list_panes_all() -> TmuxCommand {
     TmuxCommand::new(["list-panes", "-a", "-F", PANE_FORMAT])
 }
 
+/// Format for `list-clients -F` (see [`crate::clients`]).
+pub const CLIENT_FORMAT: &str = "#{client_tty}\u{1f}#{client_pid}\u{1f}#{session_id}\u{1f}#{session_name}\u{1f}#{client_control_mode}\u{1f}#{client_created}\u{1f}#{client_width}\u{1f}#{client_height}";
+
+pub fn list_clients() -> TmuxCommand {
+    TmuxCommand::new(["list-clients", "-F", CLIENT_FORMAT])
+}
+
+/// `resize-pane -Z -t T`: toggle zoom.
+pub fn zoom_pane(t: &Target) -> TmuxCommand {
+    TmuxCommand::new(["resize-pane", "-Z"]).target(t)
+}
+pub fn next_window(session: &Target) -> TmuxCommand {
+    TmuxCommand::new(["next-window"]).target(session)
+}
+pub fn previous_window(session: &Target) -> TmuxCommand {
+    TmuxCommand::new(["previous-window"]).target(session)
+}
+pub fn last_window(session: &Target) -> TmuxCommand {
+    TmuxCommand::new(["last-window"]).target(session)
+}
+/// `switch-client -c CLIENT_TTY -t T`: moves *that* client (the PTY terminal), never the
+/// caller (a control-mode client would otherwise switch only itself).
+pub fn switch_client(client_tty: &str, t: &Target) -> TmuxCommand {
+    TmuxCommand::new(["switch-client", "-c"])
+        .arg(client_tty)
+        .target(t)
+}
+
 pub fn select_window(t: &Target) -> TmuxCommand {
     TmuxCommand::new(["select-window"]).target(t)
 }
