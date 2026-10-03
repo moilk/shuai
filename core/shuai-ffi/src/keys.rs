@@ -13,7 +13,7 @@ pub enum KeyAlg {
 
 /// A key pair as stored by the platform: the private half is an unencrypted OpenSSH PEM
 /// (the platform keeps it in the Keychain).
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct KeyMaterial {
     pub private_pem: String,
     /// `authorized_keys` line (`ssh-ed25519 AAAA... comment`).
@@ -22,6 +22,18 @@ pub struct KeyMaterial {
     pub fingerprint: String,
     /// SSH algorithm name, e.g. `ssh-ed25519`.
     pub algorithm: String,
+}
+
+// Hand-written so the private PEM can never reach logs, panics or `dbg!` output.
+impl std::fmt::Debug for KeyMaterial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyMaterial")
+            .field("private_pem", &"<redacted>")
+            .field("public_line", &self.public_line)
+            .field("fingerprint", &self.fingerprint)
+            .field("algorithm", &self.algorithm)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

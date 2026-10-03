@@ -374,14 +374,18 @@ pub struct SshConnection {
 }
 
 const UPLOAD_CHUNK: usize = 32 * 1024;
+/// How long to keep collecting diagnostics after a failed stdin write.
+const UPLOAD_LINGER: Duration = Duration::from_secs(5);
 
-/// The shell command used by [`SshConnection::upload`]: `cat > PATH && chmod MODE PATH`
-/// (`mode` printed in octal). shuai-ssh has no SFTP yet, so uploads are streamed through an
-/// exec channel's stdin.
+/// The shell command used by [`SshConnection::upload`]: `cat > PATH && chmod -- MODE PATH`
+/// (`mode` masked to the permission bits and printed in octal; the path is shell-quoted and
+/// `--` keeps a path starting with `-` from being read as a chmod option). shuai-ssh has no
+/// SFTP yet, so uploads are streamed through an exec channel's stdin.
 #[uniffi::export]
 pub fn upload_command(remote_path: String, mode: u32) -> String {
     let p = shuai_tmux::quote::shell_quote(&remote_path);
-    format!("cat > {p} && chmod {mode:o} {p}")
+    let mode = mode & 0o7777;
+    format!("cat > {p} && chmod -- {mode:o} {p}")
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -451,21 +455,52 @@ impl SshConnection {
             .session
             .exec_stream(&upload_command(remote_path, mode))
             .await?;
-        for chunk in data.chunks(UPLOAD_CHUNK) {
-            ch.write_stdin(chunk).await?;
-        }
-        ch.eof().await?;
+        // Write and read concurrently: if the remote command dies early (permission denied...)
+        // it stops consuming stdin, and a sequential writer would wait for window space forever
+        // while its diagnostics sit unread.
+        let write = async {
+            for chunk in data.chunks(UPLOAD_CHUNK) {
+                ch.write_stdin(chunk).await?;
+            }
+            ch.eof().await
+        };
+        tokio::pin!(write);
+        let mut written: Option<shuai_ssh::Result<()>> = None;
         let (mut status, mut signal, mut stderr) = (None, None, Vec::new());
+        let mut deadline: Option<tokio::time::Instant> = None;
         loop {
-            match ch.next().await {
-                E::Stderr(b) => stderr.extend(b),
-                E::ExitStatus(s) => status = Some(s),
-                E::ExitSignal(s) => signal = Some(s),
-                E::Closed(_) => break,
-                _ => {}
+            let linger = async {
+                match deadline {
+                    Some(d) => tokio::time::sleep_until(d).await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                r = &mut write, if written.is_none() => {
+                    if r.is_err() {
+                        // Give the remote a moment to report why, then stop waiting.
+                        deadline = Some(tokio::time::Instant::now() + UPLOAD_LINGER);
+                    }
+                    written = Some(r);
+                }
+                ev = ch.next() => match ev {
+                    E::Stderr(b) => stderr.extend(b),
+                    E::ExitStatus(s) => status = Some(s),
+                    E::ExitSignal(s) => signal = Some(s),
+                    E::Closed(_) => break,
+                    _ => {}
+                },
+                () = linger => break,
             }
         }
-        if status == Some(0) {
+        let complete = matches!(written, Some(Ok(())));
+        if !complete && status.is_none() && signal.is_none() && stderr.is_empty() {
+            // Nothing from the remote: surface the transport error itself.
+            if let Some(Err(e)) = written {
+                return Err(e.into());
+            }
+        }
+        if complete && status == Some(0) {
             return Ok(());
         }
         let detail = String::from_utf8_lossy(&stderr).trim().to_string();

@@ -375,11 +375,11 @@ async fn server_drop_resolves_closed_as_not_local() {
 fn upload_command_quotes_path_and_sets_mode() {
     assert_eq!(
         upload_command("/tmp/shuai-agent".into(), 0o755),
-        "cat > /tmp/shuai-agent && chmod 755 /tmp/shuai-agent"
+        "cat > /tmp/shuai-agent && chmod -- 755 /tmp/shuai-agent"
     );
     assert_eq!(
         upload_command("/tmp/a b'c".into(), 0o600),
-        "cat > '/tmp/a b'\\''c' && chmod 600 '/tmp/a b'\\''c'"
+        "cat > '/tmp/a b'\\''c' && chmod -- 600 '/tmp/a b'\\''c'"
     );
 }
 
@@ -413,7 +413,7 @@ async fn upload_failure_is_reported() {
 fn upload_command_places_double_dash_before_path_and_masks_mode() {
     assert_eq!(
         upload_command("-x".into(), 0o100755),
-        "cat > '-x' && chmod 755 -- '-x'"
+        "cat > -x && chmod -- 755 -x"
     );
 }
 
