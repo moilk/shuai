@@ -3,6 +3,8 @@
 //! Public key types are those of `russh::keys` (re-exported as [`keys`]) so that other crates
 //! can hand over `PrivateKey` / `PublicKey` values directly.
 
+#![warn(missing_docs)]
+
 pub mod config;
 pub mod error;
 pub mod reconnect;

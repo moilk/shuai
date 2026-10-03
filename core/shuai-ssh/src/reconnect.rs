@@ -36,11 +36,19 @@ pub enum ReconnectState {
     /// Not connected and not trying.
     Idle,
     /// A connection attempt (numbered from 1) is in flight.
-    Connecting { attempt: u32 },
+    Connecting {
+        /// Attempt number, from 1.
+        attempt: u32,
+    },
     /// Session is up.
     Connected,
     /// Waiting `delay` before the next attempt; `attempt` is the one that just failed.
-    Backoff { attempt: u32, delay: Duration },
+    Backoff {
+        /// The attempt that just failed.
+        attempt: u32,
+        /// Time to wait before the next attempt.
+        delay: Duration,
+    },
     /// Gave up (fatal failure or attempt budget exhausted). Only [`ReconnectEvent::Connect`]
     /// leaves this state.
     GaveUp,
