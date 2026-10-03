@@ -61,7 +61,7 @@ private func collect(_ shell: Shell, until needle: String) async throws -> Strin
     @Test func rejectedHostKeyFailsConnect() async throws {
         let server = await startTestSshServer()
         let verifier = TOFUVerifier(store: KnownHostsStore(fileURL: tempFile())) { _ in false }
-        await #expect(throws: FfiSshError.hostKeyRejected) {
+        await #expect(throws: FfiSshError.HostKeyRejected) {
             _ = try await Connection.connect(config: config(server), verifier: verifier)
         }
     }
@@ -69,7 +69,7 @@ private func collect(_ shell: Shell, until needle: String) async throws -> Strin
     @Test func wrongPasswordFails() async throws {
         let server = await startTestSshServer()
         let verifier = TOFUVerifier(store: KnownHostsStore(fileURL: tempFile())) { _ in true }
-        await #expect(throws: FfiSshError.authFailed(triedMethods: ["password"])) {
+        await #expect(throws: FfiSshError.AuthFailed(triedMethods: ["password"])) {
             _ = try await Connection.connect(config: config(server, password: "bad"), verifier: verifier)
         }
     }

@@ -21,6 +21,8 @@ targets:
     dependencies:
       - package: ShuaiKit
         product: ShuaiCore
+      - package: ShuaiKit
+        product: ShuaiPlatform
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai
@@ -35,6 +37,8 @@ targets:
       - target: Shuai
       - package: ShuaiKit
         product: ShuaiCore
+      - package: ShuaiKit
+        product: ShuaiPlatform
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai.tests

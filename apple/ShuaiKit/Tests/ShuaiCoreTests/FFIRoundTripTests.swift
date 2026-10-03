@@ -17,7 +17,7 @@ import Testing
         let k = try generateKey(alg: .ecdsaP256, comment: "")
         let imported = try importKey(pemBytes: Data(k.privatePem.utf8), passphrase: nil)
         #expect(imported.fingerprint == k.fingerprint)
-        #expect(throws: FfiKeyError.malformed) {
+        #expect(throws: FfiKeyError.Malformed) {
             try importKey(pemBytes: Data("nope".utf8), passphrase: nil)
         }
     }
@@ -34,11 +34,11 @@ import Testing
 }
 
 @Suite struct TmuxFFITests {
-    @Test func parseTopology() throws {
+    @Test func topologyRecords() throws {
         let us = "\u{1f}"
         let line = ["$0", "main", "1", "@1", "0", "zsh", "1", "*", "%1", "0", "1", "claude", "/home/u", "123", "/dev/pts/1", "t", "80", "24"]
             .joined(separator: us)
-        let t = try parseTopology(line + "\n")
+        let t = try parseTopology(text: line + "\n")
         #expect(t.sessions.count == 1)
         #expect(t.sessions[0].windows[0].panes[0].id == "%1")
         #expect(t.sessions[0].windows[0].panes[0].currentCommand == "claude")
@@ -66,6 +66,7 @@ import Testing
         #expect(p.transition(event: .connectFailed(kind: .network)) == .scheduleRetry(delayMs: 1000))
         #expect(p.transition(event: .backoffElapsed) == .startConnect)
         #expect(p.transition(event: .connectFailed(kind: .network)) == .scheduleRetry(delayMs: 2000))
+        #expect(p.transition(event: .backoffElapsed) == .startConnect)
         #expect(p.transition(event: .connectFailed(kind: .authFailed)) == .none)
         #expect(p.state() == .gaveUp)
     }

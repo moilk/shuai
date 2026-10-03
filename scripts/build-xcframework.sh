@@ -16,6 +16,8 @@ PKG="$ROOT/apple/ShuaiKit"
 OUT="$ROOT/build/xcframework"
 XCF="$PKG/ShuaiCoreFFI.xcframework"
 GEN_SWIFT="$PKG/Sources/ShuaiCore/Generated"
+# Match the Swift package deployment targets (avoids linker version warnings).
+export MACOSX_DEPLOYMENT_TARGET=15.0 IPHONEOS_DEPLOYMENT_TARGET=18.0
 TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin)
 LIB=libshuai_ffi.a
 FEATURES=()
