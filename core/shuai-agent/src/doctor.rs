@@ -23,6 +23,25 @@ fn find_claude() -> Option<String> {
         .map(str::to_string)
 }
 
+/// Fallback: PATH set only in interactive rc files (~/.zshrc) is invisible to `-lc`.
+fn known_claude_path() -> Option<String> {
+    use std::os::unix::fs::PermissionsExt;
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    [
+        home.join(".local/bin/claude"),
+        home.join(".claude/local/claude"),
+        home.join(".npm-global/bin/claude"),
+        PathBuf::from("/usr/local/bin/claude"),
+        PathBuf::from("/opt/homebrew/bin/claude"),
+    ]
+    .into_iter()
+    .find(|p| {
+        p.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    })
+    .map(|p| p.display().to_string())
+}
+
 fn claude_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("CLAUDE_CONFIG_DIR") {
         return PathBuf::from(d);
@@ -65,7 +84,7 @@ pub fn report(state: &State) -> Value {
         "state_dir_writable": writable(state),
         "last_seq": last_seq,
         "app_present": state.present(),
-        "claude_path": find_claude(),
+        "claude_path": find_claude().or_else(known_claude_path),
         "plugin_installed": plugin_installed(),
         "tmux_version": out_of(Command::new("tmux").arg("-V")),
         "tmux_allow_passthrough": out_of(Command::new("tmux").args(["show-options", "-gv", "allow-passthrough"])),
