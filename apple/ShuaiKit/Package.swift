@@ -3,9 +3,10 @@ import Foundation
 import PackageDescription
 
 // `SHUAI_FFI_TESTKIT=1 scripts/build-xcframework.sh` builds the Rust core with the `testkit`
-// feature (in-process SSH server) and drops this marker; only then are the real-SSH tests built.
-let packageDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-let hasTestkit = FileManager.default.fileExists(atPath: packageDir + "/.shuai-testkit")
+// feature (in-process SSH server). Run `SHUAI_FFI_TESTKIT=1 swift test` against such a build to
+// also compile the real-SSH tests (`#if SHUAI_TESTKIT`). The env var is the switch because
+// SwiftPM caches manifest evaluation and would not notice a marker file appearing.
+let hasTestkit = ProcessInfo.processInfo.environment["SHUAI_FFI_TESTKIT"] == "1"
 
 let package = Package(
     name: "ShuaiKit",

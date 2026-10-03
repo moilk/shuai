@@ -5,8 +5,8 @@
 #
 # SHUAI_FFI_TESTKIT=1 builds shuai-ffi with the `testkit` cargo feature (exports
 # `startTestSshServer()`, an in-process SSH server) into ALL slices, so the generated Swift
-# bindings match every slice, and drops a marker file that makes Package.swift compile the
-# real-SSH Swift tests. Dev/CI only: never ship an xcframework built this way.
+# bindings match every slice. Dev/CI only: never ship an xcframework built this way. Then run
+# `SHUAI_FFI_TESTKIT=1 swift test` in apple/ShuaiKit to compile the real-SSH Swift tests.
 set -euo pipefail
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -21,11 +21,8 @@ export MACOSX_DEPLOYMENT_TARGET=15.0 IPHONEOS_DEPLOYMENT_TARGET=18.0
 TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin)
 LIB=libshuai_ffi.a
 FEATURES=()
-MARKER="$PKG/.shuai-testkit"
-rm -f "$MARKER"
 if [ "${SHUAI_FFI_TESTKIT:-0}" = "1" ]; then
   FEATURES=(--features testkit)
-  touch "$MARKER"
 fi
 
 rm -rf "$OUT" "$XCF" "$GEN_SWIFT"
