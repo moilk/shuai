@@ -128,6 +128,24 @@ struct AgentHubTests {
         #expect(r2.lastStream?.command == "~/.shuai/bin/shuai-agent watch --since 4")
     }
 
+    @Test func aLateProbeOfTheOldConnectionIsDropped() async {
+        let h = hub()
+        let old = remote()
+        let release = Locked<CheckedContinuation<Void, Never>?>(nil)
+        old.gate.with { $0 = { await withCheckedContinuation { c in release.with { $0 = c } } } }
+        let first = Task { await h.hostConnected(id: a, remote: old) }
+        #expect(await waitUntil { release.get != nil })  // old probe is in flight
+        let fresh = remote()
+        await h.hostConnected(id: a, remote: fresh)  // reconnected meanwhile
+        #expect(await waitUntil { fresh.lastStream != nil })
+        old.gate.with { $0 = nil }
+        release.get?.resume()
+        await first.value
+        #expect(old.streams.get.isEmpty, "the stale probe result must not attach the dead connection")
+        #expect(h.monitor(for: a) != nil)
+        #expect(fresh.streams.get.count == 1)
+    }
+
     @Test func aChangedHostnameStartsAFreshMonitor() async {
         let h = hub()
         await h.hostConnected(id: a, remote: remote())

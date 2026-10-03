@@ -257,6 +257,20 @@ struct AgentMonitorPermissionTests {
         #expect(m.answering[req] == nil)
     }
 
+    @Test func aDoubleTapRespondsOnlyOnce() async {
+        let (m, remote) = await pending()
+        let release = Locked<CheckedContinuation<Void, Never>?>(nil)
+        remote.gate.with { $0 = { await withCheckedContinuation { c in release.with { $0 = c } } } }
+        let first = Task { await m.respond(requestId: req, allow: true) }
+        #expect(await waitUntil { m.answering[req] == .allowing })
+        let second = await m.respond(requestId: req, allow: true)
+        #expect(second == .alreadyResolved)
+        _ = await waitUntil { release.get != nil }
+        release.get?.resume()
+        #expect(await first.value == .sent)
+        #expect(remote.ran(containing: "respond").count == 1)
+    }
+
     @Test func denyWithMessage() async {
         let (m, remote) = await pending()
         let r = await m.respond(requestId: req, allow: false, message: "not now")
