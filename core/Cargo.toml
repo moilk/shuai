@@ -15,3 +15,10 @@ publish = false
 [workspace.dependencies]
 uniffi = "0.32.2"
 shuai-proto = { path = "shuai-proto" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+toml = "1"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+rustix = { version = "1", features = ["fs", "system"] }
+tempfile = "3"

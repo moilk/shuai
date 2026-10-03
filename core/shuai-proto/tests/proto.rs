@@ -25,7 +25,13 @@ fn envelope(event: AgentEvent) -> Envelope {
 #[test]
 fn session_start_fixture() {
     match AgentEvent::from_hook("SessionStart", &fx("session_start")) {
-        AgentEvent::SessionStart { ctx, source, model, session_title, raw } => {
+        AgentEvent::SessionStart {
+            ctx,
+            source,
+            model,
+            session_title,
+            raw,
+        } => {
             assert_eq!(ctx.session_id, "5f1c2a9e-7b3d-4c1e-9a55-0d2f6e8b1a44");
             assert_eq!(ctx.cwd.as_deref(), Some("/home/dev/proj"));
             assert_eq!(ctx.permission_mode.as_deref(), Some("default"));
@@ -69,7 +75,12 @@ fn simple_events_fixtures() {
 #[test]
 fn tool_events_fixtures() {
     match AgentEvent::from_hook("PreToolUse", &fx("pre_tool_use")) {
-        AgentEvent::PreToolUse { tool_name, tool_input, tool_use_id, .. } => {
+        AgentEvent::PreToolUse {
+            tool_name,
+            tool_input,
+            tool_use_id,
+            ..
+        } => {
             assert_eq!(tool_name, "Bash");
             assert_eq!(tool_input["command"], "cargo test --workspace");
             assert_eq!(tool_use_id.as_deref(), Some("toolu_01ABC"));
@@ -89,7 +100,12 @@ fn tool_events_fixtures() {
 #[test]
 fn permission_request_fixture_has_empty_request_id_until_assigned() {
     match AgentEvent::from_hook("PermissionRequest", &fx("permission_request")) {
-        AgentEvent::PermissionRequest { request_id, tool_name, tool_input, .. } => {
+        AgentEvent::PermissionRequest {
+            request_id,
+            tool_name,
+            tool_input,
+            ..
+        } => {
             assert_eq!(request_id, "");
             assert_eq!(tool_name, "Bash");
             assert_eq!(tool_input["command"], "rm -rf target");
@@ -101,7 +117,11 @@ fn permission_request_fixture_has_empty_request_id_until_assigned() {
 #[test]
 fn notification_fixtures() {
     match AgentEvent::from_hook("Notification", &fx("notification_permission")) {
-        AgentEvent::Notification { notification_type, message, .. } => {
+        AgentEvent::Notification {
+            notification_type,
+            message,
+            ..
+        } => {
             assert_eq!(notification_type.as_deref(), Some("permission_prompt"));
             assert!(message.unwrap().contains("permission"));
         }
@@ -111,7 +131,11 @@ fn notification_fixtures() {
 
 #[test]
 fn event_name_normalisation() {
-    for n in ["PermissionRequest", "permission_request", "permission-request"] {
+    for n in [
+        "PermissionRequest",
+        "permission_request",
+        "permission-request",
+    ] {
         assert!(matches!(
             AgentEvent::from_hook(n, &fx("permission_request")),
             AgentEvent::PermissionRequest { .. }
@@ -203,11 +227,24 @@ fn envelope_with_unknown_event_type_and_extra_fields_decodes_as_other() {
 #[test]
 fn codex_notify_payload() {
     match AgentEvent::from_codex_notify(&fx("codex_notify")) {
-        AgentEvent::AgentTurnComplete { thread_id, turn_id, cwd, last_assistant_message, input_messages, .. } => {
-            assert_eq!(thread_id.as_deref(), Some("b5f6c1c2-9e5c-4a7e-8f1a-2f4f0f3c9d11"));
+        AgentEvent::AgentTurnComplete {
+            thread_id,
+            turn_id,
+            cwd,
+            last_assistant_message,
+            input_messages,
+            ..
+        } => {
+            assert_eq!(
+                thread_id.as_deref(),
+                Some("b5f6c1c2-9e5c-4a7e-8f1a-2f4f0f3c9d11")
+            );
             assert_eq!(turn_id.as_deref(), Some("12345"));
             assert_eq!(cwd.as_deref(), Some("/home/dev/proj"));
-            assert_eq!(last_assistant_message.as_deref(), Some("Renamed foo to bar across 4 files."));
+            assert_eq!(
+                last_assistant_message.as_deref(),
+                Some("Renamed foo to bar across 4 files.")
+            );
             assert_eq!(input_messages, vec!["Rename foo to bar".to_string()]);
         }
         other => panic!("unexpected {other:?}"),
@@ -216,15 +253,23 @@ fn codex_notify_payload() {
 
 #[test]
 fn permission_response_hook_output() {
-    let allow = PermissionResponse { request_id: "r".into(), behavior: Behavior::Allow, message: None };
+    let allow = PermissionResponse {
+        request_id: "r".into(),
+        behavior: Behavior::Allow,
+        message: None,
+    };
     assert_eq!(
         allow.to_hook_output(),
         json!({"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}})
     );
-    let deny = PermissionResponse { request_id: "r".into(), behavior: Behavior::Deny, message: Some("no".into()) };
+    let deny = PermissionResponse {
+        request_id: "r".into(),
+        behavior: Behavior::Deny,
+        message: Some("no".into()),
+    };
     assert_eq!(
         deny.to_hook_output(),
-        json!({"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"no"}})
+        json!({"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"no"}}})
     );
     let back: PermissionResponse =
         serde_json::from_str(r#"{"request_id":"r","behavior":"deny","message":"no"}"#).unwrap();
@@ -271,9 +316,15 @@ fn line_decoder_streams_chunks() {
 
 #[test]
 fn watch_line_decodes_heartbeat_and_event() {
-    assert_eq!(WatchLine::decode(r#"{"type":"heartbeat"}"#).unwrap(), WatchLine::Heartbeat);
+    assert_eq!(
+        WatchLine::decode(r#"{"type":"heartbeat"}"#).unwrap(),
+        WatchLine::Heartbeat
+    );
     let env = envelope(AgentEvent::from_hook("Stop", &fx("stop")));
     let line = encode_line(&env);
-    assert_eq!(WatchLine::decode(line.trim_end()).unwrap(), WatchLine::Event(Box::new(env)));
+    assert_eq!(
+        WatchLine::decode(line.trim_end()).unwrap(),
+        WatchLine::Event(Box::new(env))
+    );
     assert!(WatchLine::decode("nope").is_err());
 }
