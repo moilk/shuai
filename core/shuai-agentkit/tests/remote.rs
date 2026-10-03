@@ -174,6 +174,68 @@ fn merge_settings_preserves_user_content_and_is_idempotent() {
 }
 
 #[test]
+fn merge_settings_survives_a_hostile_agent_path() {
+    let d = tempfile::tempdir().unwrap();
+    let dir = d.path().join("ho me/it's \"q\" $X `y` \\z");
+    std::fs::create_dir_all(&dir).unwrap();
+    let agent = dir.join("shuai-agent");
+    std::fs::write(&agent, "#!/bin/sh\nprintf '%s|' \"$@\"\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = merge_claude_settings("{}", agent.to_str().unwrap()).unwrap();
+    let v: Value = serde_json::from_str(&out).expect("still valid JSON");
+    let cmd = v["hooks"]["Stop"][0]["hooks"][0]["command"].as_str().unwrap();
+    assert_eq!(sh(cmd).1, "hook|Stop|");
+}
+
+#[test]
+fn remove_settings_hooks_keeps_user_hooks_sharing_a_group_and_empty_arrays() {
+    let existing = json!({
+        "hooks": {
+            "Stop": [{"hooks": [
+                {"type": "command", "command": "echo mine"},
+                {"type": "command", "command": "\"/h/.shuai/bin/shuai-agent\" hook Stop"}
+            ]}],
+            "Empty": []
+        }
+    })
+    .to_string();
+    let v: Value =
+        serde_json::from_str(&remove_claude_settings_hooks(&existing).unwrap()).unwrap();
+    assert_eq!(
+        v,
+        json!({"hooks": {
+            "Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}],
+            "Empty": []
+        }})
+    );
+}
+
+#[test]
+fn tmux_block_append_after_unterminated_last_line_and_remove_without_end_marker() {
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("it's a dir/tmux.conf");
+    std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+    std::fs::write(&f, "set -g mouse on").unwrap(); // no trailing newline
+    let lines = vec!["# >>> shuai >>>".to_string(), "# <<< shuai <<<".into()];
+    assert!(sh(&append_tmux_block_command(f.to_str().unwrap(), &lines)).0);
+    assert_eq!(
+        std::fs::read_to_string(&f).unwrap(),
+        "set -g mouse on\n# >>> shuai >>>\n# <<< shuai <<<\n"
+    );
+    assert!(sh(&remove_tmux_block_command(f.to_str().unwrap())).0);
+    assert_eq!(std::fs::read_to_string(&f).unwrap(), "set -g mouse on\n");
+    // A begin marker whose end marker is missing must not eat the rest of the file.
+    std::fs::write(&f, "a\n# >>> shuai >>>\nb\nc\n").unwrap();
+    assert!(sh(&remove_tmux_block_command(f.to_str().unwrap())).0);
+    assert_eq!(
+        std::fs::read_to_string(&f).unwrap(),
+        "a\n# >>> shuai >>>\nb\nc\n"
+    );
+    assert!(!f.with_extension("conf.shuai-bak").exists());
+}
+
+#[test]
 fn merge_settings_rejects_garbage_and_non_objects() {
     assert!(merge_claude_settings("{not json", AGENT).is_err());
     assert!(merge_claude_settings("[1]", AGENT).is_err());
