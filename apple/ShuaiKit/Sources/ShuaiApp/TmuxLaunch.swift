@@ -9,6 +9,9 @@ public enum TmuxLaunch {
             && !name.contains(where: { $0 == ":" || $0 == "." || $0.isNewline || $0.asciiValue.map { $0 < 0x20 } == true })
     }
 
+    /// DEBUG-only extra tmux args (e.g. `-L shuaidbg -vv`), set from the `-debugHostFile` JSON. Always empty in Release.
+    nonisolated(unsafe) public static var debugArgs = ""
+
     /// POSIX single-quote quoting.
     public static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
@@ -17,7 +20,7 @@ public enum TmuxLaunch {
     /// `tmux new -A -s 'NAME'` (attach if it exists, create otherwise). A startup command runs
     /// only when the session is created; afterwards the user's shell takes over.
     public static func command(sessionName: String, startupCommand: String? = nil) -> String {
-        var cmd = "tmux new -A -s \(shellQuote(sessionName))"
+        var cmd = "tmux\(debugArgs) new -A -s \(shellQuote(sessionName))"
         if let s = startupCommand?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
             cmd += " " + shellQuote("\(s); exec \"${SHELL:-/bin/sh}\"")
         }

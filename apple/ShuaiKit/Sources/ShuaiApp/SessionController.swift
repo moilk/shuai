@@ -453,7 +453,9 @@ public final class SessionController {
         writerTask = Task {
             for await command in stream {
                 switch command {
-                case .write(let data): try? await newShell.write(data)
+                case .write(let data):
+                    Self.byteTap("W", data)
+                    try? await newShell.write(data)
                 case .resize(let cols, let rows): try? await newShell.resize(cols: cols, rows: rows)
                 }
             }
@@ -470,6 +472,7 @@ public final class SessionController {
                         received += bytes.count
                         missingHint = missingHint || Self.looksLikeMissingTmux(bytes)
                     }
+                    Self.byteTap("R", bytes)
                     if gen == self.generation { self.engine.feed(bytes) }
                 case .exit(let status, _):
                     exitStatus = status.map { Int($0) }
@@ -482,6 +485,18 @@ public final class SessionController {
             }
             await self?.shellClosed(gen: gen, reason: .local, exitStatus: exitStatus, tmuxMissing: false)
         }
+    }
+
+    #if DEBUG
+    private static let tapEnabled = ProcessInfo.processInfo.arguments.contains("-debugByteTap")
+    #endif
+    /// DEBUG-only (`-debugByteTap`): logs timestamp, length and hex of every channel write (W) / read (R).
+    static func byteTap(_ dir: String, _ data: Data) {
+        #if DEBUG
+        guard tapEnabled else { return }
+        let hex = data.prefix(96).map { String(format: "%02x", $0) }.joined(separator: " ")
+        NSLog("[tap] %@ t=%.3f len=%d %@", dir, Date().timeIntervalSince1970, data.count, hex)
+        #endif
     }
 
     private static func looksLikeMissingTmux(_ bytes: Data) -> Bool {
