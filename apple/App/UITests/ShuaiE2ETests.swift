@@ -65,11 +65,10 @@ final class ShuaiE2ETests: XCTestCase {
         XCTAssertTrue(done.waitForExistence(timeout: 240), "install finished")
         attach(app, "result")
         done.tap()
-        // The row is one accessibility element; its label carries the agent status.
-        let row = app.staticTexts.matching(identifier: "host-row-mdev-e2e").firstMatch
-        let shown = NSPredicate(format: "label CONTAINS 'AI integration 0.1.0'")
-        expectation(for: shown, evaluatedWith: row)
-        waitForExpectations(timeout: 20)
+        // The row's texts share one identifier; the status line carries the agent version.
+        let status = app.staticTexts.matching(identifier: "host-row-mdev-e2e")
+            .matching(NSPredicate(format: "label CONTAINS 'AI integration 0.1.0'")).firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 20), "host row shows 'AI integration 0.1.0'")
     }
 
     @MainActor

@@ -451,8 +451,10 @@ private final class Runner: @unchecked Sendable {
         }
         if probe.agentVersion != nil || probe.pluginInstalled {
             let dir = abs("~/.shuai")
-            let command = "pkill -f '[.]shuai/bin/shuai-agent'; sleep 0.3; rm -rf \(q(dir))"
-            actions.append(Action(title: "Remove shuai-agent", preview: ["Would stop a running shuai-agent and run: rm -rf " + dir]) { r in
+            // `claude plugin uninstall` leaves the plugin's cache dir behind (orphaned): drop ours too.
+            let cache = abs("~/.claude/plugins/cache/shuai")
+            let command = "pkill -f '[.]shuai/bin/shuai-agent'; sleep 0.3; rm -rf \(q(dir)) \(q(cache))"
+            actions.append(Action(title: "Remove shuai-agent", preview: ["Would stop a running shuai-agent and run: rm -rf " + dir + " " + cache]) { r in
                 try await r.sh(command, what: "rm")
                 return .done
             })
