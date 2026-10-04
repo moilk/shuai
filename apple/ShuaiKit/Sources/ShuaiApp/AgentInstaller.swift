@@ -450,9 +450,10 @@ private final class Runner: @unchecked Sendable {
             })
         }
         if probe.agentVersion != nil || probe.pluginInstalled {
-            let dirs = [abs("~/.shuai/bin"), abs(pluginMarketplaceDir())]
-            actions.append(Action(title: "Remove shuai-agent", preview: ["Would run: rm -rf " + dirs.joined(separator: " ")]) { r in
-                try await r.sh("rm -rf " + dirs.map(r.q).joined(separator: " "), what: "rm")
+            let dir = abs("~/.shuai")
+            let command = "pkill -f '[.]shuai/bin/shuai-agent'; sleep 0.3; rm -rf \(q(dir))"
+            actions.append(Action(title: "Remove shuai-agent", preview: ["Would stop a running shuai-agent and run: rm -rf " + dir]) { r in
+                try await r.sh(command, what: "rm")
                 return .done
             })
         }
