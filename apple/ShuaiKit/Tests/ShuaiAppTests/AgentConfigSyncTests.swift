@@ -22,9 +22,9 @@ struct AgentConfigTomlTests {
     }
 
     @Test func withoutNtfyOnlyTheHostKeysAreWritten() {
-        let toml = AgentConfigToml.render(hostID: hostileID, hostName: "mdev", ntfy: nil)
+        let toml = AgentConfigToml.render(hostID: hostileID, hostName: "devbox", ntfy: nil)
         #expect(toml.contains("host_id = \"11111111-2222-3333-4444-555555555555\"\n"))
-        #expect(toml.contains("host_name = \"mdev\"\n"))
+        #expect(toml.contains("host_name = \"devbox\"\n"))
         #expect(!toml.contains("[ntfy]"))
     }
 
@@ -113,7 +113,7 @@ struct PushSyncCoordinatorTests {
         let defaults = UserDefaults(suiteName: "sync-\(UUID().uuidString)")!
         let settings = PushSettings(defaults: defaults, secrets: InMemoryPushSecretStore(), transport: RecordingTransport())
         settings.enabled = true
-        let host = HostProfile(name: "mdev", host: "h", username: "u")
+        let host = HostProfile(name: "devbox", host: "h", username: "u")
         return (PushSyncCoordinator(settings: settings, defaults: defaults), settings, host)
     }
 
@@ -126,7 +126,7 @@ struct PushSyncCoordinatorTests {
         #expect(r.uploads.get.count == 1)
         let text = String(decoding: r.uploads.get[0].data, as: UTF8.self)
         #expect(text.contains("host_id = \"\(host.id.uuidString)\""))
-        #expect(text.contains("host_name = \"mdev\""))
+        #expect(text.contains("host_name = \"devbox\""))
         #expect(text.contains("topic = \"\(settings.topic)\""))
         #expect(await sync.syncIfNeeded(host: host, remote: r) == .upToDate)
         #expect(r.uploads.get.count == 1)

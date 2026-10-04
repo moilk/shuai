@@ -210,12 +210,12 @@ fn host_name_from_config_is_the_host_label() {
     write_config(
         h.path(),
         &format!(
-            "host_name = \"mdev\"\nhost_id = \"x\"\n[ntfy]\nserver = \"{}\"\ntopic = \"t\"\n",
+            "host_name = \"devbox\"\nhost_id = \"x\"\n[ntfy]\nserver = \"{}\"\ntopic = \"t\"\n",
             m.url
         ),
     );
     fire(h.path(), "Stop", &ev("Stop", "s", ""), &E0);
-    assert_eq!(recv(&m).body, "mdev");
+    assert_eq!(recv(&m).body, "devbox");
 }
 
 #[test]

@@ -10,6 +10,14 @@ import XCTest
 final class ShuaiE2ETests: XCTestCase {
     private var env: [String: String] { ProcessInfo.processInfo.environment }
 
+    /// Accessibility identifier of the host row: `host-row-<name>` with `name` from the host file.
+    private var hostRowID: String {
+        struct HostFile: Decodable { var name: String }
+        let url = URL(fileURLWithPath: env["SHUAI_E2E_HOST_FILE"] ?? "")
+        let name = (try? JSONDecoder().decode(HostFile.self, from: Data(contentsOf: url)))?.name ?? ""
+        return "host-row-\(name)"
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         try XCTSkipIf(env["SHUAI_E2E_HOST_FILE"] == nil, "SHUAI_E2E_HOST_FILE not set")
@@ -42,7 +50,7 @@ final class ShuaiE2ETests: XCTestCase {
 
     @MainActor
     private func openHostMenu(_ app: XCUIApplication, item: String) {
-        let row = app.staticTexts.matching(identifier: "host-row-mdev-e2e").firstMatch
+        let row = app.staticTexts.matching(identifier: hostRowID).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.press(forDuration: 1.2)
         let button = app.buttons[item]
@@ -63,7 +71,7 @@ final class ShuaiE2ETests: XCTestCase {
         attach(app, "result")
         done.tap()
         // The row's texts share one identifier; the status line carries the agent version.
-        let status = app.staticTexts.matching(identifier: "host-row-mdev-e2e")
+        let status = app.staticTexts.matching(identifier: hostRowID)
             .matching(NSPredicate(format: "label CONTAINS 'AI integration 0.1.0'")).firstMatch
         XCTAssertTrue(status.waitForExistence(timeout: 20), "host row shows 'AI integration 0.1.0'")
     }
