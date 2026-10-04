@@ -17,17 +17,32 @@ Working directory `core/`, stable Rust with rustfmt and clippy.
 The Ubuntu image's stock tmux (3.4 on Ubuntu 24.04) runs the real-tmux tests, which covers the
 escaped `\037` field-separator path. Raw-separator versions are covered by fixtures and local runs.
 
+### `icon` (ubuntu-latest)
+
+Working directory `tools/icongen/` (its own Cargo workspace, cached separately), stable Rust.
+
+1. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
+2. `cargo run --release -- check`: committed `brand/out/**` and the AppIcon catalog match a fresh
+   `generate`.
+3. `cargo run --release -- fidelity`: the vector mark still meets the fidelity gates.
+
+See [App icon](icon.md).
+
 ### `apple` (macos-latest)
 
 1. Rust with the Apple targets, XcodeGen, zig and cargo-zigbuild.
 2. `scripts/build-agent.sh` (both Linux targets; the app must bundle them).
-3. `scripts/test-check-no-testkit.sh` (self-test of the release guard).
+3. `scripts/test-check-no-testkit.sh` and `scripts/test-check-app-icon.sh` (self-tests of the
+   release guards).
 4. **Testkit pass**: `SHUAI_FFI_TESTKIT=1 scripts/build-xcframework.sh`, then
    `SHUAI_FFI_TESTKIT=1 swift test` in `apple/ShuaiKit` (real-SSH Swift tests).
 5. **Normal pass**: `scripts/build-xcframework.sh`, `scripts/check-no-testkit.sh` (explicitly),
    `swift test`.
 6. `xcodegen generate`, then `SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai` on the newest
-   available iPad simulator (app unit tests and UI tests with DEBUG fixtures).
+   available iPad simulator (app unit tests and UI tests with DEBUG fixtures), with a derived data
+   path under `$RUNNER_TEMP`.
+7. `scripts/check-app-icon.sh` on the built `Shuai.app`: the compiled asset catalog must contain the
+   default, dark and tinted AppIcon renditions.
 
 The app is always tested against the normal (non-testkit) xcframework, the one that could ship.
 
