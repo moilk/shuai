@@ -276,3 +276,23 @@ fn pending_permission_exposes_tool_input() {
     let p = s.pending_permission.as_ref().unwrap();
     assert_eq!(p.tool_input()["new_string"], "y");
 }
+
+#[test]
+fn removing_the_block_deletes_a_file_that_is_left_empty() {
+    let d = tempfile::tempdir().unwrap();
+    let f = d.path().join("created-by-install.conf");
+    let lines = vec![
+        "# >>> shuai >>>".to_string(),
+        "set -g x on".into(),
+        "# <<< shuai <<<".into(),
+    ];
+    assert!(sh(&append_tmux_block_command(f.to_str().unwrap(), &lines)).0);
+    assert!(f.exists());
+    assert!(sh(&remove_tmux_block_command(f.to_str().unwrap())).0);
+    assert!(!f.exists(), "an install-created file that ends up empty is removed");
+    // a file with other content is kept
+    std::fs::write(&f, "keep\n").unwrap();
+    assert!(sh(&append_tmux_block_command(f.to_str().unwrap(), &lines)).0);
+    assert!(sh(&remove_tmux_block_command(f.to_str().unwrap())).0);
+    assert_eq!(std::fs::read_to_string(&f).unwrap(), "keep\n");
+}
