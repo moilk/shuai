@@ -13,7 +13,7 @@ extension PaneBadge.Tint {
     }
 }
 
-/// Badge slot of a row (agent state in M5; empty until a `PaneBadgeProvider` supplies one).
+/// Badge slot of a row (agent state; empty until a `PaneBadgeProvider` supplies one).
 struct BadgeView: View {
     let badge: PaneBadge?
     var body: some View {

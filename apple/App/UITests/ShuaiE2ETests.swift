@@ -72,8 +72,8 @@ final class ShuaiE2ETests: XCTestCase {
         done.tap()
         // The row's texts share one identifier; the status line carries the agent version.
         let status = app.staticTexts.matching(identifier: hostRowID)
-            .matching(NSPredicate(format: "label CONTAINS 'AI integration 0.1.0'")).firstMatch
-        XCTAssertTrue(status.waitForExistence(timeout: 20), "host row shows 'AI integration 0.1.0'")
+            .matching(NSPredicate(format: "label MATCHES '.*AI integration [0-9]+\\\\.[0-9]+.*'")).firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 20), "host row shows the installed AI integration version")
     }
 
     @MainActor

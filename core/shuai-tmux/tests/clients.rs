@@ -1,4 +1,4 @@
-//! M4: zoom/next/prev/last/switch-client builders and PTY-client selection.
+//! zoom/next/prev/last/switch-client builders and PTY-client selection.
 
 use shuai_tmux::clients::{ClientParseError, TmuxClient, parse_clients, pick_pty_client};
 use shuai_tmux::cmd::{self, FIELD_SEP, Target};

@@ -107,8 +107,8 @@ public struct RankedCandidate: Sendable {
     }
 }
 
-/// Orders the candidates that matched the query. Swap the ranker to change the order (M5 puts
-/// items whose badge `needsAttention` first).
+/// Orders the candidates that matched the query. Swap the ranker to change the order (`AttentionRanker`
+/// puts items whose badge `needsAttention` first).
 public protocol QuickSwitcherRanker: Sendable {
     func rank(_ candidates: [RankedCandidate]) -> [SwitcherItem]
 }
