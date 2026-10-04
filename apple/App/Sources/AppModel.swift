@@ -41,6 +41,8 @@ final class AppModel {
     var editor: HostEditorTarget?
     var showSettings = false
     var showKeys = false
+    /// Any modal sheet driven by the model is up.
+    var hasSheetOpen: Bool { editor != nil || showSettings || showKeys || quickSwitcher != nil || agentInstall != nil }
     /// Sidebar visibility (the window tab strip shows while the sidebar is collapsed).
     var columnVisibility: NavigationSplitViewVisibility = .all
     /// Hardware shortcuts delivered while the terminal has focus.

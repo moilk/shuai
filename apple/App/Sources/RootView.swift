@@ -44,6 +44,11 @@ struct RootView: View {
         }
         .sheet(isPresented: $model.showSettings) { SettingsView() }
         .sheet(isPresented: $model.showKeys) { NavigationStack { KeysView() } }
+        // The terminal is first responder; without this its software keyboard stays up under a sheet
+        // and covers half of it on smaller iPads.
+        .onChange(of: model.hasSheetOpen) { _, open in
+            if open { Self.resignFirstResponder() }
+        }
         #if DEBUG
         .fullScreenCover(isPresented: $showTerminalDebug) {
             NavigationStack {
@@ -54,6 +59,10 @@ struct RootView: View {
         }
         .task { await DebugLaunch.applyIfRequested(model: model) }
         #endif
+    }
+
+    @MainActor private static func resignFirstResponder() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     @ViewBuilder private var detail: some View {
