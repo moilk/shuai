@@ -103,6 +103,7 @@ public final class SessionController {
     public var tmuxMissing: Bool { tmuxUnavailable }
 
     private struct Cancelled: Error {}
+    @ObservationIgnored private let replyGuard = DeviceReplyGuard()
 
     public init(
         profile: HostProfile,
@@ -139,7 +140,16 @@ public final class SessionController {
 
     private func wireEngine() {
         engine.onInput = { [weak self] data in
-            MainActor.assumeIsolated { self?.enqueue(.write(data)) }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // Replies to DA1/DA2/XTVERSION that nobody asked for (or that arrive late / twice) would be typed
+                // into the pane by tmux; everything else (keys, other reports) is written as one contiguous write.
+                guard self.replyGuard.admit(data, at: self.now()) else {
+                    Self.byteTap("X", data)
+                    return
+                }
+                self.enqueue(.write(data))
+            }
         }
         engine.onResize = { [weak self] grid in
             MainActor.assumeIsolated {
@@ -448,6 +458,7 @@ public final class SessionController {
     /// `tmuxAttempt` marks a shell that runs `tmux new -A` so a missing tmux can be detected.
     private func startShell(_ newShell: RemoteShell, gen: Int, tmuxAttempt: Bool) {
         shell = newShell
+        replyGuard.reset()
         let (stream, continuation) = AsyncStream<Command>.makeStream()
         commands = continuation
         writerTask = Task {
@@ -473,6 +484,7 @@ public final class SessionController {
                         missingHint = missingHint || Self.looksLikeMissingTmux(bytes)
                     }
                     Self.byteTap("R", bytes)
+                    self.replyGuard.noteOutput(bytes, at: self.now())
                     if gen == self.generation { self.engine.feed(bytes) }
                 case .exit(let status, _):
                     exitStatus = status.map { Int($0) }

@@ -19,7 +19,7 @@ final class ShuaiE2ETests: XCTestCase {
     private func launchConnected() -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
-        app.launchArguments = ["-debugHostFile", env["SHUAI_E2E_HOST_FILE"]!, "-debugAutoAcceptHostKey"]
+        app.launchArguments = ["-debugHostFile", env["SHUAI_E2E_HOST_FILE"]!, "-debugAutoAcceptHostKey", "-debugByteTap"]
         app.launch()
         let terminal = app.descendants(matching: .any)["terminal-view"].firstMatch
         XCTAssertTrue(terminal.waitForExistence(timeout: 40), "connected and attached to tmux")
@@ -36,9 +36,6 @@ final class ShuaiE2ETests: XCTestCase {
             sleep(1)
             if terminal.value(forKey: "hasKeyboardFocus") as? Bool == true { break }
         }
-        // Workaround for a known leak: on every attach the terminal's late replies to tmux's DA1/DA2/XTVERSION
-        // queries land in the pane as typed text. Ctrl-U drops that junk from the line editor before typing.
-        app.typeKey("u", modifierFlags: .control)
         app.typeText(text)
         app.typeText("\n")
     }
