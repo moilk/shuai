@@ -1,6 +1,6 @@
 # Getting started
 
-![Main window with fixture data: tmux sidebar with badges, terminal, permission card and Claude key strip](../assets/integration.png)
+![Main window with fixture data: tmux sidebar with badges, terminal, permission card and Claude key strip](../assets/integration.webp)
 
 ## 1. Add a host
 

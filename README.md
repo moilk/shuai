@@ -30,7 +30,7 @@ It connects directly to your server over SSH; there is no relay and no shuai clo
 under the MIT license.
 
 <p align="center">
-  <img src="docs/assets/integration.png" width="900" alt="shuai on an iPad in landscape, with fixture data: tmux sidebar with agent badges, terminal, a native permission card and the Claude key strip">
+  <img src="docs/assets/integration.webp" width="900" alt="shuai on an iPad in landscape, with fixture data: tmux sidebar with agent badges, terminal, a native permission card and the Claude key strip">
 </p>
 
 ## Why shuai
