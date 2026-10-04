@@ -88,15 +88,18 @@ phases. The app is launched with `-debugAutoAcceptHostKey`, so only use a server
 
 ## README screenshot
 
-`docs/assets/integration.png` is a landscape capture of the DEBUG agent fixture (fixture data only)
-on the iPad Pro 13-inch simulator. With a Debug build installed on the simulator, set its language
-to English, rotate it to landscape (⌘←) and run:
+`docs/assets/integration.webp` is a landscape capture of the DEBUG agent fixture (fixture data only)
+on the iPad Pro 13-inch simulator, stored as 1800 px wide lossy WebP (about 50 KB) so the README
+loads fast. With a Debug build installed on the simulator, set its language to English, rotate it to
+landscape (⌘←) and run:
 
 ```sh
 xcrun simctl status_bar <udid> override --time "2007-01-09T01:41:00.000Z" \
   --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularMode notSupported
 xcrun simctl launch <udid> <bundle id> -uiTesting -debugAgentFixture
-xcrun simctl io <udid> screenshot docs/assets/integration.png     # after ~10 s
+xcrun simctl io <udid> screenshot shot.png                        # after ~10 s
+sips -Z 1800 shot.png --out shot-1800.png
+cwebp -q 88 -m 6 -sharp_yuv shot-1800.png -o docs/assets/integration.webp
 ```
 
 Use `simctl io`: `XCUIScreen` and `XCUIApplication` screenshots of a rotated simulator come out

@@ -29,7 +29,7 @@ shuai 是一个带原生 tmux 导航的真终端，并且知道服务器上各�
 许可证开源。
 
 <p align="center">
-  <img src="docs/assets/integration.png" width="900" alt="shuai 横屏运行在 iPad 上（演示数据）：带 agent 徽章的 tmux 侧栏、终端、原生审批卡片、Claude 快捷键条">
+  <img src="docs/assets/integration.webp" width="900" alt="shuai 横屏运行在 iPad 上（演示数据）：带 agent 徽章的 tmux 侧栏、终端、原生审批卡片、Claude 快捷键条">
 </p>
 
 ## 特点
