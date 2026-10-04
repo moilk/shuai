@@ -31,14 +31,11 @@ directory `tools/icongen`; pass `--brand DIR` otherwise.
 | `brand/out/manifest.json` | Mark bounds per appearance |
 | `apple/App/Resources/Assets.xcassets/AppIcon.appiconset/` | `AppIcon-{light,dark,tinted}.png` (copies of the rendered icons) and `Contents.json` |
 
-`icon.toml` `appiconset` is relative to the repository root (the brand directory's parent), must be
-a plain relative path, and defaults to the path above. The generator resolves it as
-`../<appiconset>` relative to the brand directory, so a custom `--brand DIR` writes the catalog
-next to `DIR`, at `DIR/../<appiconset>`.
+`appiconset` in `icon.toml` is a plain path relative to the repository root; with a custom
+`--brand DIR` it resolves to `DIR/../<appiconset>`.
 
-`check` compares SVG and JSON numerically (numbers within 1e-3 user units, all other text
-exactly) and PNGs within +-2 per channel, so float formatting differences between platforms do not
-fail it; any structural change does.
+`check` compares SVG and JSON numerically (numbers within 1e-3, all other text exactly) and PNGs
+within +-2 per channel, so platform float formatting does not fail it but any structural change does.
 
 ## Configuration
 
@@ -132,10 +129,9 @@ themes used for `out/exports/`.
 
 ## Liquid Glass and iOS 26
 
-The asset catalog is the classic iOS 18 single-size icon with dark and tinted appearances,
-verified at build time by `scripts/check-app-icon.sh` (checks the compiled `Assets.car`;
-`scripts/test-check-app-icon.sh` self-tests it). On iOS 26 and later the system draws its own glass
-treatment (specular edge, blur) over icons that are not an Icon Composer `.icon`, so the flat matte
-look can differ slightly from the rendered PNGs. The planned path is an Icon Composer `.icon`
-bundle whose layers come from the existing `brand/out/*/{base,texture,mark}.svg` layers, kept next
-to the catalog until the minimum deployment target makes it the only icon.
+The asset catalog is the iOS 18 single-size icon with dark and tinted appearances.
+`scripts/check-app-icon.sh` verifies the compiled `Assets.car` has all three (self-test:
+`scripts/test-check-app-icon.sh`). On iOS 26 and later the system draws its own glass treatment over
+icons that are not an Icon Composer `.icon` bundle, so the flat matte look can differ slightly from
+the PNGs. A Liquid Glass icon is not generated; it would use the layer SVGs
+`brand/out/*/{base,texture,mark}.svg`.

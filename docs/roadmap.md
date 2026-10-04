@@ -19,6 +19,7 @@ v1 contains:
 - Claude Code integration: one-tap install/remove, badges, native permission cards with offline
   fallback, attention navigation; Codex via `notify`.
 - Status-only ntfy push with `shuai://` deep links; local notifications.
+- App icon (light, dark, tinted) generated from configuration; see [App icon](development/icon.md).
 
 There is no TestFlight or App Store build; users build and sign from source.
 
