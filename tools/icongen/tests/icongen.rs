@@ -719,7 +719,8 @@ fn container_border_scales_with_the_canvas() {
     let (mut t, g) = theme_and_glyph();
     t.container.kind = "squircle".into();
     for px in [16u32, 32, 48, 256, 1024] {
-        let c = svg::layers(&t, &g, px).container;
+        let doc = svg::layers(&t, &g, px).container;
+        let c = doc.split("<rect").nth(1).unwrap().to_string();
         let attr = |name: &str| -> f64 {
             let key = format!(" {name}=\"");
             let rest = c.split(&key).nth(1).unwrap_or_else(|| panic!("{name}"));

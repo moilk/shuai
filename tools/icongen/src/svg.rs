@@ -123,7 +123,7 @@ fn gloss_fragment(theme: &ThemeCfg, size: u32) -> String {
     }
     let s = fmt(f64::from(size));
     format!(
-        "<defs><linearGradient id=\"gloss\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\" stop-opacity=\"0.18\"/><stop offset=\"0.5\" stop-color=\"#ffffff\" stop-opacity=\"0\"/></linearGradient></defs><rect id=\"gloss\" width=\"{s}\" height=\"{s}\" fill=\"url(#gloss)\"/>"
+        "<defs><linearGradient id=\"gloss-grad\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#ffffff\" stop-opacity=\"0.18\"/><stop offset=\"0.5\" stop-color=\"#ffffff\" stop-opacity=\"0\"/></linearGradient></defs><rect id=\"gloss\" width=\"{s}\" height=\"{s}\" fill=\"url(#gloss-grad)\"/>"
     )
 }
 
@@ -138,11 +138,24 @@ fn squircle_rect(size: u32) -> String {
     )
 }
 
+/// Border width as a fraction of the canvas: 2 px at 1024.
+const BORDER: f64 = 2.0 / 1024.0;
+
 fn container_fragment(theme: &ThemeCfg, size: u32) -> String {
     if theme.container.kind == "squircle" {
+        // The stroke is centred on the edge; inset the rect by half of it so it stays inside.
+        let s = f64::from(size);
+        let sw = s * BORDER;
+        let r = (s * 0.2237 - sw / 2.0).max(0.0);
         format!(
-            "{} id=\"container\" fill=\"none\" stroke=\"#000000\" stroke-opacity=\"0.12\" stroke-width=\"2\"/>",
-            squircle_rect(size)
+            "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{}\" ry=\"{}\" id=\"container\" fill=\"none\" stroke=\"#000000\" stroke-opacity=\"0.12\" stroke-width=\"{}\"/>",
+            fmt(sw / 2.0),
+            fmt(sw / 2.0),
+            fmt(s - sw),
+            fmt(s - sw),
+            fmt(r),
+            fmt(r),
+            fmt(sw)
         )
     } else {
         String::new()
