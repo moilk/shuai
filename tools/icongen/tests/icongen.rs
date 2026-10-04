@@ -77,6 +77,42 @@ fn rejects_bad_theme_config() {
 }
 
 #[test]
+fn rejects_non_finite_and_absurd_numbers() {
+    let good = read("themes/matte.toml");
+    let cases = [
+        ("\nangle = 90.0", "\nangle = nan"),
+        ("\nangle = 90.0", "\nangle = inf"),
+        ("\ngrain = 0.6", "\ngrain = nan"),
+        ("\ngrain = 0.6", "\ngrain = 1.5"),
+        ("\ngrain = 0.6", "\ngrain = -0.1"),
+        ("\nopacity = 0.16", "\nopacity = nan"),
+        ("\nkeepout = 0.04", "\nkeepout = nan"),
+        ("\nkeepout = 0.04", "\nkeepout = inf"),
+        ("\nkeepout = 0.04", "\nkeepout = 0.9"),
+        ("\nkeepout = 0.04", "\nkeepout = -0.1"),
+        ("\ncracks = 10", "\ncracks = 4000000000"),
+        ("\ncracks = 10", "\ncracks = 201"),
+        ("\nmotifs = 12", "\nmotifs = 65"),
+        ("\nmotifs = 12", "\nmotifs = 4000000000"),
+        ("\noffset = [0.0, 0.0]", "\noffset = [nan, 0.0]"),
+        ("\noffset = [0.0, 0.0]", "\noffset = [0.0, inf]"),
+        ("\noffset = [0.0, 0.0]", "\noffset = [0.9, 0.0]"),
+        ("\nscale = 0.75", "\nscale = nan"),
+        ("\nweight = 2.1", "\nweight = nan"),
+    ];
+    for (from, to) in cases {
+        let bad = good.replace(from, to);
+        assert_ne!(bad, good, "{from}");
+        assert!(ThemeCfg::from_toml(&bad).is_err(), "{to}");
+    }
+    let ok = good
+        .replace("\ncracks = 10", "\ncracks = 200")
+        .replace("\nmotifs = 12", "\nmotifs = 64")
+        .replace("\nseed = 20241004", "\nseed = 18446744073709551615");
+    assert!(ThemeCfg::from_toml(&ok).is_ok());
+}
+
+#[test]
 fn small_size_weight_bonus_applies_at_and_below_its_size() {
     let good = read("themes/matte.toml");
     let with = good.replace(
