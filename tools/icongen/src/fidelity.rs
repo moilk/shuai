@@ -213,11 +213,8 @@ fn pieces_mask(pieces: &[Piece], (w, h): (usize, usize), map: &dyn Fn(Pt) -> Pt)
     let svg = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\">{body}</svg>"
     );
-    render_mask(&svg, w, h).unwrap_or_else(|_| Mask {
-        width: w,
-        height: h,
-        data: vec![false; w * h],
-    })
+    // A broken render must never read as "no ink": that would make two empty masks agree.
+    render_mask(&svg, w, h).unwrap_or_else(|e| panic!("render of {w}x{h} mask failed: {e}"))
 }
 
 /// Glyph as a mask of `ceil(width*scale) x ceil(height*scale)`; glyph coordinates are source
@@ -969,6 +966,10 @@ pub struct Report {
     pub holes: usize,
     pub model_holes: usize,
     pub model_strokes: usize,
+    /// Ink pixels of the source and of the glyph render; either being 0 is a failed evaluation
+    /// (the IoU of two empty masks is 1.0, which must not pass).
+    pub src_ink: usize,
+    pub glyph_ink: usize,
     /// Renders at 120, 60 and 40 px.
     pub small: Vec<SmallSize>,
 }
@@ -1021,6 +1022,8 @@ pub fn evaluate(glyph: &Glyph, weight: f64, source: &Field) -> Report {
         holes: holes(&g),
         model_holes: glyph.holes.len(),
         model_strokes: glyph.strokes.len(),
+        src_ink: ink(&src),
+        glyph_ink: ink(&g),
         small: [120, 60, 40]
             .iter()
             .map(|&px| small_size(glyph, weight, px))
@@ -1035,6 +1038,12 @@ fn small_at(r: &Report, px: u32) -> Option<&SmallSize> {
 /// Human-readable gate failures; empty when every gate passes.
 pub fn failures(r: &Report) -> Vec<String> {
     let mut f = Vec::new();
+    if r.src_ink == 0 || r.glyph_ink == 0 {
+        f.push(format!(
+            "empty render: source ink {} px, glyph ink {} px",
+            r.src_ink, r.glyph_ink
+        ));
+    }
     if r.iou < GATE_IOU {
         f.push(format!("IoU {:.4} < {GATE_IOU}", r.iou));
     }
