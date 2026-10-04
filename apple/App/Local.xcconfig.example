@@ -1,0 +1,8 @@
+// Copy to Local.xcconfig (gitignored) to sign device builds with your own Apple ID.
+// Team ID: Xcode → Settings → Accounts → your (Personal Team) → or the "Team" column in
+// https://developer.apple.com/account (free accounts work, apps expire after 7 days).
+
+CODE_SIGNING_ALLOWED = YES
+DEVELOPMENT_TEAM = ABCDE12345
+// Free accounts need a bundle id that nobody else has registered.
+SHUAI_BUNDLE_ID = com.example.yourname.shuai

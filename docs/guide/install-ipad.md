@@ -39,13 +39,19 @@ open Shuai.xcodeproj
 
 Release 配置下，若缺少 `apple/App/Resources/agent/shuai-agent-*` 二进制，构建会报错（预构建脚本检查）；Debug 配置只给警告，但此时 App 无法执行「Enable AI integration」。
 
-### 在 Xcode 中签名
+### 配置签名（一次性）
 
-1. 选中 `Shuai` target → Signing & Capabilities。
-2. 勾选 Automatically manage signing，**Team 选你的 Personal Team**。
-3. 工程默认的 Bundle Identifier 是 `io.github.moilk.shuai`，已被占用，免费账号通常会报 “Failed to register bundle identifier”。改成你自己的唯一值，例如 `io.github.<你的名字>.shuai`。（`ShuaiTests`/`ShuaiUITests` 不需要装到设备。）
-   - 也可以改 `apple/App/project.yml` 里的 `PRODUCT_BUNDLE_IDENTIFIER` 后重新 `xcodegen generate`，但它是入库文件，请不要提交个人改动。
-4. 注意：`project.yml` 里 `CODE_SIGNING_ALLOWED` 默认是 `NO`（仅模拟器为 `YES` 并 ad-hoc 签名）。真机签名需要在 Build Settings 里把 `Code Signing Allowed` 设为 `Yes`，并确认 Signing 页面没有报错。
+签名设置放在 `apple/App/Signing.xcconfig`（入库，默认真机构建不签名）和你自己的 `apple/App/Local.xcconfig`（已 gitignore，不会被提交，也不会被 `xcodegen generate` 覆盖）里。**不要在 Xcode 的 Signing 页面里手改**：`.xcodeproj` 是生成的，下次 `xcodegen generate` 就会丢失。
+
+1. 复制模板：
+   ```bash
+   cp apple/App/Local.xcconfig.example apple/App/Local.xcconfig
+   ```
+2. 编辑 `apple/App/Local.xcconfig`：
+   - `DEVELOPMENT_TEAM`：你的 Team ID（Xcode → Settings → Accounts → 选中 Apple ID → 你的 Personal Team；免费账号即可）。
+   - `SHUAI_BUNDLE_ID`：一个你自己的唯一 Bundle ID，例如 `io.github.<你的名字>.shuai`。默认的 `io.github.moilk.shuai` 已被占用，免费账号会报 “Failed to register bundle identifier”。测试 target 自动使用 `<SHUAI_BUNDLE_ID>.tests` / `.uitests`，不需要装到设备。
+   - `CODE_SIGNING_ALLOWED = YES` 保持不变。
+3. 重新生成工程：`cd apple/App && xcodegen generate`，打开 `Shuai.xcodeproj`，Signing 页面应显示你的 Team 且无报错。
 
 ### iPad 端设置
 
@@ -67,8 +73,8 @@ Release 配置下，若缺少 `apple/App/Resources/agent/shuai-agent-*` 二进�
 
 | 现象 | 处理 |
 |---|---|
-| Keychain 错误 `-34018`（errSecMissingEntitlement） | 应用没有被签名。真机请确认已选择 Team 且 `Code Signing Allowed = Yes`；模拟器构建由 `project.yml` 做 ad-hoc 签名，无需处理 |
-| “Failed to register bundle identifier” / “No profiles for ‘io.github.moilk.shuai’ were found” | 改成自己的唯一 Bundle ID，并确认已选择 Personal Team |
+| Keychain 错误 `-34018`（errSecMissingEntitlement） | 应用没有被签名。真机请确认 `apple/App/Local.xcconfig` 已设置 `DEVELOPMENT_TEAM` 且 `CODE_SIGNING_ALLOWED = YES`，并重新 `xcodegen generate`；模拟器构建由 `project.yml` 做 ad-hoc 签名，无需处理 |
+| “Failed to register bundle identifier” / “No profiles for ‘io.github.moilk.shuai’ were found” | 在 `Local.xcconfig` 里把 `SHUAI_BUNDLE_ID` 改成自己的唯一值，确认 `DEVELOPMENT_TEAM` 正确，然后重新 `xcodegen generate` |
 | “不受信任的开发者” / App 打不开 | 设置 → 通用 → VPN 与设备管理 → 信任你的开发者证书 |
 | Xcode 里看不到 iPad / 提示需要开发者模式 | 先连线并“信任此电脑”，再到设置中开启开发者模式并重启 |
 | 7 天后 App 一启动就退出 | 描述文件过期，重新 Run 一次 |
