@@ -133,6 +133,65 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(pane.exists)
     }
 
+    // MARK: deep links (shuai://open?host=&pane=, what an ntfy push click opens)
+
+    private static let fixtureHost = "5B0F1C00-0000-4000-8000-00000000F1E1"
+
+    @MainActor
+    func testDeepLinkSelectsTheNamedPane() throws {
+        let app = launchWithTmuxFixture()
+        let shell = app.buttons["tmux-window-@0"]
+        let claude = app.buttons["tmux-window-@1"]
+        XCTAssertTrue(claude.waitForExistence(timeout: 10))
+        XCTAssertEqual(claude.value as? String, "active")
+        XCTAssertNotEqual(shell.value as? String, "active")
+        app.open(URL(string: "shuai://open?host=\(Self.fixtureHost)&pane=%250")!)
+        // pane %0 lives in window @0: it becomes the active window, @1 no longer is
+        let active = NSPredicate(format: "value == 'active'")
+        expectation(for: active, evaluatedWith: shell)
+        waitForExpectations(timeout: 15)
+        XCTAssertNotEqual(claude.value as? String, "active")
+    }
+
+    @MainActor
+    func testDeepLinkToAMissingPaneOrHostShowsAFriendlyNotice() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.open(URL(string: "shuai://open?host=\(Self.fixtureHost)&pane=%2599")!)
+        let notice = app.descendants(matching: .any)["session-notice"].firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertTrue(notice.label.contains("no longer exists"), notice.label)
+        XCTAssertEqual(app.buttons["tmux-window-@1"].value as? String, "active", "nothing moved")
+
+        app.open(URL(string: "shuai://open?host=00000000-0000-4000-8000-000000000000&pane=%250")!)
+        let unknown = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'not in Shuai'")).firstMatch
+        XCTAssertTrue(unknown.waitForExistence(timeout: 10))
+
+        app.open(URL(string: "shuai://open?host=nope&pane=%250;rm")!)
+        let invalid = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'not a valid'")).firstMatch
+        XCTAssertTrue(invalid.waitForExistence(timeout: 10))
+    }
+
+    @MainActor
+    func testNotificationSettingsShowTopicAndTestButton() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let topic = app.staticTexts["push-topic"]
+        for _ in 0 ..< 5 where !topic.exists {
+            app.swipeUp()
+            _ = topic.waitForExistence(timeout: 1)
+        }
+        XCTAssertTrue(topic.exists, app.debugDescription)
+        // the row's label is "Topic, <topic>" (LabeledContent)
+        let value = topic.label.components(separatedBy: ", ").last ?? ""
+        XCTAssertNotNil(value.wholeMatch(of: /shuai-[a-z2-7]{26}/), topic.label)
+        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
+        XCTAssertTrue(app.buttons["push-send-test"].exists)
+        XCTAssertTrue(app.buttons["push-open-ntfy"].exists)
+    }
+
     // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
 
     @MainActor
