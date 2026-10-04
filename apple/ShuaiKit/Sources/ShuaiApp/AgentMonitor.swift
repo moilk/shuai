@@ -319,7 +319,7 @@ public final class AgentMonitor: PaneBadgeProvider {
         } catch {
             return fail("\(error)")
         }
-        guard isPending(requestId) else { return .alreadyResolved }
+        guard isPending(requestId), answering[requestId] == nil else { return .alreadyResolved }  // double tap: one answer
         guard let remote else { return fail("Not connected to \(host)") }
         answering[requestId] = allow ? .allowing : .denying
         onChange?()

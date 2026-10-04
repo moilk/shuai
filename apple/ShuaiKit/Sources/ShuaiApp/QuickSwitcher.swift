@@ -149,7 +149,7 @@ public final class QuickSwitcherModel {
     public private(set) var history: QuickSwitcherHistory
 
     @ObservationIgnored private let ranker: any QuickSwitcherRanker
-    @ObservationIgnored private let badges: any PaneBadgeProvider
+    @ObservationIgnored let badges: any PaneBadgeProvider
     @ObservationIgnored private let now: @Sendable () -> Date
 
     public init(

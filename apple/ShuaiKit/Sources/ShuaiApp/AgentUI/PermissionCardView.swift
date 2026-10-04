@@ -8,6 +8,12 @@ public struct PermissionCardView: View {
     public let item: PendingPermissionItem
     public var answering: AnswerState?
     public var errorMessage: String?
+    /// Where the request comes from (`host \u{203A} 2: claude`), for cards shown across hosts.
+    public var contextLabel: String?
+    /// Jump to the pane that asked.
+    public var onShow: (() -> Void)?
+    /// ⌘↩ / ⌘⌫ answer the card; only one card of a stack may own them.
+    public var enablesShortcuts: Bool
     public var onRespond: (_ allow: Bool, _ message: String?) -> Void
 
     @State private var message = ""
@@ -15,8 +21,12 @@ public struct PermissionCardView: View {
 
     public init(
         item: PendingPermissionItem, answering: AnswerState? = nil, errorMessage: String? = nil,
+        contextLabel: String? = nil, onShow: (() -> Void)? = nil, enablesShortcuts: Bool = true,
         onRespond: @escaping (_ allow: Bool, _ message: String?) -> Void
     ) {
+        self.contextLabel = contextLabel
+        self.onShow = onShow
+        self.enablesShortcuts = enablesShortcuts
         self.item = item
         self.answering = answering
         self.errorMessage = errorMessage
@@ -32,7 +42,17 @@ public struct PermissionCardView: View {
             HStack {
                 Label(item.request.toolName, systemImage: "lock.shield").font(.headline)
                 Spacer()
-                if let cwd = item.session.cwd { Text(verbatim: cwd).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if let onShow {
+                    Button("Show", action: onShow).font(.subheadline)
+                        .accessibilityIdentifier("permission-show")
+                }
+            }
+            if let contextLabel {
+                Text(verbatim: contextLabel).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
+                    .accessibilityIdentifier("permission-context")
+            }
+            if let cwd = item.session.cwd {
+                Text(verbatim: cwd).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             }
             previewBody
             TextField("Message to Claude (optional)", text: $message)
@@ -47,15 +67,18 @@ public struct PermissionCardView: View {
                 }
                 Spacer()
                 Button("Deny", role: .destructive) { onRespond(false, trimmedMessage) }
-                    .keyboardShortcut(typing ? nil : KeyboardShortcut(.delete, modifiers: .command))
+                    .accessibilityIdentifier("permission-deny")
+                    .keyboardShortcut(typing || !enablesShortcuts ? nil : KeyboardShortcut(.delete, modifiers: .command))
                 Button("Allow") { onRespond(true, trimmedMessage) }
-                    .keyboardShortcut(typing ? nil : KeyboardShortcut(.return, modifiers: .command))
+                    .keyboardShortcut(typing || !enablesShortcuts ? nil : KeyboardShortcut(.return, modifiers: .command))
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("permission-allow")
             }
             .disabled(answering != nil)
         }
         .padding(14)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permission-card")
     }
 

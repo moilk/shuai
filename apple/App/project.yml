@@ -24,6 +24,9 @@ targets:
       - Sources
       - path: ../../fixtures/recordings/claude-cjk-120x40-pre-exit.out
         buildPhase: resources
+      # Real recorded Claude Code hook transcript, played by the DEBUG `-debugAgentFixture`.
+      - path: ../../core/shuai-agent/tests/fixtures/e2e-claude-2.1.288.jsonl
+        buildPhase: resources
       # Prebuilt shuai-agent binaries (scripts/build-agent.sh, gitignored); optional so builds
       # without them still work, the installer then reports the agent as unavailable.
       - path: Resources/agent

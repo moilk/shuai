@@ -24,13 +24,13 @@ public struct AgentInstallSheet: View {
                 case .failed(let message):
                     Section { Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
                 case .ready:
-                    planSection(title: "Planned changes", model.preview.map { ($0.title, $0.status, $0.log) })
+                    planSection(title: model.mode == .install ? "Planned changes" : "Will be removed", model.preview.map { ($0.title, $0.status, $0.log) })
                 case .installing, .finished:
                     progressSection
                 }
                 if let r = model.report { reportSections(r) }
             }
-            .navigationTitle("AI integration")
+            .navigationTitle(model.mode == .install ? "Enable AI integration" : "Remove AI integration")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -40,12 +40,18 @@ public struct AgentInstallSheet: View {
             }
         }
         .task { if model.phase == .idle { await model.inspect() } }
+        .accessibilityIdentifier("agent-install-sheet")
     }
 
     @ViewBuilder private var primaryButton: some View {
         switch model.phase {
         case .ready:
-            Button("Install") { Task { await model.install() } }
+            if model.mode == .install {
+                Button("Install") { Task { await model.install() } }.accessibilityIdentifier("agent-install-button")
+            } else {
+                Button("Remove", role: .destructive) { Task { await model.uninstall() } }
+                    .accessibilityIdentifier("agent-remove-button")
+            }
         case .failed:
             Button("Retry") { Task { await model.inspect() } }
         case .finished:

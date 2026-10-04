@@ -17,6 +17,9 @@ struct RootView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
+        #if DEBUG
+        .overlay(alignment: .bottomLeading) { if DebugLaunch.agentFixture { FixtureLogProbe() } }
+        #endif
         .sheet(item: $model.editor) { target in
             HostEditorView(target: target)
         }
@@ -24,6 +27,15 @@ struct RootView: View {
             get: { model.quickSwitcher != nil }, set: { if !$0 { model.closeQuickSwitcher(activated: false) } })
         ) {
             if let q = model.quickSwitcher { QuickSwitcherView(switcher: q) }
+        }
+        .sheet(item: $model.agentInstall) { req in
+            AgentInstallSheet(model: req.model, hostName: req.host.name) { model.closeAgentInstall() }
+        }
+        .alert("Get notified in the background?", isPresented: $model.showNotificationExplainer) {
+            Button("Enable") { model.enableNotifications() }
+            Button("Not now", role: .cancel) { model.declineNotifications() }
+        } message: {
+            Text("shuai can send a notification when Claude needs your approval or finishes while the app is in the background. iOS suspends apps soon after you leave them, so this is best effort.")
         }
         .sheet(isPresented: $model.showSettings) { SettingsView() }
         .sheet(isPresented: $model.showKeys) { NavigationStack { KeysView() } }
@@ -66,7 +78,9 @@ struct HostListView: View {
         @Bindable var model = model
         List(selection: $model.selection) {
             ForEach(model.hosts.hosts) { host in
-                HostRow(host: host, status: model.sessions.status(for: host.id))
+                HostRow(
+                    host: host, status: model.sessions.status(for: host.id),
+                    agent: model.agentHub.status(for: host.id), waiting: model.agentHub.waitingCount(for: host.id))
                     .tag(host.id)
                     .accessibilityIdentifier("host-row-\(host.name)")
                     .swipeActions(edge: .trailing) {
@@ -76,6 +90,15 @@ struct HostListView: View {
                     }
                     .contextMenu {
                         Button("Edit", systemImage: "pencil") { model.editor = .edit(host) }
+                        let connected = model.sessions.existingController(for: host.id)?.agentRemote != nil
+                        Button("Enable AI integration…", systemImage: "sparkles") {
+                            model.presentAgentInstall(host: host, uninstall: false)
+                        }
+                        .disabled(!connected)
+                        Button("Remove AI integration…", systemImage: "sparkles.slash") {
+                            model.presentAgentInstall(host: host, uninstall: true)
+                        }
+                        .disabled(!connected)
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = host }
                     }
                 if let controller = model.sessions.existingController(for: host.id) {
@@ -130,6 +153,8 @@ struct HostListView: View {
 struct HostRow: View {
     let host: HostProfile
     let status: SessionState.Status
+    var agent: AgentHostStatus = .unknown
+    var waiting = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -138,7 +163,39 @@ struct HostRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.name).font(.headline)
                 Text(host.displayTarget).font(.caption).foregroundStyle(.secondary)
+                if agent != .unknown {
+                    Label(agent.label, systemImage: agentSymbol)
+                        .font(.caption2)
+                        .foregroundStyle(agentColor)
+                        .accessibilityIdentifier("host-agent-status")
+                }
             }
+            Spacer()
+            if waiting > 0 {
+                Text("\(waiting)")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Color.orange, in: Capsule())
+                    .accessibilityLabel("\(waiting) waiting for you")
+                    .accessibilityIdentifier("host-waiting-count")
+            }
+        }
+    }
+
+    private var agentSymbol: String {
+        switch agent {
+        case .installed: "sparkles"
+        case .outdated: "arrow.triangle.2.circlepath"
+        default: "sparkles.slash"
+        }
+    }
+
+    private var agentColor: Color {
+        switch agent {
+        case .installed: .secondary
+        case .outdated: .orange
+        default: .secondary
         }
     }
 

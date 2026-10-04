@@ -14,11 +14,14 @@ public final class SessionRegistry {
     @ObservationIgnored private let knownHosts: KnownHostsStore
     @ObservationIgnored private let hosts: HostStore
     @ObservationIgnored private let makeEngine: @MainActor (HostProfile) -> any TerminalEngine
+    /// Agent monitors of every host (nil: no AI integration, e.g. most tests).
+    @ObservationIgnored public let agentHub: AgentHub?
 
     public init(
         factory: ConnectionFactory, keys: KeyStore, passwords: PasswordStore, knownHosts: KnownHostsStore,
-        hosts: HostStore, makeEngine: @escaping @MainActor (HostProfile) -> any TerminalEngine
+        hosts: HostStore, makeEngine: @escaping @MainActor (HostProfile) -> any TerminalEngine, agentHub: AgentHub? = nil
     ) {
+        self.agentHub = agentHub
         self.factory = factory
         self.keys = keys
         self.passwords = passwords
@@ -42,6 +45,12 @@ public final class SessionRegistry {
             profile: host, engine: engine, factory: factory, keys: keys, passwords: passwords, knownHosts: knownHosts)
         let id = host.id
         controller.onConnected = { [weak hosts] in try? hosts?.markConnected(id: id) }
+        if let hub = agentHub {
+            controller.onAgentRemoteChange = { [weak hub] remote in
+                guard let hub else { return }
+                if let remote { Task { await hub.hostConnected(id: id, remote: remote) } } else { hub.hostDisconnected(id: id) }
+            }
+        }
         controllers[host.id] = controller
         return controller
     }
@@ -62,6 +71,7 @@ public final class SessionRegistry {
     }
 
     public func remove(id: UUID) async {
+        defer { agentHub?.removeHost(id: id) }
         guard let c = controllers.removeValue(forKey: id) else { return }
         await c.disconnect()
     }

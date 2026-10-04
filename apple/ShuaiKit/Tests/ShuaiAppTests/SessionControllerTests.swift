@@ -63,6 +63,25 @@ private struct Harness {
 }
 
 @MainActor @Suite(.timeLimit(.minutes(1))) struct SessionControllerTests {
+    // MARK: agent remote
+
+    @Test func agentRemoteFollowsTheTransport() async {
+        let key = newHostKey()
+        var profile = HostProfile(name: "dev", host: host, username: "alice", auth: .password)
+        profile.tmux.enabled = false
+        let h = Harness(profile: profile, factory: FakeFactory { _, _, v, _ in try await verify(v, key) })
+        try? h.knownHosts.add(host: host, port: 22, publicKeyLine: key)
+        let events = Locked<[Bool]>([])
+        h.controller.onAgentRemoteChange = { r in events.with { $0.append(r != nil) } }
+        #expect(h.controller.agentRemote == nil)
+        await h.controller.connect()
+        #expect(h.controller.agentRemote != nil)
+        #expect(events.get == [true])
+        await h.controller.disconnect()
+        #expect(h.controller.agentRemote == nil)
+        #expect(events.get == [true, false])
+    }
+
     // MARK: connect + auth
 
     @Test func connectsWithStoredPasswordAndTrustedHost() async {

@@ -23,7 +23,25 @@ public final class TerminalView: UITerminalView {
 
     /// Show the docked bar over the software keyboard (default on).
     public var showsDockedAccessoryBar = true {
-        didSet { reloadInputViews() }
+        // Idempotent and deferred: this is set from SwiftUI's `updateUIView`, and reloading input views
+        // lays out the keyboard window synchronously, which re-enters the hosting view mid-update
+        // (AttributeGraph cycle, main thread hang). Coalesce to one reload on the next run loop turn.
+        didSet { if oldValue != showsDockedAccessoryBar { scheduleInputViewsReload() } }
+    }
+
+    /// Number of `reloadInputViews()` calls made for the docked-bar toggle (tests).
+    var inputViewsReloadCount = 0
+    private var inputViewsReloadScheduled = false
+
+    private func scheduleInputViewsReload() {
+        guard !inputViewsReloadScheduled else { return }
+        inputViewsReloadScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            inputViewsReloadScheduled = false
+            inputViewsReloadCount += 1
+            reloadInputViews()
+        }
     }
 
     private var mirroringSticky = false
@@ -125,6 +143,12 @@ public final class TerminalView: UITerminalView {
 
     private func setFloatingBar(visible: Bool) {
         let bar = floatingAccessoryBar
+        if let container = superview as? TerminalContainerView {
+            // Hosted next to the terminal, not inside it (see `TerminalContainerView.setFloatingBar`).
+            floatingBarInstalled = true
+            container.setFloatingBar(bar, visible: visible)
+            return
+        }
         if !floatingBarInstalled {
             bar.translatesAutoresizingMaskIntoConstraints = false
             addSubview(bar)

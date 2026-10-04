@@ -179,7 +179,7 @@ public final class TmuxActions {
 
     // MARK: - Shortcuts
 
-    /// Runs a keyboard shortcut's action. `.quickSwitcher` is UI-only and ignored here.
+    /// Runs a keyboard shortcut's action. `.quickSwitcher` and `.nextAttention` are UI-only and ignored here.
     public func perform(_ action: ShortcutAction) async throws {
         switch action {
         case .selectWindow(let n): try await selectWindow(position: n)
@@ -192,7 +192,7 @@ public final class TmuxActions {
         case .splitDown: try await split(horizontal: false)
         case .selectPane(let d): try await selectPane(direction: d)
         case .zoomPane: try await zoom()
-        case .quickSwitcher: break
+        case .quickSwitcher, .nextAttention: break
         }
     }
 

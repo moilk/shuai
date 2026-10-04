@@ -42,6 +42,15 @@ import Testing
         #expect(main.windows[1].title == "2: claude")
     }
 
+    @Test func paneLabelNamesHostSessionAndWindow() {
+        let t = topology()
+        #expect(TmuxTree.paneLabel("%2", host: "dev", in: t) == "dev \u{203A} main \u{203A} 2: claude")
+        #expect(TmuxTree.paneLabel("%5", host: "dev", in: t) == "dev \u{203A} work \u{203A} 0: edit")
+        #expect(TmuxTree.paneLabel("%99", host: "dev", in: t) == "dev")
+        #expect(TmuxTree.paneLabel(nil, host: "dev", in: t) == "dev")
+        #expect(TmuxTree.paneLabel("%1", host: "dev", in: nil) == "dev")
+    }
+
     @Test func panesAreListedOnlyWhenThereIsMoreThanOne() {
         let main = TmuxTree.sessions(topology: topology(), viewedSessionID: "$0", host: host, badges: NoPaneBadges())[0]
         #expect(main.windows[0].panes.isEmpty)

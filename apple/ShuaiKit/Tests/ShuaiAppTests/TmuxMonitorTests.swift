@@ -39,7 +39,8 @@ final class ManualSleeper: @unchecked Sendable {
     /// A connection whose `tmux -V` works and whose control channel is served by `server`.
     func rig(
         version: String = "tmux 3.6a", debounce: Duration = .milliseconds(30), pollInterval: Duration = .milliseconds(20),
-        attachRetryDelay: Duration = .milliseconds(1),
+        attachRetryDelay: Duration = .milliseconds(1), attachRetries: Int = 5,
+        attachProbeTimeout: Duration = .seconds(5),
         debounceSleep: (@Sendable (Duration) async throws -> Void)? = nil
     ) -> (FakeConnection, FakeControlServer, TmuxMonitor) {
         let conn = FakeConnection()
@@ -53,7 +54,8 @@ final class ManualSleeper: @unchecked Sendable {
         conn.execStreamSetup.with { $0 = { exec, _ in server.install(on: exec) } }
         let monitor = TmuxMonitor(
             sessionName: "main", ptySize: { (120, 40) }, debounce: debounce, pollInterval: pollInterval,
-            attachRetries: 5, attachRetryDelay: attachRetryDelay, debounceSleep: debounceSleep)
+            attachRetries: attachRetries, attachRetryDelay: attachRetryDelay, attachProbeTimeout: attachProbeTimeout,
+            debounceSleep: debounceSleep)
         return (conn, server, monitor)
     }
 
@@ -126,6 +128,41 @@ final class ManualSleeper: @unchecked Sendable {
         await monitor.start(on: conn)
         guard case .ended = monitor.state else { Issue.record("state \(monitor.state)"); return }
         #expect(conn.execStreams.get.count == 5)
+    }
+
+    @Test func silentAttachProbeTimesOutRetriesThenEnds() async {
+        // A channel that opens but never answers must not hang `start` forever.
+        let (conn, _, monitor) = rig(attachRetries: 3, attachProbeTimeout: .milliseconds(40))
+        conn.execStreamSetup.with { $0 = { _, _ in } } // nobody answers
+        let started = ContinuousClock.now
+        await monitor.start(on: conn)
+        guard case .ended = monitor.state else { Issue.record("state \(monitor.state)"); return }
+        #expect(conn.execStreams.get.count == 3)
+        #expect(ContinuousClock.now - started < .seconds(3))
+        // every abandoned channel was closed
+        #expect(conn.execStreams.get.allSatisfy { $0.closeCalls.get >= 1 })
+    }
+
+    @Test func slowAttachProbeStillSucceedsOnALaterAttempt() async {
+        let (conn, server, monitor) = rig(attachRetries: 3, attachProbeTimeout: .milliseconds(40))
+        conn.execStreamSetup.with { $0 = { exec, n in if n >= 2 { server.install(on: exec) } } }
+        await monitor.start(on: conn)
+        #expect(monitor.state == .live)
+        #expect(conn.execStreams.get.count == 2)
+        await monitor.stop()
+    }
+
+    @Test func cancellingStartStopsTheAttachRetries() async {
+        let (conn, _, monitor) = rig(attachRetryDelay: .milliseconds(200), attachRetries: 8)
+        conn.execStreamSetup.with { $0 = { exec, _ in exec.finish(.remote) } }
+        let task = Task { @MainActor in await monitor.start(on: conn) }
+        #expect(await waitUntil { conn.execStreams.get.count >= 1 })
+        task.cancel()
+        await task.value
+        let n = conn.execStreams.get.count
+        try? await Task.sleep(for: .milliseconds(500))
+        #expect(conn.execStreams.get.count == n, "no attach attempts after cancellation")
+        #expect(n <= 2)
     }
 
     // MARK: events

@@ -132,4 +132,101 @@ final class ShuaiUITests: XCTestCase {
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         XCTAssertTrue(pane.exists)
     }
+
+    // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
+
+    @MainActor
+    private func launchWithAgentFixture() -> XCUIApplication {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-debugAgentFixture"]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    func testAgentBadgeAppearsOnTheWindowOfTheWaitingPane() throws {
+        let app = launchWithAgentFixture()
+        let window = app.buttons["tmux-window-@0"]  // pane %0 hosts the transcript's session
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        let badge = app.images["pane-badge"].firstMatch
+        XCTAssertTrue(badge.waitForExistence(timeout: 10), "needs-approval badge: \(app.debugDescription)")
+        XCTAssertEqual(badge.label, "needs approval")
+        // it sits in the row of window @0, not @1
+        let w0 = window.frame, w1 = app.buttons["tmux-window-@1"].frame
+        let centers = app.images.matching(identifier: "pane-badge").allElementsBoundByIndex
+            .map { CGPoint(x: $0.frame.midX, y: $0.frame.midY) }
+        XCTAssertTrue(centers.contains { w0.contains($0) }, "a badge inside the @0 row: \(centers) vs \(w0)")
+        XCTAssertFalse(centers.contains { w1.contains($0) }, "no badge in the @1 row")
+        // host row: waiting count
+        let waiting = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'waiting for you'")).firstMatch
+        XCTAssertTrue(waiting.waitForExistence(timeout: 5), "host row shows the waiting count")
+    }
+
+    @MainActor
+    func testPermissionCardAllowRecordsRespondAndThenDisappears() throws {
+        let app = launchWithAgentFixture()
+        let card = app.descendants(matching: .any)["permission-card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 12), "card for the first permission request")
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'fixture-host'")).firstMatch.exists,
+            "context label names the host: \(card.debugDescription)")
+        let allow = app.buttons["permission-allow"].firstMatch
+        XCTAssertTrue(allow.exists)
+        allow.tap()
+        let log = app.descendants(matching: .any)["agent-fixture-log"]
+        let deadline = Date().addingTimeInterval(10)
+        var value = ""
+        while Date() < deadline {
+            value = (log.value as? String) ?? ""
+            if value.contains("respond") { break }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        XCTAssertTrue(value.contains("2604cfd0b70257a07ee252c762c243d8"), "respond for the request id: \(value)")
+        XCTAssertTrue(value.contains("allow"))
+        // the agent reports permission_resolved: the card goes away
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: card)
+        waitForExpectations(timeout: 10)
+    }
+
+    /// With the software keyboard up the docked accessory bar is used (above the keyboard); the
+    /// floating bar must not appear over the terminal text.
+    @MainActor
+    func testSoftwareKeyboardShowsTheDockedBarAndNothingCoversTheFirstRow() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 12))
+        let terminal = app.descendants(matching: .any)["terminal-view"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "software keyboard is up")
+        let esc = app.buttons["Esc"].firstMatch
+        XCTAssertTrue(esc.waitForExistence(timeout: 10), "accessory bar present")
+        // Let any keyboard / bar re-layout settle, then check it stayed stable (no flip-flopping loop).
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(esc.exists)
+        // docked bar: directly above the keyboard (the bar is a few rows tall), never at the top of the terminal
+        XCTAssertGreaterThanOrEqual(esc.frame.minY, keyboard.frame.minY - 200, "the bar sits right above the keyboard")
+        XCTAssertGreaterThan(esc.frame.minY, terminal.frame.minY + 200, "the bar is not over the top rows")
+        XCTAssertLessThanOrEqual(esc.frame.maxY, keyboard.frame.maxY + 1)
+        // nothing but the terminal itself occupies the first row band
+        let firstRow = CGRect(x: terminal.frame.minX, y: terminal.frame.minY, width: terminal.frame.width, height: 20)
+        for b in app.buttons.allElementsBoundByIndex where b.frame.width > 0 && b.exists {
+            let l = b.label
+            if ["Esc", "Ctrl", "Alt", "Tab"].contains(l) {
+                XCTAssertFalse(b.frame.intersects(firstRow), "accessory key '\(l)' overlaps the first terminal row")
+            }
+        }
+    }
+
+    @MainActor
+    func testQuickSwitcherRanksTheWaitingSessionFirst() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 12))
+        _ = openQuickSwitcher(app)
+        let first = app.buttons["quick-switcher-row-0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(first.label.contains("shell"), "waiting window first, got: \(first.label)")
+        XCTAssertTrue(first.label.contains("Needs permission"), "row shows the agent state: \(first.label)")
+    }
 }

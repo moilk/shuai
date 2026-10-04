@@ -48,6 +48,17 @@ public enum TmuxTree {
         }
     }
 
+    /// `host > session > 2: window` for the pane (just `host` when it is unknown).
+    public static func paneLabel(_ pane: String?, host: String, in topology: FfiTopology?) -> String {
+        guard let pane, let topology else { return host }
+        for s in topology.sessions {
+            for w in s.windows where w.panes.contains(where: { $0.id == pane }) {
+                return "\(host) \u{203A} \(s.name) \u{203A} \(w.index): \(w.name)"
+            }
+        }
+        return host
+    }
+
     @MainActor
     public static func sessions(
         topology: FfiTopology, viewedSessionID: String?, host: UUID, badges: any PaneBadgeProvider
