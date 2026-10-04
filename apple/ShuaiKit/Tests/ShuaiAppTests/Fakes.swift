@@ -78,7 +78,11 @@ final class FakeExec: RemoteExec, @unchecked Sendable {
         stdin.with { $0.append(s) }
         onWrite.get?(s)
     }
-    func close() async { closeCalls.with { $0 += 1 }; continuation.finish() }
+    func closeStdin() async { callLog.with { $0.append("closeStdin") } }
+    func close() async { callLog.with { $0.append("close") }; closeCalls.with { $0 += 1 }; continuation.finish() }
+
+    /// Teardown calls in order (`closeStdin`, `close`).
+    let callLog = Locked<[String]>([])
 
     /// Every stdin line written so far.
     var lines: [String] { stdin.get.joined().split(separator: "\n").map(String.init) }

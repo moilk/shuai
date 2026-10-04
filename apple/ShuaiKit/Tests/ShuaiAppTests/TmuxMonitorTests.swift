@@ -73,8 +73,9 @@ final class ManualSleeper: @unchecked Sendable {
         await monitor.start(on: conn)
         #expect(monitor.state == .live)
         let cmd = try #require(conn.execStreamCommands.get.first)
-        #expect(cmd.hasPrefix("tmux -C attach-session"))
-        #expect(cmd.contains("=main:"))
+        // Supervised line (see shuai-tmux supervised.rs): a bare `tmux -C` leaks when sshd goes away.
+        #expect(cmd.hasPrefix("sh -c '"))
+        #expect(cmd.hasSuffix(" sh -C attach-session -t '=main:'"))
         // suppression is the very first line
         #expect(conn.execStreams.get[0].lines.first == "refresh-client -f no-output")
         #expect(server.listPanesCount == 1)
@@ -83,6 +84,23 @@ final class ManualSleeper: @unchecked Sendable {
         #expect(t.sessions[0].name == "main")
         #expect(t.sessions[0].windows.count == 2)
         await monitor.stop()
+    }
+
+    @Test func stopSendsStdinEOFBeforeClosingTheChannel() async throws {
+        // EOF on the control client's stdin is what makes tmux exit; a bare channel close is not
+        // enough on a no-PTY exec channel (no SIGHUP).
+        let (conn, _, monitor) = rig()
+        await monitor.start(on: conn)
+        await monitor.stop()
+        #expect(conn.execStreams.get[0].callLog.get == ["closeStdin", "close"])
+    }
+
+    @Test func abandonedAttachAttemptsAlsoGetEOFBeforeClose() async {
+        let (conn, _, monitor) = rig(attachRetries: 2, attachProbeTimeout: .milliseconds(30))
+        conn.execStreamSetup.with { $0 = { _, _ in } } // nobody answers
+        await monitor.start(on: conn)
+        #expect(conn.execStreams.get.count == 2)
+        #expect(conn.execStreams.get.allSatisfy { $0.callLog.get == ["closeStdin", "close"] })
     }
 
     @Test func controlModeNeedsNoPty() async throws {

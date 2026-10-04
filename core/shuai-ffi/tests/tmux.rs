@@ -117,6 +117,10 @@ fn controller_attach_send_push() {
     let a = c.attach_command();
     assert_eq!(a.argv[0], "-C");
     assert!(a.shell.starts_with("tmux -C attach-session"));
+    // The exec line used for the side channel is supervised (see shuai-tmux tests/supervised.rs).
+    let line = c.attach_shell();
+    assert!(line.starts_with("sh -c '"), "{line}");
+    assert!(line.ends_with(" sh -C attach-session -t '=main:'"), "{line}");
     let setup = c.on_connected();
     assert!(!setup.is_empty()); // 3.4 supports no-output
     let sent = c.send(tmux_list_panes_all());
