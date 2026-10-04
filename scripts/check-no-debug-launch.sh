@@ -35,7 +35,7 @@ while IFS= read -r bin; do
   text="$(strings -a "$bin")"
   # (Short literals such as "-uiTesting" are stored inline by Swift and invisible to `strings`;
   # they are compiled out with #if DEBUG all the same.)
-  for needle in debugAutoAcceptHostKey debugHostFile debugSendAfterConnect debugTerminal DebugLaunch; do
+  for needle in debugAutoAcceptHostKey debugHostFile debugSendAfterConnect debugTerminal debugByteTap debugDelayReplies DebugLaunch; do
     if grep -q "$needle" <<<"$text"; then
       echo "check-no-debug-launch: FAIL: $bin contains '$needle'" >&2
       bad=1
