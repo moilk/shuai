@@ -1,8 +1,11 @@
 use icongen::config::ThemeCfg;
 use icongen::fidelity::{
-    Field, MIN_HOLE_AREA, Mask, THEME_SIZES, check_theme, components, corner_points, corners_kept,
-    evaluate, failures, hausdorff, holes, iou, load_field_png, load_mask_png, min_stroke_width,
-    rasterize, run, simplify_closed, small_size_report, theme_failures, trace_contours, trace_toml,
+    Field, GATE_AREA, GATE_CORNERS, GATE_HAUSDORFF, GATE_IOU, GATE_PIECE_IOU, ISO_LEVEL,
+    MEASURE_SCALE, MIN_HOLE_AREA, MIN_HOLE_SHARE, Mask, THEME_SIZES, check_theme, components,
+    corner_points, corners_kept, evaluate, failures, hausdorff, holes, iou, load_field_png,
+    load_mask_png, min_stroke_width, rasterize, reference_mask, run, simplify_anchored,
+    simplify_closed, small_size_report, smooth_along, theme_failures, trace_contours, trace_toml,
+    upsample,
 };
 use icongen::glyph::Glyph;
 use std::path::PathBuf;
@@ -218,6 +221,89 @@ fn marching_squares_traces_outer_and_holes() {
 }
 
 #[test]
+fn upsampling_keeps_levels_and_puts_a_binary_edge_on_the_pixel_boundary() {
+    let mut m = blank(20, 10);
+    fill(&mut m, 0, 0, 8, 10);
+    let up = upsample(&field_of(&m), 4);
+    assert_eq!((up.width, up.height), (80, 40));
+    let at = |x: usize, y: usize| up.data[y * up.width + x];
+    assert!((at(8, 20) - 255.0).abs() < 1e-3, "{}", at(8, 20));
+    assert!(at(70, 20).abs() < 1e-3);
+    assert!(up.data.iter().all(|v| (0.0..=255.0).contains(v)), "clamped");
+    // The 50% iso-line of the upsampled step sits on the pixel boundary x = 8.
+    let cs = trace_contours(&up, ISO_LEVEL);
+    let mid: Vec<f64> = cs[0]
+        .iter()
+        .filter(|p| (p.1 - 20.0).abs() < 4.0 && p.0 > 16.0)
+        .map(|p| p.0 / 4.0)
+        .collect();
+    assert!(!mid.is_empty());
+    assert!(mid.iter().all(|x| (x - 8.0).abs() < 0.05), "{mid:?}");
+    // The reference mask is that iso-level at the measuring scale.
+    let r = reference_mask(&field_of(&m), MEASURE_SCALE);
+    assert_eq!((r.width, r.height), (80, 40));
+    // 32 x 40 ink pixels, less a few at the raster's corners (outside counts as background).
+    let ink = r.data.iter().filter(|&&b| b).count();
+    assert!((1270..=1280).contains(&ink), "{ink}");
+}
+
+/// A closed loop whose long side is a pixel staircase (3 px across, 1 px down, 8 times, sampled
+/// every 0.25 px) from (0, 0) to (24, 8), closed through the corner (0, 8). Returns the points
+/// and the indices of the three corners.
+fn staircase() -> (Vec<(f64, f64)>, [usize; 3]) {
+    let mut pts = Vec::new();
+    for k in 0..8 {
+        let (x0, y0) = (3.0 * k as f64, k as f64);
+        pts.extend((0..12).map(|i| (x0 + 0.25 * i as f64, y0)));
+        pts.extend((0..4).map(|i| (x0 + 3.0, y0 + 0.25 * i as f64)));
+    }
+    pts.push((24.0, 8.0));
+    pts.push((0.0, 8.0));
+    let n = pts.len();
+    (pts, [0, n - 2, n - 1])
+}
+
+#[test]
+fn smoothing_along_a_contour_straightens_steps_and_keeps_anchors() {
+    let (pts, anchors) = staircase();
+    let s = smooth_along(&pts, &anchors, 1.0);
+    assert_eq!(s.len(), pts.len());
+    for &i in &anchors {
+        assert_eq!(s[i], pts[i], "anchor {i} kept");
+    }
+    // Largest distance from the line through the step middles, y = (x - 1.5) / 3, over the
+    // middle of the staircase (away from the pinned ends).
+    let off = |p: &(f64, f64)| (p.1 - (p.0 - 1.5) / 3.0).abs() / (1.0f64 + 1.0 / 9.0).sqrt();
+    let worst = |v: &[(f64, f64)]| {
+        v.iter()
+            .filter(|p| p.0 > 6.0 && p.0 < 18.0 && p.1 < 7.9)
+            .map(off)
+            .fold(0.0f64, f64::max)
+    };
+    assert!(worst(&pts) > 0.45, "the raw staircase: {}", worst(&pts));
+    assert!(worst(&s) < 0.2, "smoothed: {}", worst(&s));
+    assert_eq!(smooth_along(&pts, &anchors, 0.0), pts, "sigma 0 is a no-op");
+}
+
+#[test]
+fn anchored_simplification_keeps_its_anchors() {
+    let pts: Vec<(f64, f64)> = (0..40)
+        .map(|i| (i as f64, 0.0))
+        .chain((0..40).map(|i| (40.0 - i as f64, 10.0)))
+        .collect();
+    let keep = simplify_anchored(&pts, 0.1, &[0, 17, 55]);
+    for a in [0, 17, 55] {
+        assert!(keep.contains(&a), "{keep:?}");
+    }
+    assert!(
+        keep.contains(&39) && keep.contains(&40),
+        "the real corners: {keep:?}"
+    );
+    assert!(keep.len() <= 7, "collinear vertices go: {keep:?}");
+    assert!(keep.windows(2).all(|w| w[0] < w[1]), "in order");
+}
+
+#[test]
 fn douglas_peucker_and_corners() {
     let mut r = blank(30, 30);
     fill(&mut r, 5, 5, 25, 15);
@@ -276,11 +362,26 @@ fn trace_produces_a_parsable_close_glyph() {
     let g = Glyph::from_toml(&toml).unwrap();
     assert_eq!(g.holes.len(), 2);
     assert_eq!(g.strokes.len(), 4);
+    assert!(!toml.contains("points ="), "strokes are traced as outlines");
+    // Upper row then lower row, left to right.
+    let cx = |o: &[icongen::glyph::Vertex]| o.iter().map(|v| v.x).sum::<f64>() / o.len() as f64;
+    let cy = |o: &[icongen::glyph::Vertex]| o.iter().map(|v| v.y).sum::<f64>() / o.len() as f64;
+    let c: Vec<(f64, f64)> = g
+        .strokes
+        .iter()
+        .map(|s| (cx(&s.outline), cy(&s.outline)))
+        .collect();
+    assert!(c[0].0 < 45.0 && c[0].1 < 60.0, "{c:?}");
+    assert!(c[1].0 > 75.0 && c[1].1 < 60.0, "{c:?}");
+    assert!(c[2].0 < 45.0 && c[2].1 > 60.0, "{c:?}");
+    assert!(c[3].0 > 75.0 && c[3].1 > 60.0, "{c:?}");
+    // Upper hole first.
+    assert!(cy(&g.holes[0]) < cy(&g.holes[1]));
     let r = evaluate(&g, 0.0, &field_of(&src));
-    assert!(r.iou > 0.9, "iou {}", r.iou);
-    assert!(r.hausdorff <= 3.0, "hausdorff {}", r.hausdorff);
+    assert!(r.iou >= GATE_IOU, "iou {}", r.iou);
+    assert!(r.hausdorff <= GATE_HAUSDORFF, "hausdorff {}", r.hausdorff);
     assert_eq!((r.pieces, r.holes), (5, 2));
-    assert!(r.corners_kept >= 0.8, "corners {}", r.corners_kept);
+    assert!(r.corners_kept >= GATE_CORNERS, "corners {}", r.corners_kept);
     assert_eq!(trace_toml(&field_of(&src)).unwrap(), toml, "deterministic");
 }
 
@@ -300,6 +401,40 @@ fn gates_pass_for_a_good_mark_and_fail_for_a_bad_one() {
     let f = failures(&r);
     assert!(f.iter().any(|m| m.contains("IoU")), "{f:?}");
     assert!(f.iter().any(|m| m.contains("topology")), "{f:?}");
+}
+
+#[test]
+fn per_piece_iou_and_area_catch_one_misplaced_piece() {
+    let src = synthetic_source();
+    let toml = trace_toml(&field_of(&src)).unwrap();
+    let good = Glyph::from_toml(&toml).unwrap();
+    let r = evaluate(&good, 0.0, &field_of(&src));
+    let ids: Vec<&str> = r.piece_iou.iter().map(|p| p.0.as_str()).collect();
+    assert_eq!(ids, ["S01", "S02", "S03", "S04", "S05"]);
+    assert!(r.piece_iou.iter().all(|p| p.1 >= GATE_PIECE_IOU), "{r:?}");
+    assert!(r.area_diff.abs() <= GATE_AREA, "{}", r.area_diff);
+    // Shift one side stroke by 2 px: the whole-mark IoU barely moves, its own IoU drops.
+    let mut moved = good.clone();
+    for v in &mut moved.strokes[3].outline {
+        v.y += 2.0;
+    }
+    let r = evaluate(&moved, 0.0, &field_of(&src));
+    let f = failures(&r);
+    assert!(f.iter().any(|m| m.contains("per-piece IoU S05")), "{f:?}");
+    assert!(!f.iter().any(|m| m.contains("per-piece IoU S02")), "{f:?}");
+    // Growing every piece by 1 px changes the ink area well past the gate.
+    let r = evaluate(&good, 1.0, &field_of(&src));
+    assert!(failures(&r).iter().any(|m| m.contains("area")), "{r:?}");
+}
+
+#[test]
+fn master_gates_are_tight() {
+    assert_eq!(MEASURE_SCALE, 4);
+    assert_eq!(GATE_IOU, 0.975);
+    assert_eq!(GATE_HAUSDORFF, 1.0);
+    assert_eq!(GATE_CORNERS, 0.9);
+    assert_eq!(GATE_PIECE_IOU, 0.96);
+    assert_eq!(GATE_AREA, 0.01);
 }
 
 fn brand() -> PathBuf {
@@ -336,8 +471,34 @@ fn shipped_themes_keep_topology_hole_area_and_40px_width() {
         assert!(at40.narrowest >= 2.0, "{name}: {at40:?}");
         assert_eq!(c.hole_areas.len(), 2);
         assert!(c.hole_areas.iter().all(|&a| a >= MIN_HOLE_AREA), "{c:?}");
+        assert!(c.hole_shares.iter().all(|&s| s >= MIN_HOLE_SHARE), "{c:?}");
+        assert!(t.mark.scale <= 0.75, "{name}: 1x safe margin");
         assert!(theme_failures(&c).is_empty(), "{:?}", theme_failures(&c));
     }
+}
+
+#[test]
+fn shipped_theme_weight_is_the_smallest_that_holds_40px() {
+    let g = Glyph::from_toml(&brand_text("mark/mark.toml")).unwrap();
+    for name in ["matte", "tinted", "mono-dark", "mono-light"] {
+        let t = ThemeCfg::from_toml(&brand_text(&format!("themes/{name}.toml"))).unwrap();
+        let mut lighter = t.mark.clone();
+        lighter.weight -= 0.1;
+        let c = check_theme(&g, name, &lighter);
+        let f = theme_failures(&c);
+        assert!(f.iter().any(|m| m.contains("40 px")), "{name}: {f:?}");
+    }
+}
+
+#[test]
+fn theme_gates_reject_holes_closed_by_the_weight() {
+    let g = Glyph::from_toml(&brand_text("mark/mark.toml")).unwrap();
+    let mut t = ThemeCfg::from_toml(&brand_text("themes/matte.toml")).unwrap();
+    t.mark.hole_weight = None;
+    let c = check_theme(&g, "closed", &t.mark);
+    assert!(c.hole_shares[1] < MIN_HOLE_SHARE, "{c:?}");
+    let f = theme_failures(&c);
+    assert!(f.iter().any(|m| m.contains("hole")), "{f:?}");
 }
 
 #[test]

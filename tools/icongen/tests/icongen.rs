@@ -52,8 +52,9 @@ fn parses_theme_config() {
     assert_eq!(t.texture.color, "#f7f5f2");
     assert!((t.texture.opacity - 0.16).abs() < 1e-12);
     assert_eq!(t.mark.fill, "#f7f5f2");
-    assert!((t.mark.scale - 0.72).abs() < 1e-12);
-    assert!((t.mark.weight - 2.25).abs() < 1e-12);
+    assert!((t.mark.scale - 0.75).abs() < 1e-12);
+    assert!((t.mark.weight - 2.1).abs() < 1e-12);
+    assert_eq!(t.mark.hole_weight, Some(1.0));
     assert_eq!(t.mark.small_size, None);
     assert_eq!(t.mark.offset, [0.0, 0.0]);
     assert!(!t.gloss.enabled);
@@ -69,7 +70,7 @@ fn rejects_bad_theme_config() {
     let bad = read("themes/matte.toml").replace("\"solid\"", "\"radial\"");
     assert!(ThemeCfg::from_toml(&bad).is_err());
     for w in ["-1.0", "6.5"] {
-        let bad = good.replace("weight = 2.25", &format!("weight = {w}"));
+        let bad = good.replace("\nweight = 2.1", &format!("\nweight = {w}"));
         assert_ne!(bad, good);
         assert!(ThemeCfg::from_toml(&bad).is_err(), "weight {w}");
     }
@@ -84,12 +85,16 @@ fn small_size_weight_bonus_applies_at_and_below_its_size() {
     );
     assert_ne!(with, good);
     let t = ThemeCfg::from_toml(&with).unwrap();
-    assert!((t.mark.weight_at(1024) - 2.25).abs() < 1e-12);
-    assert!((t.mark.weight_at(65) - 2.25).abs() < 1e-12);
-    assert!((t.mark.weight_at(64) - 3.25).abs() < 1e-12);
-    assert!((t.mark.weight_at(16) - 3.25).abs() < 1e-12);
+    assert!((t.mark.weight_at(1024) - 2.1).abs() < 1e-12);
+    assert!((t.mark.weight_at(65) - 2.1).abs() < 1e-12);
+    assert!((t.mark.weight_at(64) - 3.1).abs() < 1e-12);
+    assert!((t.mark.weight_at(16) - 3.1).abs() < 1e-12);
+    assert!(
+        (t.mark.hole_weight_at(64) - 2.0).abs() < 1e-12,
+        "the bonus shrinks holes too"
+    );
     let plain = ThemeCfg::from_toml(&good).unwrap();
-    assert!((plain.mark.weight_at(16) - 2.25).abs() < 1e-12);
+    assert!((plain.mark.weight_at(16) - 2.1).abs() < 1e-12);
     let g = Glyph::from_toml(&read("mark/mark.toml")).unwrap();
     assert_eq!(
         svg::layers(&t, &g, 1024).mark,
@@ -104,6 +109,22 @@ fn small_size_weight_bonus_applies_at_and_below_its_size() {
         "small_size = { max_px = 64, weight = 5.0 }\n\n[gloss]",
     );
     assert!(ThemeCfg::from_toml(&too_much).is_err());
+}
+
+#[test]
+fn hole_weight_defaults_to_weight_and_stays_within_it() {
+    let good = read("themes/matte.toml");
+    let t = ThemeCfg::from_toml(&good).unwrap();
+    assert!((t.mark.hole_weight_at(1024) - 1.0).abs() < 1e-12);
+    let none = good.replace("\nhole_weight = 1.0", "\n");
+    assert_ne!(none, good);
+    let t = ThemeCfg::from_toml(&none).unwrap();
+    assert_eq!(t.mark.hole_weight, None);
+    assert!((t.mark.hole_weight_at(1024) - t.mark.weight).abs() < 1e-12);
+    for bad in ["-0.5", "2.5"] {
+        let bad = good.replace("\nhole_weight = 1.0", &format!("\nhole_weight = {bad}"));
+        assert!(ThemeCfg::from_toml(&bad).is_err(), "{bad}");
+    }
 }
 
 #[test]
@@ -129,13 +150,127 @@ fn parses_glyph_topology() {
 #[test]
 fn rejects_bad_vertex_tag() {
     let good = read("mark/mark.toml");
-    let bad = good.replacen("[105.6, 31.0, \"s\"]", "[105.6, 31.0, \"x\"]", 1);
+    let bad = good.replacen(", \"s\"]", ", \"x\"]", 1);
     assert_ne!(bad, good);
     assert!(Glyph::from_toml(&bad).is_err());
 }
 
 fn v(x: f64, y: f64, t: Tag) -> Vertex {
     Vertex { x, y, tag: t }
+}
+
+const STROKES: &str = r##"
+[s01]
+outline = [[10.0, 10.0, "c"], [30.0, 10.0, "c"], [30.0, 30.0, "c"], [10.0, 30.0, "c"]]
+holes = []
+
+[[stroke]]
+id = "S02"
+outline = [[40.0, 10.0, "c"], [44.0, 10.0, "c"], [45.0, 20.0, "s"], [44.0, 30.0, "c"], [40.0, 30.0, "c"], [39.0, 20.0, "s"]]
+
+[[stroke]]
+id = "S03"
+points = [[0.0, 0.0, 4.0], [10.0, 0.0, 4.0]]
+"##;
+
+#[test]
+fn strokes_take_an_outline_or_a_centerline() {
+    let g = Glyph::from_toml(STROKES).unwrap();
+    assert_eq!(g.strokes.len(), 2);
+    let o = &g.strokes[0].outline;
+    assert_eq!(o.len(), 6);
+    assert_eq!((o[2].x, o[2].y, o[2].tag), (45.0, 20.0, Tag::Smooth));
+    assert_eq!(o[3].tag, Tag::Sharp);
+    let flat = Cap::default();
+    assert_eq!(
+        g.strokes[1].outline,
+        stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, flat, 0.0),
+        "a centerline becomes its outline"
+    );
+    let pieces = g.pieces(0.0);
+    assert_eq!(pieces[1].id, "S02");
+    assert_eq!(
+        pieces[1].contours,
+        vec![o.clone()],
+        "weight 0 is the outline"
+    );
+    let both = STROKES.replace(
+        "id = \"S03\"\n",
+        "id = \"S03\"\noutline = [[0.0, 0.0, \"c\"], [1.0, 0.0, \"c\"], [1.0, 1.0, \"c\"]]\n",
+    );
+    assert!(Glyph::from_toml(&both).is_err(), "outline and points");
+    let neither = STROKES.replace("points = [[0.0, 0.0, 4.0], [10.0, 0.0, 4.0]]\n", "");
+    assert!(Glyph::from_toml(&neither).is_err(), "no shape");
+    let caps = STROKES.replace("id = \"S02\"\n", "id = \"S02\"\ncap_end = { cut = 10.0 }\n");
+    assert!(Glyph::from_toml(&caps).is_err(), "caps on an outline");
+    let tag = STROKES.replace("[45.0, 20.0, \"s\"]", "[45.0, 20.0, \"q\"]");
+    assert!(Glyph::from_toml(&tag).is_err(), "bad tag");
+}
+
+#[test]
+fn shipped_strokes_are_dense_outlines() {
+    let g = Glyph::from_toml(&read("mark/mark.toml")).unwrap();
+    assert!(
+        g.outline.len() >= 100,
+        "S01 keeps its wobble: {}",
+        g.outline.len()
+    );
+    for s in &g.strokes {
+        assert!(
+            s.outline.len() >= 20,
+            "{} keeps its shape: {}",
+            s.id,
+            s.outline.len()
+        );
+        assert!(
+            s.outline.iter().any(|v| v.tag == Tag::Sharp),
+            "{} has carved corners",
+            s.id
+        );
+    }
+}
+
+#[test]
+fn curve_handles_stay_within_a_third_of_their_edge() {
+    use Tag::Smooth as S;
+    // Unevenly spaced smooth vertices: long edges next to very short ones.
+    let poly = [
+        v(0.0, 0.0, S),
+        v(20.0, 0.0, S),
+        v(20.3, 0.2, S),
+        v(20.5, 0.6, S),
+        v(20.0, 20.0, S),
+        v(0.0, 20.0, S),
+    ];
+    for s in segments(&poly) {
+        let len = (s.b.0 - s.a.0).hypot(s.b.1 - s.a.1);
+        let (c1, c2) = (s.c1.unwrap(), s.c2.unwrap());
+        assert!(
+            (c1.0 - s.a.0).hypot(c1.1 - s.a.1) <= len / 3.0 + 1e-9,
+            "{s:?}"
+        );
+        assert!(
+            (c2.0 - s.b.0).hypot(c2.1 - s.b.1) <= len / 3.0 + 1e-9,
+            "{s:?}"
+        );
+    }
+}
+
+#[test]
+fn hole_weight_shrinks_the_holes_only() {
+    let g = Glyph::from_toml(&read("mark/mark.toml")).unwrap();
+    let full = g.pieces(2.0);
+    let light = g.pieces_with(2.0, 0.5);
+    assert_eq!(
+        full[0].contours[0], light[0].contours[0],
+        "outline unchanged"
+    );
+    assert_eq!(full[1..], light[1..], "strokes unchanged");
+    for (a, b) in full[0].contours[1..].iter().zip(&light[0].contours[1..]) {
+        assert!(polygon_area(b) >= polygon_area(a));
+    }
+    assert!(polygon_area(&light[0].contours[2]) > polygon_area(&full[0].contours[2]) + 10.0);
+    assert_eq!(g.pieces_with(2.0, 2.0), g.pieces(2.0));
 }
 
 #[test]
