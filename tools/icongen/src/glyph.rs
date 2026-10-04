@@ -186,6 +186,10 @@ impl Glyph {
             }
         };
         let shrink = |h: &[Vertex]| {
+            if hole_weight <= 0.0 {
+                // Nothing to shrink: skip the inscribed-radius grid scan.
+                return h.to_vec();
+            }
             let d = hole_weight.min((inscribed_radius(h) - MIN_HOLE_RADIUS).max(0.0));
             if d <= 0.0 {
                 h.to_vec()
@@ -213,8 +217,10 @@ impl Glyph {
     /// Ink bounding box in glyph units (vertex extents).
     pub fn bounds(&self, weight: f64) -> (f64, f64, f64, f64) {
         let mut b = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        // Holes lie inside the outline, so they never change the extents: leave them unshrunk
+        // and skip the inscribed-radius scan.
         for v in self
-            .pieces(weight)
+            .pieces_with(weight, 0.0)
             .iter()
             .flat_map(|p| p.contours.iter().flatten())
         {
