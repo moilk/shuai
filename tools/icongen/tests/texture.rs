@@ -258,7 +258,10 @@ fn stone_layer_is_filled_paths_only() {
     assert!(stone.matches("<path").count() >= 2, "stone layer is empty");
     assert!(stone.len() > 5_000, "stone layer is too thin");
     assert!(!svg.contains("stroke"), "texture uses stroke attributes");
-    assert!(!svg.contains("e-") && !svg.contains("e+"), "exponent number");
+    assert!(
+        !svg.contains("e-") && !svg.contains("e+"),
+        "exponent number"
+    );
     // Soft layers: every stone path carries its own sub-unit alpha.
     for p in stone.split("<path").skip(1) {
         assert!(p.contains("fill-opacity=\""), "stone path without alpha");
@@ -285,7 +288,11 @@ fn motifs_are_character_scale_in_side_columns() {
     for seed in [1u64, 2, 20241004] {
         c.seed = seed;
         let boxes = path_boxes(&group(&tex_tall(&c), "motifs"));
-        assert!(boxes.len() >= 5, "only {} motifs placed, seed {seed}", boxes.len());
+        assert!(
+            boxes.len() >= 5,
+            "only {} motifs placed, seed {seed}",
+            boxes.len()
+        );
         let big = boxes
             .iter()
             .filter(|r| (r.3 - r.1).max(r.2 - r.0) >= 0.15 * s)
@@ -312,12 +319,19 @@ fn cracks_form_a_network_across_the_margins() {
     for seed in [1u64, 2, 20241004] {
         c.seed = seed;
         let pts = points(&group(&tex_tall(&c), "cracks"));
-        assert!(pts.len() > 1500, "only {} crack vertices, seed {seed}", pts.len());
+        assert!(
+            pts.len() > 1500,
+            "only {} crack vertices, seed {seed}",
+            pts.len()
+        );
         let ys = pts.iter().map(|p| p.1);
         let span = ys.clone().fold(f64::MIN, f64::max) - ys.fold(f64::MAX, f64::min);
         assert!(span > 0.8 * f64::from(SIZE), "cracks span only {span}px");
         assert!(pts.iter().any(|p| p.0 < b.x0 * 0.6), "no cracks far left");
-        assert!(pts.iter().any(|p| p.0 > 1024.0 - b.x0 * 0.6), "no cracks far right");
+        assert!(
+            pts.iter().any(|p| p.0 > 1024.0 - b.x0 * 0.6),
+            "no cracks far right"
+        );
     }
 }
 
@@ -339,8 +353,14 @@ fn shipped_density_stays_within_budget() {
 }
 
 #[test]
+fn has_a_rich_template_vocabulary() {
+    // The 8 original margin marks plus the character-scale set.
+    assert!(texture::template_count() >= 20);
+}
+
+#[test]
 fn known_output_snapshot() {
     let svg = tex(&cfg());
-    assert_eq!(svg.len(), 188679, "len");
-    assert_eq!(fnv1a(&svg), 16672589889996160970, "hash");
+    assert_eq!(svg.len(), 538817, "len");
+    assert_eq!(fnv1a(&svg), 1637157719381748750, "hash");
 }
