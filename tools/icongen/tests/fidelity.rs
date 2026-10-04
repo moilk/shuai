@@ -1,9 +1,11 @@
+use icongen::config::ThemeCfg;
 use icongen::fidelity::{
-    Field, Mask, components, corner_points, corners_kept, evaluate, failures, hausdorff, holes,
-    iou, load_field_png, load_mask_png, min_stroke_width, rasterize, simplify_closed,
-    small_size_report, trace_contours, trace_toml,
+    Field, MIN_HOLE_AREA, Mask, THEME_SIZES, check_theme, components, corner_points, corners_kept,
+    evaluate, failures, hausdorff, holes, iou, load_field_png, load_mask_png, min_stroke_width,
+    rasterize, run, simplify_closed, small_size_report, theme_failures, trace_contours, trace_toml,
 };
 use icongen::glyph::Glyph;
+use std::path::PathBuf;
 
 fn blank(w: usize, h: usize) -> Mask {
     Mask {
@@ -298,4 +300,55 @@ fn gates_pass_for_a_good_mark_and_fail_for_a_bad_one() {
     let f = failures(&r);
     assert!(f.iter().any(|m| m.contains("IoU")), "{f:?}");
     assert!(f.iter().any(|m| m.contains("topology")), "{f:?}");
+}
+
+fn brand() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../brand")
+}
+
+fn brand_text(rel: &str) -> String {
+    std::fs::read_to_string(brand().join(rel)).unwrap()
+}
+
+#[test]
+fn master_at_weight_0_and_every_shipped_theme_pass_their_gates() {
+    let (text, ok) = run(&brand()).unwrap();
+    assert!(ok, "{text}");
+    for name in ["matte", "mono-dark", "mono-light", "tinted"] {
+        assert!(text.contains(&format!("theme {name}")), "{text}");
+    }
+}
+
+#[test]
+fn shipped_themes_keep_topology_hole_area_and_40px_width() {
+    let g = Glyph::from_toml(&brand_text("mark/mark.toml")).unwrap();
+    for name in ["matte", "tinted", "mono-dark", "mono-light"] {
+        let t = ThemeCfg::from_toml(&brand_text(&format!("themes/{name}.toml"))).unwrap();
+        assert!(t.mark.weight > 0.0, "{name}: themes thicken the mark");
+        let c = check_theme(&g, name, &t.mark);
+        assert_eq!(
+            c.sizes.iter().map(|s| s.px).collect::<Vec<_>>(),
+            THEME_SIZES
+        );
+        assert!(c.sizes.iter().all(|s| s.pieces == 5), "{c:?}");
+        assert_eq!(c.sizes[0].holes, 2, "{c:?}");
+        let at40 = c.sizes.iter().find(|s| s.px == 40).unwrap();
+        assert!(at40.narrowest >= 2.0, "{name}: {at40:?}");
+        assert_eq!(c.hole_areas.len(), 2);
+        assert!(c.hole_areas.iter().all(|&a| a >= MIN_HOLE_AREA), "{c:?}");
+        assert!(theme_failures(&c).is_empty(), "{:?}", theme_failures(&c));
+    }
+}
+
+#[test]
+fn theme_gates_reject_the_unweighted_small_mark() {
+    let g = Glyph::from_toml(&brand_text("mark/mark.toml")).unwrap();
+    let mut t = ThemeCfg::from_toml(&brand_text("themes/matte.toml")).unwrap();
+    t.mark.weight = 0.0;
+    t.mark.scale = 0.64;
+    let c = check_theme(&g, "thin", &t.mark);
+    let at40 = c.sizes.iter().find(|s| s.px == 40).unwrap();
+    assert!(at40.narrowest < 2.0, "{at40:?}");
+    let f = theme_failures(&c);
+    assert!(f.iter().any(|m| m.contains("40 px")), "{f:?}");
 }

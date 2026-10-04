@@ -1,5 +1,9 @@
 use icongen::config::{BackgroundKind, IconCfg, ThemeCfg};
-use icongen::glyph::{Cap, Glyph, Tag, Vertex, segments, stroke_outline};
+use icongen::fidelity::{components, holes, rasterize};
+use icongen::glyph::{
+    Cap, Glyph, MIN_HOLE_RADIUS, MITER_LIMIT, Tag, Vertex, inscribed_radius, offset_contour,
+    polygon_area, segments, stroke_outline,
+};
 use icongen::rng::Pcg32;
 use icongen::{pipeline, png_out, render, svg};
 use std::path::PathBuf;
@@ -48,7 +52,9 @@ fn parses_theme_config() {
     assert_eq!(t.texture.color, "#f7f5f2");
     assert!((t.texture.opacity - 0.16).abs() < 1e-12);
     assert_eq!(t.mark.fill, "#f7f5f2");
-    assert!((t.mark.scale - 0.64).abs() < 1e-12);
+    assert!((t.mark.scale - 0.72).abs() < 1e-12);
+    assert!((t.mark.weight - 2.25).abs() < 1e-12);
+    assert_eq!(t.mark.small_size, None);
     assert_eq!(t.mark.offset, [0.0, 0.0]);
     assert!(!t.gloss.enabled);
     assert_eq!(t.container.kind, "none");
@@ -62,6 +68,42 @@ fn rejects_bad_theme_config() {
     assert!(ThemeCfg::from_toml(&bad).is_err());
     let bad = read("themes/matte.toml").replace("\"solid\"", "\"radial\"");
     assert!(ThemeCfg::from_toml(&bad).is_err());
+    for w in ["-1.0", "6.5"] {
+        let bad = good.replace("weight = 2.25", &format!("weight = {w}"));
+        assert_ne!(bad, good);
+        assert!(ThemeCfg::from_toml(&bad).is_err(), "weight {w}");
+    }
+}
+
+#[test]
+fn small_size_weight_bonus_applies_at_and_below_its_size() {
+    let good = read("themes/matte.toml");
+    let with = good.replace(
+        "[gloss]",
+        "small_size = { max_px = 64, weight = 1.0 }\n\n[gloss]",
+    );
+    assert_ne!(with, good);
+    let t = ThemeCfg::from_toml(&with).unwrap();
+    assert!((t.mark.weight_at(1024) - 2.25).abs() < 1e-12);
+    assert!((t.mark.weight_at(65) - 2.25).abs() < 1e-12);
+    assert!((t.mark.weight_at(64) - 3.25).abs() < 1e-12);
+    assert!((t.mark.weight_at(16) - 3.25).abs() < 1e-12);
+    let plain = ThemeCfg::from_toml(&good).unwrap();
+    assert!((plain.mark.weight_at(16) - 2.25).abs() < 1e-12);
+    let g = Glyph::from_toml(&read("mark/mark.toml")).unwrap();
+    assert_eq!(
+        svg::layers(&t, &g, 1024).mark,
+        svg::layers(&plain, &g, 1024).mark
+    );
+    assert_ne!(
+        svg::layers(&t, &g, 64).mark,
+        svg::layers(&plain, &g, 64).mark
+    );
+    let too_much = good.replace(
+        "[gloss]",
+        "small_size = { max_px = 64, weight = 5.0 }\n\n[gloss]",
+    );
+    assert!(ThemeCfg::from_toml(&too_much).is_err());
 }
 
 #[test]
@@ -175,6 +217,180 @@ fn weight_widens_strokes() {
     let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, flat, 2.0);
     assert!((o[0].y - 3.0).abs() < 1e-9);
     assert!((o[2].y + 3.0).abs() < 1e-9);
+}
+
+fn pts(c: &[Vertex]) -> Vec<(f64, f64)> {
+    c.iter().map(|v| (v.x, v.y)).collect()
+}
+
+fn close(a: &[(f64, f64)], b: &[(f64, f64)]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(p, q)| (p.0 - q.0).abs() < 1e-9 && (p.1 - q.1).abs() < 1e-9)
+}
+
+fn square(clockwise: bool) -> Vec<Vertex> {
+    use Tag::Sharp as C;
+    let mut s = vec![
+        v(0.0, 0.0, C),
+        v(10.0, 0.0, C),
+        v(10.0, 10.0, C),
+        v(0.0, 10.0, C),
+    ];
+    if !clockwise {
+        s.reverse();
+    }
+    s
+}
+
+#[test]
+fn offset_moves_every_edge_by_the_weight_either_winding() {
+    let grown = offset_contour(&square(true), 1.0);
+    assert!(close(
+        &pts(&grown),
+        &[(-1.0, -1.0), (11.0, -1.0), (11.0, 11.0), (-1.0, 11.0)]
+    ));
+    assert!(
+        grown.iter().all(|p| p.tag == Tag::Sharp),
+        "corners stay sharp"
+    );
+    let grown = offset_contour(&square(false), 1.0);
+    assert!(close(
+        &pts(&grown),
+        &[(-1.0, 11.0), (11.0, 11.0), (11.0, -1.0), (-1.0, -1.0)]
+    ));
+    let shrunk = offset_contour(&square(true), -2.0);
+    assert!(close(
+        &pts(&shrunk),
+        &[(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)]
+    ));
+    assert_eq!(offset_contour(&square(true), 0.0), square(true));
+}
+
+#[test]
+fn offset_keeps_smooth_vertices_smooth() {
+    use Tag::{Sharp as C, Smooth as S};
+    let poly = [
+        v(0.0, 0.0, C),
+        v(10.0, -1.0, S),
+        v(20.0, 0.0, C),
+        v(20.0, 10.0, C),
+        v(0.0, 10.0, C),
+    ];
+    let o = offset_contour(&poly, 1.0);
+    assert_eq!(o.len(), poly.len());
+    let tags: Vec<Tag> = o.iter().map(|p| p.tag).collect();
+    assert_eq!(tags, [C, S, C, C, C]);
+    assert!(o[1].y < -1.9 && o[1].y > -2.1, "{:?}", o[1]);
+}
+
+#[test]
+fn offset_clips_acute_sharp_corners_at_the_miter_limit() {
+    use Tag::Sharp as C;
+    // A 20-unit chisel tip on a 4-unit-wide wedge: the plain miter would reach far past the tip.
+    let wedge = [v(0.0, -2.0, C), v(20.0, 0.0, C), v(0.0, 2.0, C)];
+    let o = offset_contour(&wedge, 1.0);
+    assert_eq!(o.len(), 4, "the tip splits into two sharp vertices: {o:?}");
+    assert!(o.iter().all(|p| p.tag == Tag::Sharp));
+    // The wedge is symmetric about y = 0, so the miter runs along +x.
+    let tip = o.iter().map(|p| p.x - 20.0).fold(f64::MIN, f64::max);
+    assert!(
+        (tip - MITER_LIMIT * 1.0).abs() < 1e-9,
+        "clipped at the limit: {tip}"
+    );
+    assert!(
+        o.iter().any(|p| p.x > 21.5),
+        "but still past the tip: {o:?}"
+    );
+}
+
+#[test]
+fn shrinking_a_pinched_contour_cuts_its_thin_tail_to_a_point() {
+    use Tag::{Sharp as C, Smooth as S};
+    // A lens with a long thin tail: shrinking by 2 must not fold the tail into a loop.
+    let lens = [
+        v(0.0, 0.0, C),
+        v(4.0, 4.0, S),
+        v(4.0, 12.0, S),
+        v(1.0, 20.0, S),
+        v(0.5, 30.0, C),
+        v(0.0, 20.0, S),
+        v(-3.0, 12.0, S),
+        v(-3.0, 4.0, S),
+    ];
+    let o = offset_contour(&lens, -2.0);
+    assert!(is_simple(&o), "{o:?}");
+    assert!(polygon_area(&o) > 0.0 && polygon_area(&o) < polygon_area(&lens));
+    assert!(o.iter().all(|p| p.y < 20.0), "the tail is gone: {o:?}");
+}
+
+/// No two non-adjacent edges cross.
+fn is_simple(c: &[Vertex]) -> bool {
+    let n = c.len();
+    let p = |i: usize| (c[i % n].x, c[i % n].y);
+    let cross = |a: (f64, f64), b: (f64, f64), q: (f64, f64)| {
+        (b.0 - a.0) * (q.1 - a.1) - (b.1 - a.1) * (q.0 - a.0)
+    };
+    for i in 0..n {
+        for j in i + 2..n {
+            if i == 0 && j == n - 1 {
+                continue;
+            }
+            let (a, b, q, r) = (p(i), p(i + 1), p(j), p(j + 1));
+            let (d1, d2) = (cross(a, b, q), cross(a, b, r));
+            let (d3, d4) = (cross(q, r, a), cross(q, r, b));
+            if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn bbox(c: &[Vertex]) -> (f64, f64, f64, f64) {
+    c.iter()
+        .fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |b, p| {
+            (b.0.min(p.x), b.1.min(p.y), b.2.max(p.x), b.3.max(p.y))
+        })
+}
+
+#[test]
+fn weight_offsets_every_piece_and_keeps_the_topology() {
+    let g = Glyph::from_toml(&read("mark/mark.toml")).unwrap();
+    let master = g.pieces(0.0);
+    assert_eq!(
+        pts(&master[0].contours[0]),
+        pts(&g.outline),
+        "weight 0 is the master"
+    );
+    for w in [1.0, 2.25, 4.0, 6.0] {
+        let p = g.pieces(w);
+        assert_eq!(p.len(), 5);
+        assert_eq!(p[0].contours.len(), 3, "S01 keeps both holes at weight {w}");
+        for (a, b) in master.iter().zip(&p) {
+            let (o, n) = (bbox(&a.contours[0]), bbox(&b.contours[0]));
+            for grow in [o.0 - n.0, o.1 - n.1, n.2 - o.2, n.3 - o.3] {
+                assert!(
+                    grow >= 0.9 * w && grow <= MITER_LIMIT * w + 1e-9,
+                    "{} at weight {w}: side grew {grow}",
+                    a.id
+                );
+            }
+            for c in &b.contours {
+                assert!(is_simple(c), "{} at weight {w} self-intersects", a.id);
+            }
+        }
+        for (h0, h) in g.holes.iter().zip(&p[0].contours[1..]) {
+            assert!(polygon_area(h) < polygon_area(h0), "holes shrink");
+            let r = inscribed_radius(h);
+            let want = inscribed_radius(h0).min(MIN_HOLE_RADIUS);
+            assert!(r >= want - 0.15, "hole kept open: r {r} < {want}");
+        }
+        let m = rasterize(&g, w, 201, 251, 2.0);
+        assert_eq!(components(&m), 5, "no side stroke merges at weight {w}");
+        assert_eq!(holes(&m), 2, "both holes open at weight {w}");
+    }
 }
 
 fn theme_and_glyph() -> (ThemeCfg, Glyph) {
