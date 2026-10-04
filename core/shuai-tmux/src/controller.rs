@@ -56,6 +56,13 @@ impl TmuxController {
         cmd::control_attach(&self.session, false)
     }
 
+    /// Shell line to exec for the side channel: [`attach_command`](Self::attach_command) under
+    /// the supervisor that makes it exit with its SSH session (see
+    /// [`TmuxCommand::to_supervised_shell`]).
+    pub fn attach_shell(&self) -> String {
+        self.attach_command().to_supervised_shell()
+    }
+
     /// Lines to write to stdin once the channel is up (output suppression). Empty on tmux
     /// without `no-output`; `%output` is discarded by [`push`](Self::push) regardless.
     pub fn on_connected(&mut self) -> Vec<String> {
