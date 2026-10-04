@@ -80,3 +80,9 @@ public enum AttentionNotificationPolicy {
         }
     }
 }
+
+/// Stub (tests first).
+public enum NotificationOptInPolicy {
+    public static func shouldOffer(explained: Bool, notifierAvailable: Bool, appActive: Bool) -> Bool { true }
+    public static func isVisible(offerPending: Bool, pendingPermissionCards: Int) -> Bool { offerPending }
+}
