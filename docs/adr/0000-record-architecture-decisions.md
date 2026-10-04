@@ -1,12 +1,19 @@
-# 0. Record architecture decisions
+# ADR 0000: Record architecture decisions
 
-Status: accepted
+Status: Accepted
 
 ## Context
-We need to record the architectural decisions made on this project.
+
+Decisions about shuai's architecture need to be discoverable and reviewable by contributors and
+coding agents, together with the reasons behind them.
 
 ## Decision
-We use lightweight Architecture Decision Records (Michael Nygard format), numbered sequentially in `docs/adr/`. Each ADR has Status, Context, Decision and Consequences.
+
+Use lightweight Architecture Decision Records (Michael Nygard format) in `docs/adr/`, numbered
+sequentially (`NNNN-short-title.md`). Each ADR has Status, Context, Decision and Consequences, and
+states the decision and its reasons, not the history of how it was reached. A superseded ADR stays
+in place with its status changed to "Superseded by ADR NNNN".
 
 ## Consequences
-Decisions (e.g. terminal engine choice, M1) are discoverable and reviewable in git history.
+
+Settled decisions are not reopened casually; changing one means writing a new ADR.
