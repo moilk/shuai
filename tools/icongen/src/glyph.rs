@@ -150,7 +150,6 @@ impl Glyph {
                         points,
                         r.cap_start.unwrap_or_default(),
                         r.cap_end.unwrap_or_default(),
-                        0.0,
                     )
                 }
                 _ => {
@@ -482,15 +481,13 @@ pub fn inscribed_radius(poly: &[Vertex]) -> f64 {
     best
 }
 
-/// Closed outline of a stroke: chisel caps are sharp vertices, side vertices are smooth.
-pub fn stroke_outline(
-    points: &[(f64, f64, f64)],
-    cap_start: Cap,
-    cap_end: Cap,
-    weight: f64,
-) -> Vec<Vertex> {
+/// Closed outline of a stroke: chisel caps are sharp vertices, side vertices are smooth. The
+/// outline is the master carving; extra weight is applied afterwards by [`Glyph::pieces`] as a
+/// uniform outward offset like every other piece. Bends sharper than about 60 degrees are not
+/// cleaned of self-intersection loops (see docs/development/icon.md).
+pub fn stroke_outline(points: &[(f64, f64, f64)], cap_start: Cap, cap_end: Cap) -> Vec<Vertex> {
     let n = points.len();
-    let half = |i: usize| ((points[i].2 + weight) / 2.0).max(0.05);
+    let half = |i: usize| (points[i].2 / 2.0).max(0.05);
     let dir = |i: usize| norm((points[i + 1].0 - points[i].0, points[i + 1].1 - points[i].1));
     let left_normal = |d: Pt| (-d.1, d.0);
     let sharp = |p: Pt| Vertex {

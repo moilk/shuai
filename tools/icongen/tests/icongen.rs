@@ -220,7 +220,7 @@ fn strokes_take_an_outline_or_a_centerline() {
     let flat = Cap::default();
     assert_eq!(
         g.strokes[1].outline,
-        stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, flat, 0.0),
+        stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, flat),
         "a centerline becomes its outline"
     );
     let pieces = g.pieces(0.0);
@@ -350,7 +350,7 @@ fn chisel_cap_geometry_flat() {
         cut: 0.0,
         asym: 0.0,
     };
-    let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, flat, 0.0);
+    let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, flat);
     let pts: Vec<(f64, f64)> = o.iter().map(|p| (p.x, p.y)).collect();
     assert_eq!(pts, [(0.0, 2.0), (10.0, 2.0), (10.0, -2.0), (0.0, -2.0)]);
     assert!(o.iter().all(|p| p.tag == Tag::Sharp));
@@ -366,7 +366,7 @@ fn chisel_cap_geometry_cut_and_asym() {
         cut: 0.0,
         asym: 0.0,
     };
-    let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, cut, 0.0);
+    let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, cut);
     let near = |p: &Vertex, x: f64, y: f64| (p.x - x).abs() < 1e-9 && (p.y - y).abs() < 1e-9;
     assert!(near(&o[1], 12.0, 2.0));
     assert!(near(&o[2], 8.0, -2.0));
@@ -374,20 +374,28 @@ fn chisel_cap_geometry_cut_and_asym() {
         cut: 0.0,
         asym: 0.5,
     };
-    let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, asym, 0.0);
+    let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, asym);
     assert!(near(&o[1], 10.0, 3.0));
     assert!(near(&o[2], 10.0, -1.0));
 }
 
 #[test]
 fn weight_widens_strokes() {
-    let flat = Cap {
-        cut: 0.0,
-        asym: 0.0,
+    // Weight is a uniform outward offset per edge, like every other piece: a 4 px wide centerline
+    // stroke gains `weight` on each side.
+    let g = Glyph::from_toml(STROKES).unwrap();
+    let ys = |w: f64| {
+        let p = &g.pieces(w)[2];
+        assert_eq!(p.id, "S03");
+        let ys = p.contours[0].iter().map(|v| v.y);
+        (
+            ys.clone().fold(f64::MAX, f64::min),
+            ys.fold(f64::MIN, f64::max),
+        )
     };
-    let o = stroke_outline(&[(0.0, 0.0, 4.0), (10.0, 0.0, 4.0)], flat, flat, 2.0);
-    assert!((o[0].y - 3.0).abs() < 1e-9);
-    assert!((o[2].y + 3.0).abs() < 1e-9);
+    assert_eq!(ys(0.0), (-2.0, 2.0));
+    let (lo, hi) = ys(2.0);
+    assert!((lo + 4.0).abs() < 1e-9 && (hi - 4.0).abs() < 1e-9, "{lo} {hi}");
 }
 
 fn pts(c: &[Vertex]) -> Vec<(f64, f64)> {
