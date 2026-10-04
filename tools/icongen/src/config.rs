@@ -1,0 +1,136 @@
+//! Parsing of `brand/icon.toml` and `brand/themes/*.toml`.
+
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct IconCfg {
+    pub size: u32,
+    pub appearances: Appearances,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Appearances {
+    pub light: String,
+    pub dark: String,
+    pub tinted: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BackgroundKind {
+    Solid,
+    Linear,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundCfg {
+    pub kind: BackgroundKind,
+    pub color: String,
+    /// Second stop, only used by `linear`.
+    #[serde(default)]
+    pub color2: Option<String>,
+    /// Gradient direction in degrees (0 = left to right, 90 = top to bottom).
+    #[serde(default)]
+    pub angle: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TextureCfg {
+    pub enabled: bool,
+    pub seed: u64,
+    pub grain: f64,
+    pub cracks: u32,
+    pub motifs: u32,
+    pub color: String,
+    pub opacity: f64,
+    pub keepout: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MarkCfg {
+    pub fill: String,
+    #[serde(default)]
+    pub weight: f64,
+    pub scale: f64,
+    #[serde(default)]
+    pub offset: [f64; 2],
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct GlossCfg {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ContainerCfg {
+    /// `none` or `squircle`.
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeCfg {
+    pub name: String,
+    pub background: BackgroundCfg,
+    pub texture: TextureCfg,
+    pub mark: MarkCfg,
+    pub gloss: GlossCfg,
+    pub container: ContainerCfg,
+}
+
+/// Parses `#rrggbb`.
+pub fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.strip_prefix('#')?;
+    if h.len() != 6 || !h.is_ascii() {
+        return None;
+    }
+    let p = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([p(0)?, p(2)?, p(4)?])
+}
+
+fn check_color(what: &str, s: &str) -> Result<(), String> {
+    parse_hex(s)
+        .map(|_| ())
+        .ok_or_else(|| format!("{what}: expected #rrggbb, got {s:?}"))
+}
+
+impl IconCfg {
+    pub fn from_toml(s: &str) -> Result<Self, String> {
+        let c: IconCfg = toml::from_str(s).map_err(|e| e.to_string())?;
+        if !(16..=4096).contains(&c.size) {
+            return Err(format!("size out of range: {}", c.size));
+        }
+        Ok(c)
+    }
+}
+
+impl ThemeCfg {
+    pub fn from_toml(s: &str) -> Result<Self, String> {
+        let t: ThemeCfg = toml::from_str(s).map_err(|e| e.to_string())?;
+        check_color("background.color", &t.background.color)?;
+        match (&t.background.kind, &t.background.color2) {
+            (BackgroundKind::Linear, None) => return Err("linear background needs color2".into()),
+            (_, Some(c2)) => check_color("background.color2", c2)?,
+            _ => {}
+        }
+        check_color("texture.color", &t.texture.color)?;
+        check_color("mark.fill", &t.mark.fill)?;
+        if !(0.0..=1.0).contains(&t.texture.opacity) {
+            return Err("texture.opacity must be within 0..=1".into());
+        }
+        if !(t.mark.scale > 0.0 && t.mark.scale <= 1.0) {
+            return Err("mark.scale must be within (0, 1]".into());
+        }
+        if !matches!(t.container.kind.as_str(), "none" | "squircle") {
+            return Err(format!("unknown container kind {:?}", t.container.kind));
+        }
+        Ok(t)
+    }
+}

@@ -82,7 +82,7 @@ fn parses_glyph_topology() {
 
 #[test]
 fn rejects_bad_vertex_tag() {
-    let bad = read("mark/mark.toml").replacen("\"s\"", "\"x\"", 1);
+    let bad = read("mark/mark.toml").replacen("60.0, 40.0, \"s\"", "60.0, 40.0, \"x\"", 1);
     assert!(Glyph::from_toml(&bad).is_err());
 }
 
