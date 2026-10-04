@@ -1,8 +1,8 @@
 {
   "size": 1024,
   "appearances": [
-    { "appearance": "light", "theme": "matte", "mark_bounds": [128, 148.087, 896, 875.913] },
-    { "appearance": "dark", "theme": "matte", "mark_bounds": [128, 148.087, 896, 875.913] },
-    { "appearance": "tinted", "theme": "matte", "mark_bounds": [128, 148.087, 896, 875.913] }
+    { "appearance": "light", "theme": "matte", "mark_bounds": [364.256, 184.32, 659.744, 839.68] },
+    { "appearance": "dark", "theme": "matte", "mark_bounds": [364.256, 184.32, 659.744, 839.68] },
+    { "appearance": "tinted", "theme": "tinted", "mark_bounds": [364.256, 184.32, 659.744, 839.68] }
   ]
 }
