@@ -222,6 +222,6 @@ fn opacity_caps_ink_coverage() {
 #[test]
 fn known_output_snapshot() {
     let svg = tex(&cfg());
-    assert_eq!(svg.len(), 0, "len");
-    assert_eq!(fnv1a(&svg), 0, "hash");
+    assert_eq!(svg.len(), 188679, "len");
+    assert_eq!(fnv1a(&svg), 16672589889996160970, "hash");
 }
