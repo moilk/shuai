@@ -670,6 +670,33 @@ fn png_tolerance_compare() {
     assert!(!pipeline::png_close(&a, &b, 2).unwrap());
 }
 
+#[test]
+fn text_tolerance_compare_for_svg_and_json() {
+    let a = b"<path d=\"M0 0L10.5 -3.25Z\" opacity=\"0.12\"/>{\"b\": [1, 2.5]}";
+    assert!(pipeline::text_close(a, a, 1e-3));
+    // Last-digit float formatting differences stay within tolerance.
+    let b = b"<path d=\"M0.0004 0L10.5003 -3.2504Z\" opacity=\"0.12\"/>{\"b\": [1, 2.5]}";
+    assert!(pipeline::text_close(a, b, 1e-3));
+    assert!(!pipeline::text_close(a, b, 1e-5));
+    // A number moved beyond tolerance, a changed word, an added element, a changed length.
+    for bad in [
+        &b"<path d=\"M0 0L10.6 -3.25Z\" opacity=\"0.12\"/>{\"b\": [1, 2.5]}"[..],
+        b"<rect d=\"M0 0L10.5 -3.25Z\" opacity=\"0.12\"/>{\"b\": [1, 2.5]}",
+        b"<path d=\"M0 0L10.5 -3.25L1 1Z\" opacity=\"0.12\"/>{\"b\": [1, 2.5]}",
+        b"<path d=\"M0 0L10.5 -3.25Z\" opacity=\"0.12\"/>{\"b\": [1, 2.5]}\n",
+        b"",
+    ] {
+        assert!(!pipeline::text_close(a, bad, 1e-3), "{:?}", String::from_utf8_lossy(bad));
+    }
+    // Digits inside identifiers are text, not numbers.
+    assert!(!pipeline::text_close(b"id=\"S01\"", b"id=\"S02\"", 1e-3));
+    // Hex colours are text too.
+    assert!(!pipeline::text_close(b"fill=\"#0b0b0c\"", b"fill=\"#0b0b0d\"", 1.0));
+    // Non-UTF-8 content compares exactly.
+    assert!(pipeline::text_close(&[0xff, 0xfe], &[0xff, 0xfe], 1e-3));
+    assert!(!pipeline::text_close(&[0xff, 0xfe], &[0xff, 0xfd], 1e-3));
+}
+
 fn lin(c: u8) -> f64 {
     let v = f64::from(c) / 255.0;
     if v <= 0.04045 {
