@@ -150,6 +150,11 @@ fn push_failure_never_breaks_hook() {
     let h = home();
     cfg(h.path(), "http://127.0.0.1:1");
     hook_with_pane(h.path(), "Stop", "stop");
-    let log = std::fs::read_to_string(h.path().join("agent.log")).unwrap_or_default();
-    assert!(log.contains("ntfy"), "failure should be logged: {log:?}");
+    // The push is sent by a detached child, so the failure shows up in the log a moment later.
+    let log = wait_for(10, || {
+        std::fs::read_to_string(h.path().join("agent.log"))
+            .ok()
+            .filter(|l| l.contains("ntfy"))
+    });
+    assert!(log.is_some(), "failure should be logged");
 }

@@ -98,7 +98,13 @@ fn failing_server_never_puts_topic_or_token_in_agent_log() {
         let h = home();
         cfg_with(h.path(), server, "");
         stop(h.path(), None);
-        assert!(std::fs::read_to_string(h.path().join("agent.log")).is_ok_and(|s| !s.is_empty()));
+        // logged by the detached push child, so wait for it
+        assert!(
+            wait_for(10, || std::fs::read_to_string(h.path().join("agent.log"))
+                .ok()
+                .filter(|s| !s.is_empty()))
+            .is_some()
+        );
         assert_no_secrets(h.path(), "");
     }
 }
