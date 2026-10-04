@@ -1,0 +1,31 @@
+# Matte theme: solid dark-red background, light mark, subtle oracle texture.
+name = "matte"
+
+[background]
+kind = "solid"            # solid | linear
+color = "#7a1f1a"
+# color2 and angle (degrees) are used by kind = "linear"
+color2 = "#5a120f"
+angle = 90.0
+
+[texture]
+enabled = true
+seed = 20241004
+grain = 0.35              # 0..1 grain density
+cracks = 5                # number of crack branches
+motifs = 6                # number of margin motifs
+color = "#000000"
+opacity = 0.18            # contrast cap, keeps the mark readable
+keepout = 0.04            # fraction of the canvas kept clear around the mark
+
+[mark]
+fill = "#f1e6d0"
+weight = 0.0              # glyph units added to every stroke width
+scale = 0.75              # share of the canvas the mark's longest side covers
+offset = [0.0, 0.0]       # fraction of the canvas
+
+[gloss]
+enabled = false
+
+[container]
+kind = "none"             # none | squircle

@@ -1,0 +1,7 @@
+# Maps each iOS appearance to a theme in brand/themes/<name>.toml.
+size = 1024
+
+[appearances]
+light = "matte"
+dark = "matte"
+tinted = "matte"

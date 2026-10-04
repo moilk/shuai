@@ -1,0 +1,42 @@
+# Master glyph (placeholder: crude 5-piece shape, replaced by the traced character).
+# Coordinates are glyph units, y down. Vertex tag: "c" sharp (kept exactly), "s" smooth.
+
+[s01]
+# Outline polygon, filled even-odd together with the holes.
+outline = [
+  [38.0, 8.0, "c"],
+  [62.0, 8.0, "c"],
+  [60.0, 40.0, "s"],
+  [66.0, 92.0, "c"],
+  [34.0, 92.0, "c"],
+  [40.0, 40.0, "s"],
+]
+holes = [
+  [[44.0, 20.0, "c"], [56.0, 20.0, "c"], [56.0, 30.0, "c"], [44.0, 30.0, "c"]],
+  [[43.0, 56.0, "c"], [57.0, 54.0, "c"], [55.0, 72.0, "c"], [45.0, 72.0, "c"]],
+]
+
+# Side strokes: centerline points [x, y, width]; chisel caps: cut angle in degrees, asym -1..1.
+[[stroke]]
+id = "S02"
+points = [[8.0, 22.0, 6.0], [20.0, 28.0, 7.0], [30.0, 36.0, 5.0]]
+cap_start = { cut = 20.0, asym = 0.1 }
+cap_end = { cut = -25.0, asym = -0.1 }
+
+[[stroke]]
+id = "S03"
+points = [[8.0, 52.0, 6.0], [30.0, 62.0, 5.0]]
+cap_start = { cut = 15.0, asym = 0.0 }
+cap_end = { cut = -20.0, asym = 0.1 }
+
+[[stroke]]
+id = "S04"
+points = [[92.0, 22.0, 6.0], [80.0, 28.0, 7.0], [70.0, 36.0, 5.0]]
+cap_start = { cut = -20.0, asym = 0.1 }
+cap_end = { cut = 25.0, asym = -0.1 }
+
+[[stroke]]
+id = "S05"
+points = [[92.0, 52.0, 6.0], [70.0, 62.0, 5.0]]
+cap_start = { cut = -15.0, asym = 0.0 }
+cap_end = { cut = 20.0, asym = 0.1 }
