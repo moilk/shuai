@@ -12,3 +12,4 @@ apple/ShuaiKit/ShuaiCoreFFI.xcframework/
 apple/ShuaiKit/Sources/ShuaiCore/Generated/
 .DS_Store
 apple/App/Resources/agent/
+apple/App/Generated/

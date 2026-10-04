@@ -48,6 +48,14 @@ targets:
             echo "error: $msg"; exit 1
           fi
           echo "warning: $msg"
+    # Info.plist keys that have no INFOPLIST_KEY_ build setting (arrays): the `shuai://` URL scheme
+    # of ntfy push deep links. Merged with the generated plist (GENERATE_INFOPLIST_FILE).
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: io.github.moilk.shuai
+            CFBundleURLSchemes: [shuai]
     dependencies:
       - package: ShuaiKit
         product: ShuaiApp

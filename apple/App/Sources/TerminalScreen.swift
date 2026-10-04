@@ -333,7 +333,7 @@ private struct StatusBadge: View {
 }
 
 /// Non-blocking info banner (the terminal stays usable underneath).
-private struct NoticeView: View {
+struct NoticeView: View {
     let text: String
     let dismiss: () -> Void
     var body: some View {

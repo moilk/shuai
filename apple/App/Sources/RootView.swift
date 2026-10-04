@@ -32,6 +32,16 @@ struct RootView: View {
             AgentInstallSheet(model: req.model, hostName: req.host.name) { model.closeAgentInstall() }
         }
         .overlay(alignment: .bottom) { NotificationOptInBanner() }
+        .overlay(alignment: .top) {
+            // Without a selected host there is no terminal screen to show notices (e.g. a link to an unknown host).
+            if let message = model.transientNotice, model.selection.flatMap({ model.hosts.host(id: $0) }) == nil {
+                NoticeView(text: message) { model.transientNotice = nil }
+                    .task(id: message) {
+                        try? await Task.sleep(for: .seconds(4))
+                        model.transientNotice = nil
+                    }
+            }
+        }
         .sheet(isPresented: $model.showSettings) { SettingsView() }
         .sheet(isPresented: $model.showKeys) { NavigationStack { KeysView() } }
         #if DEBUG
@@ -90,6 +100,10 @@ struct HostListView: View {
                             model.presentAgentInstall(host: host, uninstall: false)
                         }
                         .disabled(!connected)
+                        Button("Sync notification settings", systemImage: "arrow.triangle.2.circlepath") {
+                            model.syncNotificationSettings(host: host)
+                        }
+                        .disabled(!connected || !model.agentHub.status(for: host.id).isInstalled)
                         Button("Remove AI integration…", systemImage: "sparkles.slash") {
                             model.presentAgentInstall(host: host, uninstall: true)
                         }

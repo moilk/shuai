@@ -32,6 +32,8 @@ final class AppModel {
     let keys: KeyLibrary
     let settings: AppSettings
     let passwords: PasswordStore
+    let pushSettings: PushSettings
+    let pushSync: PushSyncCoordinator
     let sessions: SessionRegistry
     let keyboard = HardwareKeyboardMonitor()
 
@@ -68,6 +70,7 @@ final class AppModel {
         let settings: AppSettings
         let keyStore: KeyStore
         let known: KnownHostsStore
+        let pushDefaults: UserDefaults
         if ephemeral {
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shuai-ui-\(UUID().uuidString)")
             hosts = HostStore(fileURL: dir.appendingPathComponent("hosts.json"))
@@ -75,13 +78,18 @@ final class AppModel {
             passwords = InMemoryPasswordStore()
             known = KnownHostsStore(fileURL: dir.appendingPathComponent("known_hosts"))
             settings = AppSettings(defaults: UserDefaults(suiteName: "shuai-ui-\(UUID().uuidString)")!)
+            pushDefaults = UserDefaults(suiteName: "shuai-ui-push-\(UUID().uuidString)")!
+            pushSettings = PushSettings(defaults: pushDefaults, secrets: InMemoryPushSecretStore())
         } else {
             hosts = HostStore()
             keyStore = KeychainKeyStore()
             passwords = KeychainPasswordStore()
             known = KnownHostsStore()
             settings = AppSettings()
+            pushDefaults = .standard
+            pushSettings = PushSettings()
         }
+        pushSync = PushSyncCoordinator(settings: pushSettings, defaults: pushDefaults)
         self.settings = settings
         keys = KeyLibrary(store: keyStore)
         let box = EngineBox()
@@ -102,8 +110,13 @@ final class AppModel {
         selection = hosts.hosts.first?.id
         viewing.check = { [weak self] key in MainActor.assumeIsolated { self?.isViewing(key) ?? false } }
         hub.onLiveChanges = { [weak self] id, changes in self?.handleLive(profileID: id, changes: changes) }
+        // Local-notification taps take the same path as `shuai://` links (and ntfy pushes).
         notifier?.onOpen = { [weak self] profile, pane in
-            Task { @MainActor in await self?.jumpToPane(profileID: profile, paneID: pane) }
+            Task { @MainActor in await self?.open(DeepLink(hostID: profile, pane: pane)) }
+        }
+        hub.onAgentReady = { [weak self] id, remote in
+            guard let self, let host = self.hosts.host(id: id) else { return }
+            _ = await self.pushSync.syncIfNeeded(host: host, remote: remote)
         }
         startNetworkMonitor()
     }
@@ -190,6 +203,20 @@ final class AppModel {
         _ = engineBox.engines[host.id]?.view.acquireProgrammaticFocus()
     }
 
+    // MARK: deep links (shuai://open?host=&pane=)
+
+    func open(url: URL) async {
+        apply(await DeepLinkRouter(navigator: self).handle(url))
+    }
+
+    func open(_ link: DeepLink) async {
+        apply(await DeepLinkRouter(navigator: self).handle(link))
+    }
+
+    private func apply(_ outcome: DeepLinkOutcome) {
+        if case .notice(let message) = outcome { transientNotice = message }
+    }
+
     func jump(to target: AttentionTarget) async {
         await jumpToPane(profileID: target.profileID, paneID: target.paneID)
         agentHub.markSeen(target)
@@ -253,12 +280,51 @@ final class AppModel {
         guard let remote = sessions.existingController(for: host.id)?.agentRemote else { return }
         let installer = AgentInstaller(remote: remote, binaries: BundleAgentBinaryProvider())
         agentInstall = AgentInstallRequest(
-            host: host, model: AgentInstallModel(installer: installer, mode: uninstall ? .uninstall : .install))
+            host: host,
+            model: AgentInstallModel(
+                installer: installer, mode: uninstall ? .uninstall : .install,
+                agentConfigToml: uninstall ? nil : pushSync.toml(for: host)))
+    }
+
+    /// "Sync notification settings": rewrites the host's `config.toml` now.
+    func syncNotificationSettings(host: HostProfile) {
+        guard let remote = sessions.existingController(for: host.id)?.agentRemote else { return }
+        Task {
+            switch await pushSync.syncNow(host: host, remote: remote) {
+            case .synced: transientNotice = "Notification settings synced to \(host.name)."
+            case .upToDate: break
+            case .failed(let m): transientNotice = "Could not sync to \(host.name): \(m)"
+            }
+        }
+    }
+
+    func syncNotificationSettingsToConnectedHosts() {
+        let targets = hosts.hosts.compactMap { host -> (HostProfile, AgentRemote)? in
+            guard agentHub.status(for: host.id).isInstalled,
+                let remote = sessions.existingController(for: host.id)?.agentRemote
+            else { return nil }
+            return (host, remote)
+        }
+        guard !targets.isEmpty else {
+            transientNotice = "No connected host has the AI integration. Settings sync when one connects."
+            return
+        }
+        Task {
+            var failures: [String] = []
+            for (host, remote) in targets {
+                if case .failed(let m) = await pushSync.syncNow(host: host, remote: remote) { failures.append("\(host.name): \(m)") }
+            }
+            transientNotice = failures.isEmpty ? "Notification settings synced." : "Could not sync: " + failures.joined(separator: "; ")
+        }
     }
 
     func closeAgentInstall() {
         let req = agentInstall
         agentInstall = nil
+        if let req, req.model.report?.ok == true, let toml = req.model.agentConfigToml {
+            pushSync.recordSynced(host: req.host, toml: toml)
+        }
+        if let req, req.model.mode == .uninstall, req.model.report?.ok == true { pushSync.forget(host: req.host.id) }
         if let req, let remote = sessions.existingController(for: req.host.id)?.agentRemote {
             Task { await agentHub.hostConnected(id: req.host.id, remote: remote) }
         }
@@ -282,6 +348,7 @@ final class AppModel {
             await sessions.remove(id: host.id)
             engineBox.engines[host.id] = nil
             try? passwords.deletePassword(for: host.id)
+            pushSync.forget(host: host.id)
             try? hosts.delete(id: host.id)
             if selection == host.id { selection = hosts.hosts.first?.id }
         }
@@ -312,5 +379,42 @@ final class AppModel {
     func scenePhaseChanged(_ phase: ScenePhase) {
         appActive = phase == .active
         if phase == .active { sessions.appForegrounded() }
+    }
+}
+
+// MARK: - Deep link navigation
+
+extension AppModel: PaneNavigating {
+    func hostExists(_ id: UUID) -> Bool { hosts.host(id: id) != nil }
+
+    func navigate(hostID: UUID, pane: String?) async -> PaneNavigationResult {
+        guard let host = hosts.host(id: hostID) else { return .connectionFailed }
+        #if DEBUG
+        if DebugLaunch.isFixtureHost(host.id) { return debugNavigate(host: host, pane: pane) }
+        #endif
+        selection = host.id
+        let controller = sessions.controller(for: host)
+        switch controller.state {
+        case .idle, .failed, .disconnected: await controller.connect()
+        default: break
+        }
+        switch controller.state {
+        case .failed, .disconnected, .idle: return .connectionFailed
+        default: break
+        }
+        var result = PaneNavigationResult.opened
+        if let pane {
+            _ = await waitForTmux(controller)
+            let known = controller.tmux.topology?.sessions.contains { $0.windows.contains { $0.panes.contains { $0.id == pane } } } ?? false
+            if known {
+                let actions = controller.tmuxActions
+                await actions.run { try await actions.selectPane(pane) }
+                agentHub.markSeen(profileID: host.id, paneID: pane)
+            } else {
+                result = .paneNotFound
+            }
+        }
+        _ = engineBox.engines[host.id]?.view.acquireProgrammaticFocus()
+        return result
     }
 }
