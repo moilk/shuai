@@ -12,6 +12,8 @@ plugin. Direct SSH, no relay, MIT. Status: v1 feature-complete, real-device QA p
   `uniffi-bindgen`. Conventions: `core/CLAUDE.md`.
 - `apple/ShuaiKit` Swift package (`ShuaiCore`, `ShuaiPlatform`, `ShuaiTerminal`, `ShuaiApp`);
   `apple/App` iPad app (XcodeGen). Conventions: `apple/CLAUDE.md`.
+- `brand/` + `tools/icongen/` app icon: configs, traced glyph, committed outputs and the generator
+  (`docs/development/icon.md`).
 - `plugin/` + `.claude-plugin/` Claude Code plugin and marketplace. `scripts/` build and release
   guards. `fixtures/` shared test data. `android/` not started.
 - `docs/` user, design, development docs and ADRs; index `docs/README.md`.
@@ -26,6 +28,7 @@ cd core && cargo fmt --all --check && cargo clippy --workspace --all-targets -- 
 cd core && cargo test -p shuai-ffi --features testkit
 scripts/build-agent.sh                 # shuai-agent musl binaries -> apple/App/Resources/agent/
 scripts/build-xcframework.sh           # xcframework + Swift bindings (runs check-no-testkit)
+cd tools/icongen && cargo test && cargo run --release -- check   # icon; `generate` rewrites outputs
 cd apple/ShuaiKit && swift test        # Swift logic on macOS
 cd apple/App && xcodegen generate && xcodebuild test -scheme Shuai -destination 'platform=iOS Simulator,name=<iPad simulator>'
 ```

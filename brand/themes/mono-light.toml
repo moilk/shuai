@@ -1,0 +1,30 @@
+# Mono light (designer "反色版"): black mark on F01 warm white, no texture. For exports on light
+# backgrounds (README, docs), not an iOS appearance.
+name = "mono-light"
+
+[background]
+kind = "solid"
+color = "#f7f5f2"         # F01
+
+[texture]
+enabled = false
+seed = 20241004
+grain = 0.0
+cracks = 0
+motifs = 0
+color = "#000000"
+opacity = 0.0
+keepout = 0.04
+
+[mark]
+fill = "#000000"
+weight = 2.1              # outline offset in source px, as matte
+hole_weight = 1.0         # hole shrink in source px, as matte
+scale = 0.75
+offset = [0.0, 0.0]
+
+[gloss]
+enabled = false
+
+[container]
+kind = "squircle"

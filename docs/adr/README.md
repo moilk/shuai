@@ -9,5 +9,6 @@
 | [0004](0004-mit-license-no-mosh.md) | MIT license; SSH + tmux + reconnect instead of mosh in v1 |
 | [0005](0005-status-only-push-ntfy.md) | Status-only background push through ntfy |
 | [0006](0006-tmux-control-side-channel.md) | Render tmux in one terminal, observe it through a control-mode side channel |
+| [0007](0007-programmatic-brand-icon.md) | Generate the app icon programmatically from a traced master glyph |
 
 New ADRs follow [ADR 0000](0000-record-architecture-decisions.md).

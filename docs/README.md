@@ -19,7 +19,7 @@
 | [Agent protocol](design/agent-protocol.md) | Hooks, event format, `shuai-agent` CLI, state directory, config |
 | [tmux integration](design/tmux-integration.md) | Control-mode side channel, client targeting, version compatibility |
 | [Security model](design/security-model.md) | Threats, mitigations, release guards |
-| [Architecture decisions](adr/README.md) | ADRs 0000-0006 |
+| [Architecture decisions](adr/README.md) | ADRs 0000-0007 |
 
 ## Developing
 
@@ -27,6 +27,7 @@
 |---|---|
 | [Building](development/building.md) | Toolchain, build scripts, app project, DEBUG launch arguments |
 | [Testing](development/testing.md) | Test policy and layers, live E2E test, flaky tests |
+| [App icon](development/icon.md) | Regenerating the icon and brand exports, theme and mark config, fidelity gates |
 | [CI](development/ci.md) | Jobs and what they cover |
 | [Release](development/release.md) | Versioning, release guards, checklist |
 | [Contributing](development/contributing.md) | Workflow, commits, PRs, review checklist |

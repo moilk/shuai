@@ -1,0 +1,8 @@
+{
+  "size": 1024,
+  "appearances": [
+    { "appearance": "light", "theme": "matte", "mark_bounds": [333.382, 128, 690.618, 896] },
+    { "appearance": "dark", "theme": "matte", "mark_bounds": [333.382, 128, 690.618, 896] },
+    { "appearance": "tinted", "theme": "tinted", "mark_bounds": [333.382, 128, 690.618, 896] }
+  ]
+}

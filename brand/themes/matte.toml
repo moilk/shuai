@@ -1,0 +1,39 @@
+# Matte theme (designer "标准磨砂版"): B01 near-black, faint ivory oracle-bone texture, F01 ivory
+# mark on an 8x8 grid with a 1x safe margin. Used for the light and dark appearances.
+name = "matte"
+
+[background]
+kind = "solid"            # solid | linear
+color = "#0b0b0c"         # B01
+# color2 and angle (degrees) are used by kind = "linear"; B02 for a subtle top-down falloff.
+color2 = "#1a1a1d"        # B02
+angle = 90.0
+
+[texture]
+enabled = true
+seed = 20241004
+grain = 0.6               # 0..1 grain density
+cracks = 10               # number of crack branches
+motifs = 12               # number of margin motifs
+color = "#f7f5f2"         # F01 ink, kept faint by the group opacity
+opacity = 0.16            # contrast cap: the mark stays >= 7:1 over the brightest texture pixel
+keepout = 0.04            # fraction of the canvas kept clear around the mark
+
+[mark]
+fill = "#f7f5f2"          # F01
+# Uniform outline offset in source px: every piece (S01 included) grows by this on each side;
+# sharp corners stay mitred. 0 = the source carving. 2.1 keeps the narrowest piece >= 2 px on a
+# 40 px icon at scale 0.75 (2.03 px); 2.0 falls just short, so this is the lightest safe weight.
+weight = 2.1
+# How far the holes shrink (default: weight). 1.0 keeps the lower counter at about 3/4 of its
+# source area, where the full weight would halve it; the upper one is held open regardless.
+hole_weight = 1.0
+scale = 0.75              # share of the canvas the mark's longest side covers (<= 0.75: 1x margin)
+# small_size = { max_px = 64, weight = 0.5 }   # optional extra weight for direct renders <= max_px
+offset = [0.0, 0.0]       # fraction of the canvas
+
+[gloss]
+enabled = false
+
+[container]
+kind = "none"             # none | squircle (iOS applies its own mask)

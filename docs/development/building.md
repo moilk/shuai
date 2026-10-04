@@ -59,6 +59,11 @@ in-process SSH server with hard-coded credentials) so the real-SSH Swift tests c
 prints a loud warning and skips the guard. **Never ship, archive or install this build**; rerun
 the script without the variable to replace it.
 
+## App icon
+
+The icon and brand exports are committed outputs of `tools/icongen` (needs only Rust):
+`cd tools/icongen && cargo run --release -- generate`. See [App icon](icon.md).
+
 ## The app project
 
 `apple/App/project.yml` is the source of truth; the `.xcodeproj` and `Generated/Info.plist` are

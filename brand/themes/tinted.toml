@@ -1,0 +1,30 @@
+# Tinted theme (iOS 18 tinted appearance): grayscale mark on black, no texture. The system
+# derives the tint from luminance, so the mark is a light neutral gray.
+name = "tinted"
+
+[background]
+kind = "solid"
+color = "#000000"
+
+[texture]
+enabled = false
+seed = 20241004
+grain = 0.0
+cracks = 0
+motifs = 0
+color = "#ffffff"
+opacity = 0.0
+keepout = 0.04
+
+[mark]
+fill = "#f2f2f2"
+weight = 2.1              # outline offset in source px, as matte
+hole_weight = 1.0         # hole shrink in source px, as matte
+scale = 0.75
+offset = [0.0, 0.0]
+
+[gloss]
+enabled = false
+
+[container]
+kind = "none"
