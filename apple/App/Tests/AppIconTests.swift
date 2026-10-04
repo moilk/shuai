@@ -11,5 +11,7 @@ import UIKit
 }
 
 @Test func appIconAssetIsInTheCatalog() {
-    #expect(UIImage(named: "AppIcon", in: Bundle.main, compatibleWith: nil) != nil)
+    // `AppIcon` itself is an app-icon set, which UIImage(named:) cannot load by that name; the
+    // compiler emits the home screen sizes under CFBundleIconFiles, loadable from the bundle.
+    #expect(UIImage(named: "AppIcon60x60", in: Bundle.main, compatibleWith: nil) != nil)
 }
