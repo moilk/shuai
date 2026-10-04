@@ -59,6 +59,38 @@ fn points(frag: &str) -> Vec<(f64, f64)> {
     out
 }
 
+/// Mark bounds like the shipped matte theme: tall and narrow, wide margin columns.
+fn tall_bounds() -> MarkBounds {
+    MarkBounds {
+        x0: 325.0,
+        y0: 135.0,
+        x1: 699.0,
+        y1: 880.0,
+    }
+}
+
+fn tex_tall(c: &TextureCfg) -> String {
+    texture::layer_svg(c, &tall_bounds(), SIZE)
+}
+
+/// Bounding boxes (x0, y0, x1, y1) of every `<path>` of a group.
+fn path_boxes(frag: &str) -> Vec<(f64, f64, f64, f64)> {
+    frag.split("<path")
+        .skip(1)
+        .map(|p| {
+            let pts = points(&format!("<path{p}"));
+            let xs = pts.iter().map(|q| q.0);
+            let ys = pts.iter().map(|q| q.1);
+            (
+                xs.clone().fold(f64::MAX, f64::min),
+                ys.clone().fold(f64::MAX, f64::min),
+                xs.fold(f64::MIN, f64::max),
+                ys.fold(f64::MIN, f64::max),
+            )
+        })
+        .collect()
+}
+
 fn fnv1a(s: &str) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {
@@ -217,6 +249,93 @@ fn opacity_caps_ink_coverage() {
     let max = pix.data().chunks(4).map(|p| p[0]).max().unwrap();
     assert!(max <= 52, "max channel {max}");
     assert!(max > 0);
+}
+
+#[test]
+fn stone_layer_is_filled_paths_only() {
+    let svg = tex(&cfg());
+    let stone = group(&svg, "stone");
+    assert!(stone.matches("<path").count() >= 2, "stone layer is empty");
+    assert!(stone.len() > 5_000, "stone layer is too thin");
+    assert!(!svg.contains("stroke"), "texture uses stroke attributes");
+    assert!(!svg.contains("e-") && !svg.contains("e+"), "exponent number");
+    // Soft layers: every stone path carries its own sub-unit alpha.
+    for p in stone.split("<path").skip(1) {
+        assert!(p.contains("fill-opacity=\""), "stone path without alpha");
+    }
+}
+
+#[test]
+fn stone_is_independent_of_other_classes() {
+    let base = tex(&cfg());
+    let mut c = cfg();
+    c.cracks = 9;
+    c.motifs = 11;
+    c.grain = 0.5;
+    assert_eq!(group(&base, "stone"), group(&tex(&c), "stone"));
+}
+
+#[test]
+fn motifs_are_character_scale_in_side_columns() {
+    let mut c = cfg();
+    c.motifs = 12;
+    let b = tall_bounds();
+    let k = c.keepout * f64::from(SIZE);
+    let s = f64::from(SIZE);
+    for seed in [1u64, 2, 20241004] {
+        c.seed = seed;
+        let boxes = path_boxes(&group(&tex_tall(&c), "motifs"));
+        assert!(boxes.len() >= 5, "only {} motifs placed, seed {seed}", boxes.len());
+        let big = boxes
+            .iter()
+            .filter(|r| (r.3 - r.1).max(r.2 - r.0) >= 0.15 * s)
+            .count();
+        assert!(big >= 4, "only {big} character-scale motifs, seed {seed}");
+        for r in &boxes {
+            assert!(r.3 - r.1 <= 0.36 * s, "motif taller than 36% of the canvas");
+            // Each motif lives wholly in the left or the right column.
+            assert!(
+                r.2 <= b.x0 - k || r.0 >= b.x1 + k,
+                "motif {r:?} outside the side columns, seed {seed}"
+            );
+        }
+        let left = boxes.iter().filter(|r| r.2 <= b.x0 - k).count();
+        assert!(left >= 2 && boxes.len() - left >= 2, "columns unbalanced");
+    }
+}
+
+#[test]
+fn cracks_form_a_network_across_the_margins() {
+    let mut c = cfg();
+    c.cracks = 10;
+    let b = tall_bounds();
+    for seed in [1u64, 2, 20241004] {
+        c.seed = seed;
+        let pts = points(&group(&tex_tall(&c), "cracks"));
+        assert!(pts.len() > 1500, "only {} crack vertices, seed {seed}", pts.len());
+        let ys = pts.iter().map(|p| p.1);
+        let span = ys.clone().fold(f64::MIN, f64::max) - ys.fold(f64::MAX, f64::min);
+        assert!(span > 0.8 * f64::from(SIZE), "cracks span only {span}px");
+        assert!(pts.iter().any(|p| p.0 < b.x0 * 0.6), "no cracks far left");
+        assert!(pts.iter().any(|p| p.0 > 1024.0 - b.x0 * 0.6), "no cracks far right");
+    }
+}
+
+#[test]
+fn shipped_density_stays_within_budget() {
+    let mut c = cfg();
+    c.grain = 0.6;
+    c.cracks = 10;
+    c.motifs = 12;
+    c.opacity = 0.16;
+    let svg = tex_tall(&c);
+    assert!(svg.len() < 1_500_000, "svg is {} bytes", svg.len());
+    let doc = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"1024\" viewBox=\"0 0 1024 1024\">{svg}</svg>"
+    );
+    let t = std::time::Instant::now();
+    render::render(&doc, 1024).unwrap();
+    assert!(t.elapsed().as_secs_f64() < 2.0);
 }
 
 #[test]
