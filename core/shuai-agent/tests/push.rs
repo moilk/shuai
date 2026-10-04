@@ -176,7 +176,7 @@ fn fake_tmux(dir: &Path, script: &str) {
 }
 
 #[test]
-fn body_has_host_and_tmux_window_label() {
+fn body_has_host_and_tmux_session_and_window_index() {
     let h = home();
     let bin = home();
     let m = mock_server();
@@ -184,7 +184,7 @@ fn body_has_host_and_tmux_window_label() {
     let log = bin.path().join("args");
     fake_tmux(
         bin.path(),
-        &format!("echo \"$@\" > {}\necho 'main › 2: claude'", log.display()),
+        &format!("echo \"$@\" > {}\necho 'main › 2'", log.display()),
     );
     let e = Env {
         pane: Some("%5"),
@@ -193,10 +193,11 @@ fn body_has_host_and_tmux_window_label() {
     };
     fire(h.path(), "Stop", &ev("Stop", "s", ""), &e);
     let r = recv(&m);
-    assert_eq!(r.body, "test-host · main › 2: claude");
+    assert_eq!(r.body, "test-host · main › 2");
     let args = std::fs::read_to_string(log).unwrap();
     assert!(args.contains("display-message -p -t %5"), "{args}");
     assert!(args.contains("#{session_name}"), "{args}");
+    assert!(!args.contains("window_name"), "window names are opt-in: {args}");
 }
 
 #[test]
