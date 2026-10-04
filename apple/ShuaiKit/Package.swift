@@ -18,7 +18,7 @@ let package = Package(
         .library(name: "ShuaiApp", targets: ["ShuaiApp"]),
     ],
     dependencies: [
-        // Pinned exactly: single-maintainer wrapper tracking Ghostty tip (see docs/adr/0001).
+        // Pinned exactly: single-maintainer wrapper tracking Ghostty tip (see docs/adr/0001-terminal-engine.md).
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "1.6.20261003"),
     ],
     targets: [

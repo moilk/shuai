@@ -264,12 +264,12 @@ fn parse_probe_full_output() {
 #[test]
 fn parse_probe_is_lenient() {
     let out = "Welcome to Ubuntu!\r\nuname_s=Darwin\r\nuname_m=arm64\r\nclaude_path=\r\n\
-               tmux_version=\nplugin_installed=0\nweird line\nunknown=1\n  home = /Users/x \n\
+               tmux_version=\nplugin_installed=0\nweird line\nunknown=1\n  home = /home/x \n\
                codex_path=/a=b/codex\n";
     let p = parse_probe(out);
     assert_eq!(p.uname_s, "Darwin");
     assert_eq!(p.uname_m, "arm64");
-    assert_eq!(p.home, "/Users/x");
+    assert_eq!(p.home, "/home/x");
     assert_eq!(p.claude_path, None);
     assert_eq!(p.tmux_version, None);
     assert!(!p.plugin_installed);
@@ -459,7 +459,7 @@ fn probe_script_runs_under_dash_if_available() {
     assert!(!p.uname_s.is_empty());
 }
 
-/// Manual: `SHUAI_PROBE_SSH_HOST=mdev cargo test -p shuai-agentkit -- --ignored probe_over_ssh`
+/// Manual: `SHUAI_PROBE_SSH_HOST=<ssh-host> cargo test -p shuai-agentkit -- --ignored probe_over_ssh`
 #[test]
 #[ignore]
 fn probe_over_ssh() {

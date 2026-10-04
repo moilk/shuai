@@ -2,7 +2,7 @@
 //
 // Defaults keep device builds unsigned (CI and fresh clones build without an Apple account).
 // To install on your iPad, copy Local.xcconfig.example to Local.xcconfig (gitignored), set your
-// Team ID and a bundle id you own, then re-run `xcodegen generate`. See docs/guide/install-ipad.md.
+// Team ID and a bundle id you own, then re-run `xcodegen generate`. See docs/user/installation.md.
 
 CODE_SIGNING_ALLOWED = NO
 CODE_SIGN_STYLE = Automatic
