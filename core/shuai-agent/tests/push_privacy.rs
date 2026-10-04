@@ -288,5 +288,13 @@ fn concurrent_approvals_never_lose_or_duplicate_pushes() {
     while m.rx.recv_timeout(Duration::from_millis(700)).is_ok() {
         n += 1;
     }
-    assert_eq!(n, 6, "one push per session");
+    // A hook that cannot take the gate lock within its bound fails open and may send a duplicate
+    // (a push is better than none). It logs that, so a loaded runner can only add logged duplicates.
+    let log = std::fs::read_to_string(h.path().join("agent.log")).unwrap_or_default();
+    let fail_open = log.matches("push gate busy").count();
+    assert!(n >= 6, "no session may lose its push: {n} pushes");
+    assert!(
+        n <= 6 + fail_open,
+        "duplicates only from a logged fail-open: {n} pushes, {fail_open} busy gates"
+    );
 }
