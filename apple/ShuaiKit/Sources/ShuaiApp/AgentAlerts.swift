@@ -80,3 +80,17 @@ public enum AttentionNotificationPolicy {
         }
     }
 }
+
+/// The one-time "get notified in the background?" opt-in. It is shown non-modally (a banner), never on top of a
+/// permission card, which the user has to answer first.
+public enum NotificationOptInPolicy {
+    /// A live attention event arrived: should the opt-in be queued?
+    public static func shouldOffer(explained: Bool, notifierAvailable: Bool, appActive: Bool) -> Bool {
+        !explained && notifierAvailable && appActive
+    }
+
+    /// Whether the queued opt-in is on screen right now (deferred while any permission card is pending).
+    public static func isVisible(offerPending: Bool, pendingPermissionCards: Int) -> Bool {
+        offerPending && pendingPermissionCards == 0
+    }
+}

@@ -30,6 +30,7 @@ enum DebugLaunch {
         var user: String
         var keyPath: String
         var tmuxSession: String?
+        var tmuxArgs: String?
     }
 
     @MainActor
@@ -48,6 +49,7 @@ enum DebugLaunch {
             profile.port = file.port ?? 22
             profile.username = file.user
             profile.auth = .key(keyID: key.id)
+            TmuxLaunch.debugArgs = file.tmuxArgs.map { " " + $0 } ?? ""
             profile.tmux = TmuxPrefs(enabled: true, sessionName: file.tmuxSession ?? "shuai-sim-test")
             if model.hosts.host(id: profile.id) == nil { try model.hosts.add(profile) } else { try model.hosts.update(profile) }
             model.selection = profile.id

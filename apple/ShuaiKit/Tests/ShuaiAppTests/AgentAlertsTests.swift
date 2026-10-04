@@ -121,3 +121,27 @@ struct TrackerChangeKeyTests {
         #expect(changes.allSatisfy { $0.sessionKey == key })
     }
 }
+
+@Suite("NotificationOptInPolicy")
+struct NotificationOptInPolicyTests {
+    @Test func offeredOnceWhenAppIsActiveAndNotifierExists() {
+        #expect(NotificationOptInPolicy.shouldOffer(explained: false, notifierAvailable: true, appActive: true))
+    }
+
+    @Test func neverOfferedAgainOnceExplained() {
+        #expect(!NotificationOptInPolicy.shouldOffer(explained: true, notifierAvailable: true, appActive: true))
+    }
+
+    @Test func notOfferedWithoutNotifierOrInBackground() {
+        #expect(!NotificationOptInPolicy.shouldOffer(explained: false, notifierAvailable: false, appActive: true))
+        #expect(!NotificationOptInPolicy.shouldOffer(explained: false, notifierAvailable: true, appActive: false))
+    }
+
+    @Test func neverShownWhileACardWaitsForAnAnswer() {
+        // The opt-in is non-modal and deferred: the permission card is what the user must answer.
+        #expect(!NotificationOptInPolicy.isVisible(offerPending: true, pendingPermissionCards: 1))
+        #expect(!NotificationOptInPolicy.isVisible(offerPending: true, pendingPermissionCards: 3))
+        #expect(NotificationOptInPolicy.isVisible(offerPending: true, pendingPermissionCards: 0))
+        #expect(!NotificationOptInPolicy.isVisible(offerPending: false, pendingPermissionCards: 0))
+    }
+}

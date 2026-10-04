@@ -222,7 +222,11 @@ final class AppModel {
             guard let content = AttentionNotificationPolicy.content(for: change, session: session, hostName: hostName, appActive: false)
             else { continue }
             if appActive {
-                if !settings.notificationsExplained, notifier != nil { showNotificationExplainer = true }
+                if NotificationOptInPolicy.shouldOffer(
+                    explained: settings.notificationsExplained, notifierAvailable: notifier != nil, appActive: true)
+                {
+                    showNotificationExplainer = true
+                }
             } else if settings.notificationsEnabled {
                 Task { await notifier?.post(content, profileID: profileID) }
             }
@@ -230,6 +234,7 @@ final class AppModel {
     }
 
     func enableNotifications() {
+        showNotificationExplainer = false
         settings.notificationsExplained = true
         Task {
             let granted = await notifier?.requestAuthorization() ?? false
@@ -237,7 +242,10 @@ final class AppModel {
         }
     }
 
-    func declineNotifications() { settings.notificationsExplained = true }
+    func declineNotifications() {
+        showNotificationExplainer = false
+        settings.notificationsExplained = true
+    }
 
     // MARK: AI integration host menu
 

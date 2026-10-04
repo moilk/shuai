@@ -48,7 +48,15 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
         self.altSendsEscape = altSendsEscape
         self.theme = theme
         session = InMemoryTerminalSession(
-            write: { data in DispatchQueue.main.async { box.handler?(data) } },
+            write: { data in
+                #if DEBUG
+                if let delay = Self.debugReplyDelay(for: data) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { box.handler?(data) }
+                    return
+                }
+                #endif
+                DispatchQueue.main.async { box.handler?(data) }
+            },
             resize: { _ in }
         )
         controller = TerminalController(theme: theme.ghostty) { b in
@@ -75,6 +83,18 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
         view.controller = controller
         view.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
     }
+
+    #if DEBUG
+    /// DEBUG-only (`-debugDelayReplies <seconds>`): holds back DA1/DA2/XTVERSION replies to reproduce a late engine.
+    nonisolated private static func debugReplyDelay(for data: Data) -> TimeInterval? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-debugDelayReplies"), i + 1 < args.count, let sec = TimeInterval(args[i + 1]),
+              data.count > 2, data[data.startIndex] == 0x1B else { return nil }
+        let b1 = data[data.startIndex + 1], b2 = data[data.startIndex + 2]
+        let isDA = b1 == 0x5B && (b2 == 0x3F || b2 == 0x3E) && data.last == 0x63
+        return isDA || b1 == 0x50 ? sec : nil
+    }
+    #endif
 
     // MARK: TerminalEngine
 

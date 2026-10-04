@@ -324,7 +324,9 @@ struct AgentInstallerTests {
         #expect(cmds.contains("/home/u/.local/bin/claude plugin uninstall shuai@shuai"))
         #expect(cmds.contains("/home/u/.local/bin/claude plugin marketplace remove shuai"))
         #expect(cmds.contains { $0.contains("awk") && $0.contains("~/.tmux.conf") })
-        #expect(cmds.contains("rm -rf /home/u/.shuai/bin /home/u/.shuai/plugin-marketplace"))
+        // A running agent (the app's own monitor) would recreate its state dir after the rm: stop it first,
+        // then remove the whole ~/.shuai (binary, plugin copy and runtime state), plus Claude Code's orphaned plugin cache for our marketplace, so nothing is left behind.
+        #expect(cmds.contains("pkill -f '[.]shuai/bin/shuai-agent'; sleep 0.3; rm -rf /home/u/.shuai /home/u/.claude/plugins/cache/shuai"))
         let s = remote.uploads.get.first { $0.path == "/home/u/.claude/settings.json.shuai-tmp" }
         let sText = String(decoding: s?.data ?? Data(), as: UTF8.self)
         #expect(!sText.contains("shuai-agent"))
