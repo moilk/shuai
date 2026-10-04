@@ -1,6 +1,6 @@
 //! UniFFI export layer.
 //!
-//! Conventions (see CLAUDE.md): coarse session/stream-level API only; data crosses as
+//! Conventions (see core/CLAUDE.md): coarse session/stream-level API only; data crosses as
 //! records/enums (`#[derive(uniffi::Record/Enum)]`), stateful things as objects; errors are
 //! flat per-domain enums (`FfiKeyError`, `FfiSshError`, `FfiTmuxError`); platform
 //! integrations are `with_foreign` callback traits. Logic lives in the pure crates.

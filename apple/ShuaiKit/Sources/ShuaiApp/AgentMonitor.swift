@@ -83,7 +83,7 @@ private final class WatchActivity: @unchecked Sendable {
 ///   the boundary.
 /// * Reconnect: call `attach(remote:)` again; the watch resumes at the tracker's last seq.
 /// * The stream is drained continuously (a stalled exec channel would stall the whole SSH
-///   session), see CLAUDE.md "Drain requirement".
+///   session), see docs/design/architecture.md "Drain requirement".
 /// * Every `reconcileInterval` the sessions are corrected from `claude agents --json`.
 @MainActor @Observable
 public final class AgentMonitor: PaneBadgeProvider {
