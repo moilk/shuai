@@ -74,7 +74,8 @@ fn hook_with_pane(h: &std::path::Path, event: &str, fx: &str) {
     let mut c = agent(h);
     c.args(["hook", event])
         .env("TMUX_PANE", "%5")
-        .env("TMUX", "/tmp/tmux-1000/default,1,0");
+        .env("TMUX", "/tmp/tmux-1000/default,1,0")
+        .env("SHUAI_PUSH_MIN_INTERVAL_SECS", "0");
     let out = run_with_stdin(c, &fixture(fx));
     assert_eq!(out.status.code(), Some(0));
     assert!(out.stdout.is_empty());
@@ -88,8 +89,9 @@ fn permission_prompt_notification_pushes_when_app_absent() {
     hook_with_pane(h.path(), "Notification", "notification_permission");
     let r = m.rx.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(r.request_line, "POST /my-topic HTTP/1.1");
-    assert!(r.body.contains("permission"), "{}", r.body);
-    assert_eq!(r.headers["click"], "shuai://host/test-host/pane/%255");
+    assert_eq!(r.headers["title"], "Claude needs approval");
+    assert_eq!(r.body, "test-host");
+    assert_eq!(r.headers["click"], "shuai://open?host=test-host&pane=%255");
     assert!(r.headers.contains_key("title"));
     // event still recorded
     assert_eq!(events(h.path()).len(), 1);
@@ -101,10 +103,12 @@ fn idle_prompt_and_stop_push_too() {
     let m = mock_server();
     cfg(h.path(), &m.url);
     hook_with_pane(h.path(), "Notification", "notification_idle");
-    m.rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let r = m.rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(r.headers["title"], "Claude is waiting for input");
     hook_with_pane(h.path(), "Stop", "stop");
     let r = m.rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert!(r.body.contains("All tests pass"), "{}", r.body);
+    assert_eq!(r.headers["title"], "Claude finished");
+    assert!(!r.body.contains("All tests pass"), "{}", r.body);
 }
 
 #[test]
