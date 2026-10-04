@@ -2,6 +2,8 @@
 # Dark keeps the opaque B01 matte look; tinted is a grayscale mark on black for the system tint.
 # mono-dark and mono-light are export-only themes.
 size = 1024
+# AppIcon asset catalog written by `icongen generate`, relative to the repository root.
+appiconset = "apple/App/Resources/Assets.xcassets/AppIcon.appiconset"
 
 [appearances]
 light = "matte"

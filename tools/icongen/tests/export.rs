@@ -107,6 +107,22 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 #[test]
+fn appiconset_path_must_stay_inside_the_repo() {
+    let base = std::fs::read_to_string(brand().join("icon.toml")).unwrap();
+    assert!(icongen::config::IconCfg::from_toml(&base).is_ok());
+    for bad in ["/abs/path", "../outside", "a/../b", ""] {
+        let t = base.replace(
+            "apple/App/Resources/Assets.xcassets/AppIcon.appiconset",
+            bad,
+        );
+        assert!(
+            icongen::config::IconCfg::from_toml(&t).is_err(),
+            "{bad:?} accepted"
+        );
+    }
+}
+
+#[test]
 fn check_fails_when_catalog_or_export_files_are_stale() {
     let root = scratch("export-stale");
     let b = root.join("brand");
@@ -117,7 +133,7 @@ fn check_fails_when_catalog_or_export_files_are_stale() {
 
     // Stale catalog PNG (a different image).
     let keep = std::fs::read(set.join("AppIcon-dark.png")).unwrap();
-    std::fs::copy(set.join("AppIcon-light.png"), set.join("AppIcon-dark.png")).unwrap();
+    std::fs::copy(set.join("AppIcon-tinted.png"), set.join("AppIcon-dark.png")).unwrap();
     let errs = pipeline::check(&b).unwrap_err();
     assert!(
         errs.iter().any(|e| e.contains("AppIcon-dark.png")),

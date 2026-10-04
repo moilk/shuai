@@ -59,7 +59,105 @@ pub fn build(brand: &Path) -> Result<Files, String> {
     }
     manifest.push_str("  ]\n}\n");
     files.push(("out/manifest.json".into(), manifest.into_bytes()));
+    catalog(&icon, &mut files);
+    exports(brand, &glyph, &mut files)?;
     Ok(files)
+}
+
+const CONTENTS_JSON: &str = r#"{
+  "images" : [
+    {
+      "filename" : "AppIcon-light.png",
+      "idiom" : "universal",
+      "platform" : "ios",
+      "size" : "1024x1024"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "dark"
+        }
+      ],
+      "filename" : "AppIcon-dark.png",
+      "idiom" : "universal",
+      "platform" : "ios",
+      "size" : "1024x1024"
+    },
+    {
+      "appearances" : [
+        {
+          "appearance" : "luminosity",
+          "value" : "tinted"
+        }
+      ],
+      "filename" : "AppIcon-tinted.png",
+      "idiom" : "universal",
+      "platform" : "ios",
+      "size" : "1024x1024"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
+"#;
+
+/// The AppIcon asset catalog: the three rendered icons plus the iOS 18 single-size manifest.
+/// Paths are relative to the brand dir (the catalog lives beside it in the repo).
+fn catalog(icon: &IconCfg, files: &mut Files) {
+    let dir = format!("../{}", icon.appiconset);
+    let mut extra: Files = Vec::new();
+    for a in ["light", "dark", "tinted"] {
+        let want = format!("out/{a}/icon.png");
+        let png = files
+            .iter()
+            .find(|(n, _)| *n == want)
+            .expect("icon rendered above")
+            .1
+            .clone();
+        extra.push((format!("{dir}/AppIcon-{a}.png"), png));
+    }
+    extra.push((
+        format!("{dir}/Contents.json"),
+        CONTENTS_JSON.as_bytes().to_vec(),
+    ));
+    files.extend(extra);
+}
+
+/// Pixel sizes of the squircle favicon exports.
+const FAVICONS: [u32; 3] = [16, 32, 48];
+const README_PX: u32 = 256;
+
+/// Brand exports from the mono themes: transparent marks, favicons and a README icon.
+fn exports(brand: &Path, glyph: &Glyph, files: &mut Files) -> Result<(), String> {
+    let theme = |name: &str| ThemeCfg::from_toml(&read(brand, &format!("themes/{name}.toml"))?);
+    let dark = theme("mono-dark")?; // ivory mark on near-black
+    let light = theme("mono-light")?; // black mark on warm white
+    let size = 1024;
+    // Mark-only SVGs: black for light backgrounds, ivory for dark ones.
+    files.push((
+        "out/exports/mark.svg".into(),
+        svg::layers(&light, glyph, size).mark.into_bytes(),
+    ));
+    files.push((
+        "out/exports/mark-light.svg".into(),
+        svg::layers(&dark, glyph, size).mark.into_bytes(),
+    ));
+    for px in FAVICONS {
+        let pix = render::render(&svg::layers(&dark, glyph, px).composite, px)?;
+        files.push((
+            format!("out/exports/favicon-{px}.png"),
+            png_out::encode_rgba(&pix),
+        ));
+    }
+    let pix = render::render(&svg::layers(&dark, glyph, README_PX).composite, README_PX)?;
+    files.push((
+        "out/exports/readme-256.png".into(),
+        png_out::encode_rgba(&pix),
+    ));
+    Ok(())
 }
 
 /// Writes all generated files under the brand dir.

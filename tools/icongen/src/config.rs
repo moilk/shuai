@@ -7,6 +7,13 @@ use serde::Deserialize;
 pub struct IconCfg {
     pub size: u32,
     pub appearances: Appearances,
+    /// Asset catalog directory, relative to the repository root (the brand dir's parent).
+    #[serde(default = "default_appiconset")]
+    pub appiconset: String,
+}
+
+fn default_appiconset() -> String {
+    "apple/App/Resources/Assets.xcassets/AppIcon.appiconset".into()
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -142,6 +149,17 @@ impl IconCfg {
         let c: IconCfg = toml::from_str(s).map_err(|e| e.to_string())?;
         if !(16..=4096).contains(&c.size) {
             return Err(format!("size out of range: {}", c.size));
+        }
+        let p = std::path::Path::new(&c.appiconset);
+        if c.appiconset.is_empty()
+            || !p
+                .components()
+                .all(|k| matches!(k, std::path::Component::Normal(_)))
+        {
+            return Err(format!(
+                "appiconset must be a relative path inside the repo: {:?}",
+                c.appiconset
+            ));
         }
         Ok(c)
     }
