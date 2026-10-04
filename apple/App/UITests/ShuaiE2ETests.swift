@@ -81,9 +81,8 @@ final class ShuaiE2ETests: XCTestCase {
         typeIntoTerminal(app, env["SHUAI_E2E_TEXT"] ?? "")
         let card = app.descendants(matching: .any)["permission-card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 90), "permission card appears")
-        // The one-time "Get notified in the background?" explainer can sit on top of the card.
-        let notNow = app.buttons["Not now"]
-        if notNow.waitForExistence(timeout: 3) { notNow.tap() }
+        // The notification opt-in is a deferred banner (not an alert): it must never cover the card.
+        XCTAssertFalse(app.descendants(matching: .any)["notify-optin"].firstMatch.exists, "opt-in waits for the card")
         sleep(1)
         let shot = app.screenshot()
         if let dir = env["SHUAI_E2E_OUT_DIR"] {

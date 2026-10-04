@@ -31,12 +31,7 @@ struct RootView: View {
         .sheet(item: $model.agentInstall) { req in
             AgentInstallSheet(model: req.model, hostName: req.host.name) { model.closeAgentInstall() }
         }
-        .alert("Get notified in the background?", isPresented: $model.showNotificationExplainer) {
-            Button("Enable") { model.enableNotifications() }
-            Button("Not now", role: .cancel) { model.declineNotifications() }
-        } message: {
-            Text("shuai can send a notification when Claude needs your approval or finishes while the app is in the background. iOS suspends apps soon after you leave them, so this is best effort.")
-        }
+        .overlay(alignment: .bottom) { NotificationOptInBanner() }
         .sheet(isPresented: $model.showSettings) { SettingsView() }
         .sheet(isPresented: $model.showKeys) { NavigationStack { KeysView() } }
         #if DEBUG
@@ -216,6 +211,41 @@ struct HostRow: View {
         case .connected: "Connected"
         case .warning: "Reconnecting"
         case .error: "Connection failed"
+        }
+    }
+}
+
+/// Non-modal opt-in for background notifications. Unlike an alert it never covers a permission card: it waits
+/// until no card is pending (`NotificationOptInPolicy`).
+struct NotificationOptInBanner: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if NotificationOptInPolicy.isVisible(
+            offerPending: model.showNotificationExplainer, pendingPermissionCards: model.agentHub.pendingPermissions.count)
+        {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Get notified in the background?", systemImage: "bell.badge").font(.headline)
+                Text("shuai can send a notification when Claude needs your approval or finishes while the app is in the background. iOS suspends apps soon after you leave them, so this is best effort.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                HStack {
+                    Button("Not now") { model.declineNotifications() }
+                        .accessibilityIdentifier("notify-not-now")
+                    Spacer()
+                    Button("Enable") { model.enableNotifications() }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("notify-enable")
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: 460)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .shadow(radius: 8, y: 2)
+            .padding(.bottom, 24)
+            .padding(.horizontal, 16)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("notify-optin")
         }
     }
 }
