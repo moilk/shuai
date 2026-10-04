@@ -18,6 +18,8 @@ pub struct State {
 pub struct Config {
     /// Id of this host in deep links (`shuai://host/<id>/...`); defaults to the hostname.
     pub host_id: Option<String>,
+    /// Human-readable host name shown in pushes (the app's host profile name).
+    pub host_name: Option<String>,
     pub ntfy: Option<Ntfy>,
 }
 
@@ -128,6 +130,18 @@ impl State {
     /// How long a `watch` heartbeat keeps the app "present".
     pub fn presence_ttl(&self) -> Duration {
         Duration::from_secs_f64(env_f64("SHUAI_PRESENCE_TTL_SECS", 30.0).max(0.0))
+    }
+
+    /// Minimum seconds between two non-approval pushes of one session.
+    pub fn push_min_interval(&self) -> Duration {
+        Duration::from_secs_f64(env_f64("SHUAI_PUSH_MIN_INTERVAL_SECS", 10.0).max(0.0))
+    }
+
+    pub fn push_gate_path(&self) -> PathBuf {
+        self.dir.join("push.json")
+    }
+    pub fn push_lock_path(&self) -> PathBuf {
+        self.dir.join("push.lock")
     }
 
     pub fn poll_interval(&self) -> Duration {

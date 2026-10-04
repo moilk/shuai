@@ -1,8 +1,13 @@
 //! Push notifications through an ntfy server.
+//!
+//! Privacy: a push carries *status only* (what happened, which host, which tmux window). No
+//! prompt, command, tool input, assistant message or path ever goes into a push; the builders
+//! below never read those fields of an event, and `tests/push.rs` asserts it end to end.
 
-use crate::state::{Ntfy, Result, State, hostname};
+use crate::state::{Ntfy, Result, State, hostname, now_ms, private_open};
 use shuai_proto::{AgentEvent, Envelope};
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Default, Clone)]
 pub struct Message<'a> {
@@ -48,81 +53,260 @@ fn percent_encode(s: &str) -> String {
     out
 }
 
-fn clip(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let mut t: String = s.chars().take(max).collect();
-        t.push('…');
-        t
-    }
-}
-
-/// Deep link back to the pane: `shuai://host/<host_id>/pane/<%N>`.
+/// Deep link back to the pane: `shuai://open?host=<host_id>&pane=<%N>` (both percent-encoded).
 pub fn click_url(state: &State, env: &Envelope) -> Option<String> {
     let pane = &env.tmux.as_ref()?.pane;
     let host = state.config().host_id.unwrap_or_else(hostname);
     Some(format!(
-        "shuai://host/{}/pane/{}",
+        "shuai://open?host={}&pane={}",
         percent_encode(&host),
         percent_encode(pane)
     ))
 }
 
-/// Push a notification for "attention worthy" events when ntfy is configured and no app is
-/// watching. Failures are logged, never returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// `PermissionRequest` hook.
+    ApprovalRequest,
+    /// `Notification` with `permission_prompt`.
+    ApprovalPrompt,
+    Idle,
+    Done,
+    Failed,
+    CodexDone,
+}
+
+impl Kind {
+    fn is_approval(self) -> bool {
+        matches!(self, Kind::ApprovalRequest | Kind::ApprovalPrompt)
+    }
+    fn title(self) -> &'static str {
+        match self {
+            Kind::ApprovalRequest | Kind::ApprovalPrompt => "Claude needs approval",
+            Kind::Idle => "Claude is waiting for input",
+            Kind::Done => "Claude finished",
+            Kind::Failed => "Claude stopped with an error",
+            Kind::CodexDone => "Codex finished",
+        }
+    }
+    fn priority(self) -> &'static str {
+        if self.is_approval() {
+            "high"
+        } else {
+            "default"
+        }
+    }
+    fn tags(self) -> &'static str {
+        match self {
+            Kind::ApprovalRequest | Kind::ApprovalPrompt => "warning",
+            Kind::Idle => "hourglass",
+            Kind::Done | Kind::CodexDone => "white_check_mark",
+            Kind::Failed => "x",
+        }
+    }
+}
+
+/// What kind of push (if any) an event deserves, plus the key of its session. Reads *only* the
+/// event type, never its content (apart from ids used for dedupe, which are not sent).
+fn classify(env: &Envelope) -> Option<(Kind, String)> {
+    let key = |s: &str| {
+        if !s.is_empty() {
+            s.to_string()
+        } else {
+            env.tmux
+                .as_ref()
+                .map(|t| t.pane.clone())
+                .unwrap_or_else(|| "-".into())
+        }
+    };
+    Some(match &env.event {
+        AgentEvent::PermissionRequest { ctx, .. } => (Kind::ApprovalRequest, key(&ctx.session_id)),
+        AgentEvent::Notification {
+            ctx,
+            notification_type,
+            ..
+        } => match notification_type.as_deref() {
+            Some("permission_prompt") => (Kind::ApprovalPrompt, key(&ctx.session_id)),
+            Some("idle_prompt") => (Kind::Idle, key(&ctx.session_id)),
+            _ => return None,
+        },
+        AgentEvent::Stop { ctx, .. } if ctx.agent_id.is_none() => {
+            (Kind::Done, key(&ctx.session_id))
+        }
+        AgentEvent::StopFailure { ctx, .. } => (Kind::Failed, key(&ctx.session_id)),
+        AgentEvent::AgentTurnComplete { thread_id, .. } => (
+            Kind::CodexDone,
+            key(thread_id.as_deref().unwrap_or_default()),
+        ),
+        _ => return None,
+    })
+}
+
+/// A `PermissionRequest` and the `Notification:permission_prompt` that follows it describe the
+/// same prompt; they pair up within this window.
+const PAIR_WINDOW_MS: u64 = 60_000;
+/// Entries not touched for this long are forgotten.
+const GATE_TTL_MS: u64 = 3_600_000;
+
+fn lock_gate(state: &State) -> Option<std::fs::File> {
+    state.ensure().ok()?;
+    let f = private_open()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(state.push_lock_path())
+        .ok()?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match f.try_lock() {
+            Ok(()) => return Some(f),
+            Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Dedupe and rate limit. Returns whether a push for `kind` in `session` may go out now, and
+/// records the decision. State lives in `push.json` (under `push.lock`); a broken gate fails open.
+fn admit(state: &State, session: &str, kind: Kind, now: u64) -> bool {
+    let Some(_lock) = lock_gate(state) else {
+        return true;
+    };
+    let mut root: serde_json::Value = std::fs::read_to_string(state.push_gate_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let map = root.as_object_mut().expect("object");
+    map.retain(|_, v| {
+        ["last", "req", "prompt"]
+            .iter()
+            .filter_map(|k| v.get(k).and_then(|n| n.as_u64()))
+            .max()
+            .is_some_and(|t| now.saturating_sub(t) < GATE_TTL_MS)
+    });
+    let entry = map
+        .entry(session.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    let get = |e: &serde_json::Value, k: &str| e.get(k).and_then(|n| n.as_u64());
+    let fresh = |t: Option<u64>| t.is_some_and(|t| now.saturating_sub(t) < PAIR_WINDOW_MS);
+    let e = entry.as_object_mut().expect("object");
+    let allowed = match kind {
+        Kind::ApprovalRequest => {
+            if fresh(get(&serde_json::Value::Object(e.clone()), "prompt")) {
+                e.remove("prompt");
+                false
+            } else {
+                e.insert("req".into(), now.into());
+                true
+            }
+        }
+        Kind::ApprovalPrompt => {
+            if fresh(get(&serde_json::Value::Object(e.clone()), "req")) {
+                e.remove("req");
+                false
+            } else {
+                e.insert("prompt".into(), now.into());
+                true
+            }
+        }
+        _ => {
+            let min = state.push_min_interval().as_millis() as u64;
+            let last = get(&serde_json::Value::Object(e.clone()), "last");
+            if min > 0 && last.is_some_and(|l| now.saturating_sub(l) < min) {
+                false
+            } else {
+                e.insert("last".into(), now.into());
+                true
+            }
+        }
+    };
+    let tmp = state.dir.join("push.json.tmp");
+    let write = private_open()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&tmp)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, root.to_string().as_bytes()))
+        .and_then(|()| std::fs::rename(&tmp, state.push_gate_path()));
+    if let Err(e) = write {
+        state.log(&format!("push gate: {e}"));
+    }
+    allowed
+}
+
+/// `session › index: window` of the pane, best effort (short timeout, never fails).
+fn tmux_label(pane: &str) -> Option<String> {
+    let mut child = Command::new("tmux")
+        .args([
+            "display-message",
+            "-p",
+            "-t",
+            pane,
+            "#{session_name} › #{window_index}: #{window_name}",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    if !status.success() {
+        return None;
+    }
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut child.stdout.take()?, &mut out).ok()?;
+    let label = out.trim();
+    if label.is_empty() || label.chars().any(char::is_control) {
+        return None;
+    }
+    Some(label.chars().take(80).collect())
+}
+
+/// Push a status-only notification for "attention worthy" events when ntfy is configured and no
+/// app is watching. Failures are logged, never returned.
 pub fn maybe_push(state: &State, env: &Envelope) {
     let cfg = state.config();
-    let Some(ntfy) = cfg.ntfy else { return };
+    let Some(ntfy) = cfg.ntfy.clone() else { return };
     if state.present() {
         return;
     }
-    let (title, body, priority, tags): (&str, String, &str, &str) = match &env.event {
-        AgentEvent::Notification {
-            notification_type,
-            message,
-            ..
-        } => {
-            let msg = message.clone().unwrap_or_default();
-            match notification_type.as_deref() {
-                Some("permission_prompt") => ("Claude needs approval", msg, "high", "warning"),
-                Some("idle_prompt") => ("Claude is waiting for you", msg, "default", "hourglass"),
-                _ => return,
-            }
-        }
-        AgentEvent::Stop {
-            last_assistant_message,
-            ctx,
-            ..
-        } if ctx.agent_id.is_none() => (
-            "Claude finished",
-            last_assistant_message
-                .clone()
-                .unwrap_or_else(|| "Done".into()),
-            "default",
-            "white_check_mark",
-        ),
-        AgentEvent::AgentTurnComplete {
-            last_assistant_message,
-            ..
-        } => (
-            "Codex finished",
-            last_assistant_message
-                .clone()
-                .unwrap_or_else(|| "Done".into()),
-            "default",
-            "white_check_mark",
-        ),
-        _ => return,
+    let Some((kind, session)) = classify(env) else {
+        return;
+    };
+    if !admit(state, &session, kind, now_ms()) {
+        return;
+    }
+    let host = cfg
+        .host_name
+        .clone()
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(hostname);
+    let host: String = host.chars().filter(|c| !c.is_control()).take(80).collect();
+    let body = match env.tmux.as_ref().and_then(|t| tmux_label(&t.pane)) {
+        Some(label) => format!("{host} · {label}"),
+        None => host,
     };
     let click = click_url(state, env);
-    let body = clip(&body, 300);
     let m = Message {
-        title,
+        title: kind.title(),
         body: &body,
         click: click.as_deref(),
-        priority: Some(priority),
-        tags: Some(tags),
+        priority: Some(kind.priority()),
+        tags: Some(kind.tags()),
     };
     if let Err(e) = send(&ntfy, &m) {
         state.log(&format!("ntfy push failed: {e}"));

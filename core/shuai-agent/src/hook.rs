@@ -127,8 +127,9 @@ fn permission_request(
         _ => unreachable!(),
     };
     let present = state.present();
-    record(state, Source::Claude, event)?;
+    let env = record(state, Source::Claude, event)?;
     if !present {
+        ntfy::maybe_push(state, &env);
         resolve(state, &id, session, PermissionOutcome::NotPresent);
         return Ok(None);
     }
