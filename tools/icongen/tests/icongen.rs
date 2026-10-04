@@ -626,7 +626,7 @@ fn png_writer_properties() {
     assert!(info.srgb.is_some());
     assert!(info.trns.is_none());
     assert!(info.icc_profile.is_none());
-    let mut buf = vec![0; rd.output_buffer_size()];
+    let mut buf = vec![0; rd.output_buffer_size().unwrap()];
     let fr = rd.next_frame(&mut buf).unwrap();
     assert_eq!(fr.buffer_size(), 1024 * 1024 * 3);
 }
@@ -640,7 +640,7 @@ fn png_flattens_transparency_over_background() {
     let mut rd = png::Decoder::new(std::io::Cursor::new(&bytes))
         .read_info()
         .unwrap();
-    let mut buf = vec![0; rd.output_buffer_size()];
+    let mut buf = vec![0; rd.output_buffer_size().unwrap()];
     rd.next_frame(&mut buf).unwrap();
     assert_eq!(&buf[0..3], &[10, 20, 30]);
 }

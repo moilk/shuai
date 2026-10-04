@@ -177,7 +177,7 @@ fn decode(bytes: &[u8]) -> Result<(u32, u32, Vec<u8>), String> {
     let mut rd = png::Decoder::new(std::io::Cursor::new(bytes))
         .read_info()
         .map_err(|e| e.to_string())?;
-    let mut buf = vec![0; rd.output_buffer_size()];
+    let mut buf = vec![0; rd.output_buffer_size().ok_or("PNG too large")?];
     let fr = rd.next_frame(&mut buf).map_err(|e| e.to_string())?;
     buf.truncate(fr.buffer_size());
     Ok((fr.width, fr.height, buf))
