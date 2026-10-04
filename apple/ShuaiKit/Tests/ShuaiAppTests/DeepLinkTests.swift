@@ -93,7 +93,7 @@ struct DeepLinkRouterTests {
         let nav = FakeNavigator()
         nav.hosts = []
         let outcome = await DeepLinkRouter(navigator: nav).handle(URL(string: "shuai://open?host=\(idText)&pane=%252")!)
-        guard case .notice(let m) = outcome else { return Issue.record("expected a notice") }
+        guard case .notice(let m) = outcome else { Issue.record("expected a notice"); return }
         #expect(m.contains("host"))
         #expect(nav.calls.isEmpty)
     }
@@ -102,7 +102,8 @@ struct DeepLinkRouterTests {
         let nav = FakeNavigator()
         for s in ["shuai://open", "shuai://open?host=zzz&pane=%251", "shuai://open?host=\(idText)&pane=%25x"] {
             guard case .notice = await DeepLinkRouter(navigator: nav).handle(URL(string: s)!) else {
-                return Issue.record("expected a notice for \(s)")
+                Issue.record("expected a notice for \(s)")
+                return
             }
         }
         #expect(nav.calls.isEmpty)
@@ -118,7 +119,8 @@ struct DeepLinkRouterTests {
         let nav = FakeNavigator()
         nav.result = .paneNotFound
         guard case .notice(let m) = await DeepLinkRouter(navigator: nav).handle(DeepLink(hostID: id, pane: "%9")) else {
-            return Issue.record("expected a notice")
+            Issue.record("expected a notice")
+                return
         }
         #expect(m.contains("pane"))
     }
@@ -127,7 +129,8 @@ struct DeepLinkRouterTests {
         let nav = FakeNavigator()
         nav.result = .connectionFailed
         guard case .notice = await DeepLinkRouter(navigator: nav).handle(DeepLink(hostID: id, pane: nil)) else {
-            return Issue.record("expected a notice")
+            Issue.record("expected a notice")
+                return
         }
     }
 

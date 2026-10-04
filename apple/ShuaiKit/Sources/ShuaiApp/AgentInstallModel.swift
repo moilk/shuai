@@ -23,11 +23,14 @@ public final class AgentInstallModel {
     public var codexResolution: CodexConflictResolution = .skip
     public var pluginSource: PluginSource = .github
 
+    /// The `config.toml` written during install (push settings); the app records it as synced.
+    public let agentConfigToml: String?
     @ObservationIgnored private let installer: AgentInstaller
 
-    public init(installer: AgentInstaller, mode: Mode = .install) {
+    public init(installer: AgentInstaller, mode: Mode = .install, agentConfigToml: String? = nil) {
         self.installer = installer
         self.mode = mode
+        self.agentConfigToml = agentConfigToml
     }
 
     /// Read-only: probe the host and preview the plan.
@@ -38,7 +41,7 @@ public final class AgentInstallModel {
         do {
             let p = try await installer.probe()
             probe = p
-            let options = InstallOptions(dryRun: true, pluginSource: pluginSource)
+            let options = InstallOptions(dryRun: true, pluginSource: pluginSource, agentConfigToml: agentConfigToml)
             let dry = mode == .install ? await installer.run(probe: p, options: options) : await installer.uninstall(probe: p, options: options)
             preview = dry.steps
             phase = .ready
@@ -49,7 +52,7 @@ public final class AgentInstallModel {
 
     public func install() async {
         guard let p = probe else { return }
-        let options = InstallOptions(pluginSource: pluginSource, codexConflict: codexResolution)
+        let options = InstallOptions(pluginSource: pluginSource, codexConflict: codexResolution, agentConfigToml: agentConfigToml)
         await perform { sink in
             await self.installer.run(probe: p, options: options) { sink.append($0) }
         }
