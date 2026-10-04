@@ -148,19 +148,41 @@ impl Glyph {
         })
     }
 
-    /// All pieces in drawing order; `weight` (glyph units) widens every stroke.
+    /// All pieces in drawing order. `weight` is a uniform outline offset in source pixels: every
+    /// edge of every piece (S01 included) moves outward by `weight`, holes shrink by the same
+    /// amount but never below [`MIN_HOLE_RADIUS`]. Weight 0 is the master geometry, unchanged.
     pub fn pieces(&self, weight: f64) -> Vec<Piece> {
+        let grow = |c: &[Vertex]| {
+            if weight == 0.0 {
+                c.to_vec()
+            } else {
+                offset_contour(c, weight)
+            }
+        };
+        let shrink = |h: &[Vertex]| {
+            let d = weight.min((inscribed_radius(h) - MIN_HOLE_RADIUS).max(0.0));
+            if d <= 0.0 {
+                h.to_vec()
+            } else {
+                offset_contour(h, -d)
+            }
+        };
         let mut out = vec![Piece {
             id: "S01".into(),
-            contours: std::iter::once(self.outline.clone())
-                .chain(self.holes.iter().cloned())
+            contours: std::iter::once(grow(&self.outline))
+                .chain(self.holes.iter().map(|h| shrink(h)))
                 .collect(),
             even_odd: true,
         }];
         for s in &self.strokes {
             out.push(Piece {
                 id: s.id.clone(),
-                contours: vec![stroke_outline(&s.points, s.cap_start, s.cap_end, weight)],
+                contours: vec![grow(&stroke_outline(
+                    &s.points,
+                    s.cap_start,
+                    s.cap_end,
+                    0.0,
+                ))],
                 even_odd: false,
             });
         }
@@ -188,6 +210,254 @@ fn norm(v: Pt) -> Pt {
     } else {
         (v.0 / l, v.1 / l)
     }
+}
+
+/// Longest miter at a convex corner, as a multiple of the offset; sharper corners are clipped
+/// there (two sharp vertices) so a chisel tip does not grow into a needle.
+pub const MITER_LIMIT: f64 = 2.0;
+/// Longest miter at a concave corner, where the miter is the exact offset but a needle-thin notch
+/// would otherwise throw its vertex far away.
+const CONCAVE_MITER_LIMIT: f64 = 4.0;
+/// Smallest inscribed radius (source px) a hole keeps when the outline offset shrinks it.
+pub const MIN_HOLE_RADIUS: f64 = 2.5;
+
+fn signed_area(poly: &[Vertex]) -> f64 {
+    let n = poly.len();
+    (0..n)
+        .map(|i| {
+            let (a, b) = (poly[i], poly[(i + 1) % n]);
+            a.x * b.y - b.x * a.y
+        })
+        .sum::<f64>()
+        / 2.0
+}
+
+/// Area of a closed vertex polygon (straight edges), always non-negative.
+pub fn polygon_area(poly: &[Vertex]) -> f64 {
+    signed_area(poly).abs()
+}
+
+fn dot(a: Pt, b: Pt) -> f64 {
+    a.0 * b.0 + a.1 * b.1
+}
+
+/// Offsets a closed contour by `d` source px along its normals: `d > 0` grows the region the
+/// contour encloses, `d < 0` shrinks it (either winding). Each vertex keeps its tag. A convex
+/// corner whose miter would exceed [`MITER_LIMIT`] is clipped: a sharp vertex becomes two sharp
+/// vertices on the clip line, a smooth one is pulled in to the limit.
+pub fn offset_contour(poly: &[Vertex], d: f64) -> Vec<Vertex> {
+    let n = poly.len();
+    if n < 3 || d == 0.0 {
+        return poly.to_vec();
+    }
+    let sigma = signed_area(poly).signum();
+    let at = |i: usize| (poly[i % n].x, poly[i % n].y);
+    // Outward normal of a unit edge direction.
+    let outward = |u: Pt| (sigma * u.1, -sigma * u.0);
+    // Offset vertices with the range of source vertices each one stands for.
+    let mut out: Vec<(Vertex, usize, usize)> = Vec::with_capacity(n + 4);
+    for (i, vi) in poly.iter().enumerate() {
+        let (p0, p, p1) = (at(i + n - 1), at(i), at(i + 1));
+        let u0 = norm((p.0 - p0.0, p.1 - p0.1));
+        let u1 = norm((p1.0 - p.0, p1.1 - p.1));
+        let (n0, n1) = (outward(u0), outward(u1));
+        let sum = (n0.0 + n1.0, n0.1 + n1.1);
+        let tag = vi.tag;
+        let vtx = |q: Pt, tag: Tag| {
+            (
+                Vertex {
+                    x: q.0,
+                    y: q.1,
+                    tag,
+                },
+                i,
+                i,
+            )
+        };
+        if sum.0.hypot(sum.1) < 1e-9 {
+            // Edge doubles back on itself: square it off.
+            out.push(vtx((p.0 + n0.0 * d, p.1 + n0.1 * d), Tag::Sharp));
+            out.push(vtx((p.0 + n1.0 * d, p.1 + n1.1 * d), Tag::Sharp));
+            continue;
+        }
+        let m = norm(sum);
+        let cos = dot(m, n0).max(1e-9);
+        let k = 1.0 / cos;
+        let turn = u0.0 * u1.1 - u0.1 * u1.0;
+        let spiky = sigma * turn * d > 0.0;
+        if spiky && k > MITER_LIMIT {
+            let lim = MITER_LIMIT * d.abs();
+            let dir = (m.0 * d.signum(), m.1 * d.signum());
+            let clip = |nn: Pt, u: Pt| -> Option<Pt> {
+                let q = (p.0 + nn.0 * d, p.1 + nn.1 * d);
+                let ud = dot(u, dir);
+                if ud.abs() < 1e-9 {
+                    return None;
+                }
+                let t = (lim - dot((q.0 - p.0, q.1 - p.1), dir)) / ud;
+                Some((q.0 + u.0 * t, q.1 + u.1 * t))
+            };
+            match (tag, clip(n0, u0), clip(n1, u1)) {
+                (Tag::Sharp, Some(a), Some(b)) => {
+                    out.push(vtx(a, Tag::Sharp));
+                    out.push(vtx(b, Tag::Sharp));
+                }
+                _ => out.push(vtx((p.0 + dir.0 * lim, p.1 + dir.1 * lim), tag)),
+            }
+        } else {
+            let k = if spiky { k } else { k.min(CONCAVE_MITER_LIMIT) };
+            out.push(vtx((p.0 + m.0 * d * k, p.1 + m.1 * d * k), tag));
+        }
+    }
+    collapse_reversed(&mut out, poly);
+    remove_loops(out.into_iter().map(|e| e.0).collect(), sigma)
+}
+
+/// Proper crossing point of segments `ab` and `cd`, if any.
+fn cross_point(a: Pt, b: Pt, c: Pt, d: Pt) -> Option<Pt> {
+    let r = (b.0 - a.0, b.1 - a.1);
+    let s = (d.0 - c.0, d.1 - c.1);
+    let den = r.0 * s.1 - r.1 * s.0;
+    if den.abs() < 1e-12 {
+        return None;
+    }
+    let qp = (c.0 - a.0, c.1 - a.1);
+    let t = (qp.0 * s.1 - qp.1 * s.0) / den;
+    let u = (qp.0 * r.1 - qp.1 * r.0) / den;
+    (t > 1e-9 && t < 1.0 - 1e-9 && u > 1e-9 && u < 1.0 - 1e-9)
+        .then_some((a.0 + t * r.0, a.1 + t * r.1))
+}
+
+/// Cuts self-intersection loops out of an offset contour: where two edges cross (a part narrower
+/// than twice the offset, such as a hole's thin tail), the contour splits at the crossing and the
+/// larger part with the original winding `sigma` is kept, pinched to a sharp vertex there.
+fn remove_loops(mut poly: Vec<Vertex>, sigma: f64) -> Vec<Vertex> {
+    'outer: while poly.len() > 3 {
+        let n = poly.len();
+        let p = |i: usize| (poly[i % n].x, poly[i % n].y);
+        for i in 0..n {
+            for j in i + 2..n {
+                if i == 0 && j == n - 1 {
+                    continue;
+                }
+                let Some(x) = cross_point(p(i), p(i + 1), p(j), p(j + 1)) else {
+                    continue;
+                };
+                let pin = Vertex {
+                    x: x.0,
+                    y: x.1,
+                    tag: Tag::Sharp,
+                };
+                let a: Vec<Vertex> = std::iter::once(pin)
+                    .chain(poly[i + 1..=j].iter().copied())
+                    .collect();
+                let b: Vec<Vertex> = std::iter::once(pin)
+                    .chain(poly[j + 1..].iter().copied())
+                    .chain(poly[..=i].iter().copied())
+                    .collect();
+                let score = |c: &[Vertex]| {
+                    let s = signed_area(c);
+                    if c.len() >= 3 && s * sigma > 0.0 {
+                        s.abs()
+                    } else {
+                        -1.0
+                    }
+                };
+                poly = if score(&a) >= score(&b) { a } else { b };
+                continue 'outer;
+            }
+        }
+        break;
+    }
+    poly
+}
+
+/// Merges offset edges that flipped direction (an edge shorter than the offset shrinks past
+/// zero) into one vertex at their midpoint, sharp if either end was, until none is left.
+fn collapse_reversed(out: &mut Vec<(Vertex, usize, usize)>, poly: &[Vertex]) {
+    while out.len() > 3 {
+        let m = out.len();
+        let flipped = (0..m).find(|&j| {
+            let (a, b) = (&out[j], &out[(j + 1) % m]);
+            if a.2 == b.1 {
+                return false;
+            }
+            let (s, e) = (poly[a.2], poly[b.1]);
+            dot((b.0.x - a.0.x, b.0.y - a.0.y), (e.x - s.x, e.y - s.y)) < 0.0
+        });
+        let Some(j) = flipped else { return };
+        let k = (j + 1) % m;
+        let (a, b) = (out[j], out[k]);
+        let tag = if a.0.tag == Tag::Sharp || b.0.tag == Tag::Sharp {
+            Tag::Sharp
+        } else {
+            Tag::Smooth
+        };
+        let merged = (
+            Vertex {
+                x: (a.0.x + b.0.x) / 2.0,
+                y: (a.0.y + b.0.y) / 2.0,
+                tag,
+            },
+            a.1,
+            b.2,
+        );
+        out[j] = merged;
+        out.remove(k);
+    }
+}
+
+fn point_in(p: Pt, poly: &[Vertex]) -> bool {
+    let n = poly.len();
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (poly[i], poly[(i + 1) % n]);
+        if (a.y > p.1) != (b.y > p.1) && p.0 < (b.x - a.x) * (p.1 - a.y) / (b.y - a.y) + a.x {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+fn seg_dist(p: Pt, a: Pt, b: Pt) -> f64 {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let l2 = dx * dx + dy * dy;
+    let t = if l2 == 0.0 {
+        0.0
+    } else {
+        (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / l2).clamp(0.0, 1.0)
+    };
+    (p.0 - a.0 - t * dx).hypot(p.1 - a.1 - t * dy)
+}
+
+/// Radius of the largest circle inside a closed vertex polygon (straight edges), sampled on a
+/// 0.1 px grid.
+pub fn inscribed_radius(poly: &[Vertex]) -> f64 {
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for v in poly {
+        (x0, y0, x1, y1) = (x0.min(v.x), y0.min(v.y), x1.max(v.x), y1.max(v.y));
+    }
+    const STEP: f64 = 0.1;
+    let n = poly.len();
+    let mut best = 0.0f64;
+    let mut y = y0;
+    while y <= y1 {
+        let mut x = x0;
+        while x <= x1 {
+            if point_in((x, y), poly) {
+                let d = (0..n)
+                    .map(|i| {
+                        let (a, b) = (poly[i], poly[(i + 1) % n]);
+                        seg_dist((x, y), (a.x, a.y), (b.x, b.y))
+                    })
+                    .fold(f64::MAX, f64::min);
+                best = best.max(d);
+            }
+            x += STEP;
+        }
+        y += STEP;
+    }
+    best
 }
 
 /// Closed outline of a stroke: chisel caps are sharp vertices, side vertices are smooth.

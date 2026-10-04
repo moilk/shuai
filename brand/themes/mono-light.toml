@@ -18,8 +18,8 @@ keepout = 0.04
 
 [mark]
 fill = "#000000"
-weight = 0.0
-scale = 0.64
+weight = 2.25             # outline offset in source px, as matte
+scale = 0.72
 offset = [0.0, 0.0]
 
 [gloss]

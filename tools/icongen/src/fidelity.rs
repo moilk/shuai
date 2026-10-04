@@ -5,7 +5,8 @@
 //! centre is `(i + 0.5, j + 0.5)`. `mark.toml` uses the same space, so a glyph rasterised at
 //! scale 1 overlays the source mask directly.
 
-use crate::glyph::{Glyph, Pt, Tag, contour_path};
+use crate::config::{MarkCfg, ThemeCfg};
+use crate::glyph::{Glyph, Pt, Tag, contour_path, polygon_area};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -156,8 +157,12 @@ pub fn rasterize(glyph: &Glyph, weight: f64, width: usize, height: usize, scale:
 
 /// Glyph fitted so its ink bounding box's longer side is `px` pixels.
 pub fn rasterize_fit(glyph: &Glyph, weight: f64, px: u32) -> Mask {
+    fit_mask(glyph, weight, f64::from(px))
+}
+
+fn fit_mask(glyph: &Glyph, weight: f64, px: f64) -> Mask {
     let (x0, y0, x1, y1) = glyph.bounds(weight);
-    let s = f64::from(px) / (x1 - x0).max(y1 - y0).max(1e-9);
+    let s = px / (x1 - x0).max(y1 - y0).max(1e-9);
     let size = (
         ((x1 - x0) * s).ceil().max(1.0) as usize,
         ((y1 - y0) * s).ceil().max(1.0) as usize,
@@ -864,15 +869,129 @@ pub fn format_report(r: &Report) -> String {
     s
 }
 
-/// Reads `brand/source/oracle-rate.png` and `brand/mark/mark.toml`; returns the report text and
-/// whether every gate passed.
+// ---------------------------------------------------------------- themed mark
+
+/// Icon sizes (px, whole canvas) the themed mark is checked at.
+pub const THEME_SIZES: [u32; 4] = [1024, 120, 60, 40];
+/// Smallest area (source px squared) a hole keeps at a theme's weight.
+pub const MIN_HOLE_AREA: f64 = 12.0;
+
+/// The mark as a theme draws it: its weight and scale, rendered at whole-icon sizes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemeCheck {
+    pub name: String,
+    pub weight: f64,
+    /// One entry per [`THEME_SIZES`]; `px` is the icon size, the mark spans `scale * px`.
+    pub sizes: Vec<SmallSize>,
+    /// Areas of the S01 holes at the theme's weight, source px squared.
+    pub hole_areas: Vec<f64>,
+}
+
+/// Renders the theme's mark (weight, small-size bonus, scale) at every [`THEME_SIZES`] icon size.
+/// Pieces and holes come from the render at that size; the narrowest width comes from a render
+/// supersampled to at least 640 px, so it reads in fractions of a pixel at that size.
+pub fn check_theme(glyph: &Glyph, name: &str, mark: &MarkCfg) -> ThemeCheck {
+    let sizes = THEME_SIZES
+        .iter()
+        .map(|&px| {
+            let w = mark.weight_at(px);
+            let mark_px = mark.scale * f64::from(px);
+            let m = fit_mask(glyph, w, mark_px);
+            let ss = (640 / px).max(1);
+            let fine = fit_mask(glyph, w, mark_px * f64::from(ss));
+            SmallSize {
+                px,
+                pieces: components(&m),
+                holes: holes(&m),
+                narrowest: min_stroke_width(&fine) / f64::from(ss),
+            }
+        })
+        .collect();
+    let hole_areas = glyph.pieces(mark.weight)[0].contours[1..]
+        .iter()
+        .map(|h| polygon_area(h))
+        .collect();
+    ThemeCheck {
+        name: name.into(),
+        weight: mark.weight,
+        sizes,
+        hole_areas,
+    }
+}
+
+/// Themed gates: 5 pieces at every size, both holes at 1024 and 120 px, the narrowest piece at
+/// least 2 px at 40 px, and every hole at least [`MIN_HOLE_AREA`].
+pub fn theme_failures(c: &ThemeCheck) -> Vec<String> {
+    let mut f = Vec::new();
+    for s in &c.sizes {
+        if s.pieces != 5 {
+            f.push(format!(
+                "{}: {} px icon has {} pieces (want 5)",
+                c.name, s.px, s.pieces
+            ));
+        }
+        if matches!(s.px, 1024 | 120) && s.holes != 2 {
+            f.push(format!(
+                "{}: {} px icon has {} holes (want 2)",
+                c.name, s.px, s.holes
+            ));
+        }
+        if s.px == 40 && s.narrowest < 2.0 {
+            f.push(format!(
+                "{}: 40 px icon narrowest stroke {:.2} px < 2",
+                c.name, s.narrowest
+            ));
+        }
+    }
+    if c.hole_areas.len() != 2 || c.hole_areas.iter().any(|&a| a < MIN_HOLE_AREA) {
+        f.push(format!(
+            "{}: hole areas {:?} (want 2, each >= {MIN_HOLE_AREA} source px^2)",
+            c.name, c.hole_areas
+        ));
+    }
+    f
+}
+
+fn format_theme(c: &ThemeCheck) -> String {
+    let sizes: Vec<String> = c
+        .sizes
+        .iter()
+        .map(|z| format!("{}px {}p {}h {:.2}w", z.px, z.pieces, z.holes, z.narrowest))
+        .collect();
+    let areas: Vec<String> = c.hole_areas.iter().map(|a| format!("{a:.0}")).collect();
+    format!(
+        "theme {:<12}weight {:<5}{}  holes {}\n",
+        c.name,
+        c.weight,
+        sizes.join("  "),
+        areas.join("/")
+    )
+}
+
+/// Reads `brand/source/oracle-rate.png`, `brand/mark/mark.toml` and `brand/themes/*.toml`;
+/// returns the report text and whether every gate passed. The master gates measure the mark at
+/// weight 0; the theme gates measure each theme's weighted mark.
 pub fn run(brand: &Path) -> Result<(String, bool), String> {
     let rd = |rel: &str| std::fs::read(brand.join(rel)).map_err(|e| format!("{rel}: {e}"));
     let field = load_field_png(&rd("source/oracle-rate.png")?)?;
     let glyph = Glyph::from_toml(&String::from_utf8_lossy(&rd("mark/mark.toml")?))?;
     let r = evaluate(&glyph, 0.0, &field);
-    let fails = failures(&r);
+    let mut fails = failures(&r);
     let mut text = format_report(&r);
+    let mut names: Vec<String> = std::fs::read_dir(brand.join("themes"))
+        .map_err(|e| format!("themes: {e}"))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".toml"))
+        .collect();
+    names.sort();
+    for n in &names {
+        let rel = format!("themes/{n}");
+        let theme = ThemeCfg::from_toml(&String::from_utf8_lossy(&rd(&rel)?))?;
+        let c = check_theme(&glyph, &theme.name, &theme.mark);
+        text.push_str(&format_theme(&c));
+        fails.extend(theme_failures(&c));
+    }
     for f in &fails {
         text.push_str(&format!("FAIL {f}\n"));
     }

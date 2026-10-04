@@ -54,11 +54,37 @@ pub struct TextureCfg {
 #[serde(deny_unknown_fields)]
 pub struct MarkCfg {
     pub fill: String,
+    /// Uniform outline offset in source pixels (0 = the master carving).
     #[serde(default)]
     pub weight: f64,
     pub scale: f64,
     #[serde(default)]
     pub offset: [f64; 2],
+    /// Extra weight for renders at or below a size (favicons and other tiny exports).
+    #[serde(default)]
+    pub small_size: Option<SmallSizeCfg>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SmallSizeCfg {
+    /// Output sizes (px) at or below this get the bonus.
+    pub max_px: u32,
+    /// Weight added on top of `mark.weight`, source pixels.
+    pub weight: f64,
+}
+
+/// Largest accepted outline offset, source pixels.
+pub const MAX_WEIGHT: f64 = 6.0;
+
+impl MarkCfg {
+    /// Outline offset for a render whose canvas is `size` pixels.
+    pub fn weight_at(&self, size: u32) -> f64 {
+        match self.small_size {
+            Some(s) if size <= s.max_px => self.weight + s.weight,
+            _ => self.weight,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -127,6 +153,15 @@ impl ThemeCfg {
         }
         if !(t.mark.scale > 0.0 && t.mark.scale <= 1.0) {
             return Err("mark.scale must be within (0, 1]".into());
+        }
+        let bonus = t.mark.small_size.map_or(0.0, |s| s.weight);
+        if !(0.0..=MAX_WEIGHT).contains(&t.mark.weight)
+            || !(0.0..=MAX_WEIGHT).contains(&bonus)
+            || !(0.0..=MAX_WEIGHT).contains(&(t.mark.weight + bonus))
+        {
+            return Err(format!(
+                "mark.weight and small_size.weight must be within 0..={MAX_WEIGHT} source px"
+            ));
         }
         if !matches!(t.container.kind.as_str(), "none" | "squircle") {
             return Err(format!("unknown container kind {:?}", t.container.kind));

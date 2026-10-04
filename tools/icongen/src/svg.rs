@@ -45,7 +45,7 @@ impl Placement {
 
 fn place(theme: &ThemeCfg, glyph: &Glyph, size: u32) -> (Placement, MarkBounds) {
     let s = f64::from(size);
-    let (x0, y0, x1, y1) = glyph.bounds(theme.mark.weight);
+    let (x0, y0, x1, y1) = glyph.bounds(theme.mark.weight_at(size));
     let scale = theme.mark.scale * s / (x1 - x0).max(y1 - y0);
     let cx = s / 2.0 + theme.mark.offset[0] * s;
     let cy = s / 2.0 + theme.mark.offset[1] * s;
@@ -97,10 +97,10 @@ fn base_fragment(theme: &ThemeCfg, size: u32) -> String {
     }
 }
 
-fn mark_fragment(theme: &ThemeCfg, glyph: &Glyph, pl: &Placement) -> String {
+fn mark_fragment(theme: &ThemeCfg, glyph: &Glyph, pl: &Placement, size: u32) -> String {
     let map = |p: Pt| pl.map(p);
     let mut out = format!("<g id=\"mark\" fill=\"{}\">", theme.mark.fill);
-    for piece in glyph.pieces(theme.mark.weight) {
+    for piece in glyph.pieces(theme.mark.weight_at(size)) {
         let d: String = piece
             .contours
             .iter()
@@ -154,7 +154,7 @@ pub fn layers(theme: &ThemeCfg, glyph: &Glyph, size: u32) -> Layers {
     let (pl, bounds) = place(theme, glyph, size);
     let base = base_fragment(theme, size);
     let tex = texture::layer_svg(&theme.texture, &bounds, size);
-    let mark = mark_fragment(theme, glyph, &pl);
+    let mark = mark_fragment(theme, glyph, &pl, size);
     let gloss = gloss_fragment(theme, size);
     let container = container_fragment(theme, size);
     let stack = format!("{base}{tex}{mark}{gloss}");
