@@ -184,7 +184,7 @@ fn max_bg_luminance(c: &TextureCfg, bg: &str) -> f64 {
 #[test]
 fn mark_keeps_7_to_1_contrast_over_texture() {
     let mark = lum(0xf1, 0xe6, 0xd0);
-    // The matte theme as shipped.
+    // Black ink over a dark red background.
     let l = max_bg_luminance(&cfg(), "#7a1f1a");
     assert!(
         (mark + 0.05) / (l + 0.05) >= 7.0,

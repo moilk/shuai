@@ -40,14 +40,15 @@ fn parses_theme_config() {
     let t = ThemeCfg::from_toml(&read("themes/matte.toml")).unwrap();
     assert_eq!(t.name, "matte");
     assert_eq!(t.background.kind, BackgroundKind::Solid);
-    assert_eq!(t.background.color, "#7a1f1a");
+    assert_eq!(t.background.color, "#0b0b0c");
     assert!(t.texture.enabled);
     assert_eq!(t.texture.seed, 20241004);
-    assert_eq!(t.texture.cracks, 5);
-    assert_eq!(t.texture.motifs, 6);
-    assert!((t.texture.opacity - 0.18).abs() < 1e-12);
-    assert_eq!(t.mark.fill, "#f1e6d0");
-    assert!((t.mark.scale - 0.75).abs() < 1e-12);
+    assert_eq!(t.texture.cracks, 10);
+    assert_eq!(t.texture.motifs, 12);
+    assert_eq!(t.texture.color, "#f7f5f2");
+    assert!((t.texture.opacity - 0.16).abs() < 1e-12);
+    assert_eq!(t.mark.fill, "#f7f5f2");
+    assert!((t.mark.scale - 0.64).abs() < 1e-12);
     assert_eq!(t.mark.offset, [0.0, 0.0]);
     assert!(!t.gloss.enabled);
     assert_eq!(t.container.kind, "none");
@@ -55,7 +56,9 @@ fn parses_theme_config() {
 
 #[test]
 fn rejects_bad_theme_config() {
-    let bad = read("themes/matte.toml").replace("#7a1f1a", "red");
+    let good = read("themes/matte.toml");
+    let bad = good.replace("#0b0b0c", "red");
+    assert_ne!(bad, good);
     assert!(ThemeCfg::from_toml(&bad).is_err());
     let bad = read("themes/matte.toml").replace("\"solid\"", "\"radial\"");
     assert!(ThemeCfg::from_toml(&bad).is_err());
@@ -66,7 +69,8 @@ fn parses_icon_config() {
     let c = IconCfg::from_toml(&read("icon.toml")).unwrap();
     assert_eq!(c.size, 1024);
     assert_eq!(c.appearances.light, "matte");
-    assert_eq!(c.appearances.tinted, "matte");
+    assert_eq!(c.appearances.dark, "matte");
+    assert_eq!(c.appearances.tinted, "tinted");
 }
 
 #[test]
@@ -82,7 +86,9 @@ fn parses_glyph_topology() {
 
 #[test]
 fn rejects_bad_vertex_tag() {
-    let bad = read("mark/mark.toml").replacen("60.0, 40.0, \"s\"", "60.0, 40.0, \"x\"", 1);
+    let good = read("mark/mark.toml");
+    let bad = good.replacen("[105.6, 31.0, \"s\"]", "[105.6, 31.0, \"x\"]", 1);
+    assert_ne!(bad, good);
     assert!(Glyph::from_toml(&bad).is_err());
 }
 
@@ -267,4 +273,63 @@ fn png_tolerance_compare() {
     p2.data_mut()[0] = p2.data()[0].saturating_add(5);
     let b = png_out::encode_rgb(&p2, [0, 0, 0]);
     assert!(!pipeline::png_close(&a, &b, 2).unwrap());
+}
+
+fn lin(c: u8) -> f64 {
+    let v = f64::from(c) / 255.0;
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn lum(p: &[u8]) -> f64 {
+    0.2126 * lin(p[0]) + 0.7152 * lin(p[1]) + 0.0722 * lin(p[2])
+}
+
+#[test]
+fn shipped_themes_keep_7_to_1_mark_contrast() {
+    let g = Glyph::from_toml(&read("mark/mark.toml")).unwrap();
+    let mut names: Vec<String> = std::fs::read_dir(brand().join("themes"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".toml"))
+        .collect();
+    names.sort();
+    for want in ["matte", "mono-dark", "mono-light", "tinted"] {
+        assert!(names.contains(&format!("{want}.toml")), "missing {want}");
+    }
+    for n in &names {
+        let t = ThemeCfg::from_toml(&read(&format!("themes/{n}"))).unwrap();
+        let fill = icongen::config::parse_hex(&t.mark.fill).unwrap();
+        let mark = lum(&fill);
+        // Everything under the mark: base colour plus texture, without the mark itself.
+        let l = svg::layers(&t, &g, 512);
+        let under = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\">{}{}</svg>",
+            l.base
+                .split_once('>')
+                .unwrap()
+                .1
+                .trim_end()
+                .trim_end_matches("</svg>"),
+            l.texture
+                .split_once('>')
+                .unwrap()
+                .1
+                .trim_end()
+                .trim_end_matches("</svg>"),
+        );
+        let pix = render::render(&under, 512).unwrap();
+        let worst = pix
+            .data()
+            .chunks(4)
+            .map(|p| {
+                let b = lum(p);
+                (mark.max(b) + 0.05) / (mark.min(b) + 0.05)
+            })
+            .fold(f64::MAX, f64::min);
+        assert!(worst >= 7.0, "{n}: contrast {worst:.2}");
+    }
 }
