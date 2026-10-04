@@ -12,4 +12,4 @@ description = "Deterministic app icon generator (layered SVG -> PNG)"
 png = "0.18"
 resvg = { version = "0.45", default-features = false }
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+toml = "1"
