@@ -85,6 +85,10 @@ pub struct SmallSizeCfg {
     pub weight: f64,
 }
 
+/// Most crack branches and margin motifs a theme may ask for (shipped themes use 10 and 12).
+pub const MAX_CRACKS: u32 = 200;
+pub const MAX_MOTIFS: u32 = 64;
+
 /// Largest accepted outline offset, source pixels.
 pub const MAX_WEIGHT: f64 = 6.0;
 
@@ -178,6 +182,23 @@ impl ThemeCfg {
         check_color("mark.fill", &t.mark.fill)?;
         if !(0.0..=1.0).contains(&t.texture.opacity) {
             return Err("texture.opacity must be within 0..=1".into());
+        }
+        if !t.background.angle.is_finite() {
+            return Err("background.angle must be finite".into());
+        }
+        if !(0.0..=1.0).contains(&t.texture.grain) {
+            return Err("texture.grain must be within 0..=1".into());
+        }
+        if !(0.0..=0.5).contains(&t.texture.keepout) {
+            return Err("texture.keepout must be within 0..=0.5".into());
+        }
+        if t.texture.cracks > MAX_CRACKS || t.texture.motifs > MAX_MOTIFS {
+            return Err(format!(
+                "texture.cracks must be at most {MAX_CRACKS} and texture.motifs at most {MAX_MOTIFS}"
+            ));
+        }
+        if !t.mark.offset.iter().all(|o| (-0.5..=0.5).contains(o)) {
+            return Err("mark.offset must be finite and within -0.5..=0.5".into());
         }
         if !(t.mark.scale > 0.0 && t.mark.scale <= 1.0) {
             return Err("mark.scale must be within (0, 1]".into());

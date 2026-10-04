@@ -108,7 +108,7 @@ fn rejects_non_finite_and_absurd_numbers() {
     let ok = good
         .replace("\ncracks = 10", "\ncracks = 200")
         .replace("\nmotifs = 12", "\nmotifs = 64")
-        .replace("\nseed = 20241004", "\nseed = 18446744073709551615");
+        .replace("\nseed = 20241004", "\nseed = 9223372036854775807");
     assert!(ThemeCfg::from_toml(&ok).is_ok());
 }
 
