@@ -68,7 +68,7 @@ pub fn load_field_png(bytes: &[u8]) -> Result<Field, String> {
     let mut dec = png::Decoder::new(std::io::Cursor::new(bytes));
     dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = dec.read_info().map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let mut buf = vec![0u8; reader.output_buffer_size().ok_or("PNG too large")?];
     let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
     let (w, h) = (info.width as usize, info.height as usize);
     let step = match info.color_type {

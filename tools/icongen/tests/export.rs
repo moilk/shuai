@@ -22,7 +22,7 @@ fn decode(bytes: &[u8]) -> (png::Info<'static>, Vec<u8>) {
     let mut rd = png::Decoder::new(std::io::Cursor::new(bytes))
         .read_info()
         .unwrap();
-    let mut buf = vec![0; rd.output_buffer_size()];
+    let mut buf = vec![0; rd.output_buffer_size().unwrap()];
     let fr = rd.next_frame(&mut buf).unwrap();
     buf.truncate(fr.buffer_size());
     (rd.info().clone(), buf)
