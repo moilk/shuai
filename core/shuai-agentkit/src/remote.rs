@@ -112,14 +112,15 @@ pub fn append_tmux_block_command(path: &str, lines: &[String]) -> String {
 
 /// Delete the marker block from `path` (no error if the file is missing). A begin marker
 /// without a matching end marker is left alone rather than deleting to the end of the file.
-/// Rewrites in place (`cat >`) so permissions and symlinks survive.
+/// Rewrites in place (`cat >`) so permissions and symlinks survive. A regular file left empty
+/// (typically one the install created) is removed.
 pub fn remove_tmux_block_command(path: &str) -> String {
     let p = path_arg(path);
     let awk = "skip { buf = buf $0 \"\\n\"; if ($0 == e) { skip = 0; buf = \"\" } next } \
                $0 == b { skip = 1; buf = $0 \"\\n\"; next } { print } \
                END { if (skip) printf \"%s\", buf }";
     format!(
-        "[ -f {p} ] && {{ awk -v b={} -v e={} {} {p} > {p}.shuai-tmp && cat {p}.shuai-tmp > {p}; rm -f {p}.shuai-tmp; }}; true",
+        "[ -f {p} ] && {{ awk -v b={} -v e={} {} {p} > {p}.shuai-tmp && cat {p}.shuai-tmp > {p}; rm -f {p}.shuai-tmp; [ -s {p} ] || [ -L {p} ] || rm -f {p}; }}; true",
         sh_quote(TMUX_BEGIN),
         sh_quote(TMUX_END),
         sh_quote(awk)
