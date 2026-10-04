@@ -1,31 +1,32 @@
-# Matte theme: solid dark-red background, light mark, subtle oracle texture.
+# Matte theme (designer "标准磨砂版"): B01 near-black, faint ivory oracle-bone texture, F01 ivory
+# mark on an 8x8 grid with a 1x safe margin. Used for the light and dark appearances.
 name = "matte"
 
 [background]
 kind = "solid"            # solid | linear
-color = "#7a1f1a"
-# color2 and angle (degrees) are used by kind = "linear"
-color2 = "#5a120f"
+color = "#0b0b0c"         # B01
+# color2 and angle (degrees) are used by kind = "linear"; B02 for a subtle top-down falloff.
+color2 = "#1a1a1d"        # B02
 angle = 90.0
 
 [texture]
 enabled = true
 seed = 20241004
-grain = 0.35              # 0..1 grain density
-cracks = 5                # number of crack branches
-motifs = 6                # number of margin motifs
-color = "#000000"
-opacity = 0.18            # contrast cap, keeps the mark readable
+grain = 0.6               # 0..1 grain density
+cracks = 10               # number of crack branches
+motifs = 12               # number of margin motifs
+color = "#f7f5f2"         # F01 ink, kept faint by the group opacity
+opacity = 0.16            # contrast cap: the mark stays >= 7:1 over the brightest texture pixel
 keepout = 0.04            # fraction of the canvas kept clear around the mark
 
 [mark]
-fill = "#f1e6d0"
-weight = 0.0              # glyph units added to every stroke width
-scale = 0.75              # share of the canvas the mark's longest side covers
+fill = "#f7f5f2"          # F01
+weight = 0.0              # glyph units added to every side stroke; 0 = the source carving
+scale = 0.64              # share of the canvas the mark's longest side covers
 offset = [0.0, 0.0]       # fraction of the canvas
 
 [gloss]
 enabled = false
 
 [container]
-kind = "none"             # none | squircle
+kind = "none"             # none | squircle (iOS applies its own mask)

@@ -1,7 +1,9 @@
 # Maps each iOS appearance to a theme in brand/themes/<name>.toml.
+# Dark keeps the opaque B01 matte look; tinted is a grayscale mark on black for the system tint.
+# mono-dark and mono-light are export-only themes.
 size = 1024
 
 [appearances]
 light = "matte"
 dark = "matte"
-tinted = "matte"
+tinted = "tinted"

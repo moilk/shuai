@@ -1,42 +1,73 @@
-# Master glyph (placeholder: crude 5-piece shape, replaced by the traced character).
-# Coordinates are glyph units, y down. Vertex tag: "c" sharp (kept exactly), "s" smooth.
+# Master glyph: the oracle-bone character 率, refined by hand from `icongen trace` against
+# brand/source/oracle-rate.png. Coordinates are source pixels (201 x 251), y down, so weight 0
+# overlays the source 1:1. Vertex tag: "c" sharp (kept exactly, a carved turn), "s" smooth.
+# Staircase noise is removed; the uneven bulges, necks and off-axis lean of the carving are kept.
 
 [s01]
-# Outline polygon, filled even-odd together with the holes.
+# S01 spine. Outline runs clockwise from the slanted top cut, down the right side (shoulder spur
+# at y 100-112, waist at y 121, notch at y 208), across the slanted foot, and up the left side.
 outline = [
-  [38.0, 8.0, "c"],
-  [62.0, 8.0, "c"],
-  [60.0, 40.0, "s"],
-  [66.0, 92.0, "c"],
-  [34.0, 92.0, "c"],
-  [40.0, 40.0, "s"],
+  [99.3, 24.9, "c"], [103.8, 26.0, "c"],
+  [105.6, 31.0, "s"], [106.6, 38.0, "s"], [107.2, 46.0, "s"], [106.3, 54.0, "s"],
+  [106.4, 61.0, "s"], [107.0, 65.5, "s"], [105.4, 71.0, "s"], [105.3, 76.0, "s"],
+  [107.0, 80.5, "s"], [109.2, 86.0, "s"], [111.3, 91.5, "s"], [113.5, 95.6, "s"],
+  [114.6, 100.0, "c"], [120.2, 105.2, "c"], [120.4, 112.4, "c"],
+  [116.8, 116.6, "s"], [115.2, 121.5, "s"], [116.6, 127.5, "s"], [118.3, 132.0, "s"],
+  [119.4, 138.0, "s"], [120.6, 148.0, "s"], [121.1, 156.0, "s"], [120.6, 166.0, "s"],
+  [119.2, 174.0, "s"], [117.3, 182.0, "s"], [115.4, 189.0, "s"], [113.6, 196.0, "s"],
+  [112.3, 203.5, "s"], [114.2, 208.6, "c"], [113.8, 218.0, "s"], [113.0, 226.0, "s"],
+  [111.4, 232.0, "s"], [110.3, 236.4, "c"], [103.3, 238.1, "c"],
+  [102.2, 228.0, "s"], [101.6, 217.0, "s"], [101.2, 208.0, "s"], [99.6, 200.0, "s"],
+  [98.2, 191.8, "c"], [96.2, 189.6, "c"], [95.2, 184.0, "s"], [93.4, 178.0, "s"],
+  [91.3, 170.0, "s"], [91.6, 163.0, "s"], [92.2, 152.0, "s"], [93.1, 143.0, "s"],
+  [94.5, 137.0, "s"], [95.6, 133.5, "s"], [96.4, 129.0, "s"], [97.8, 124.0, "s"],
+  [98.0, 119.0, "s"], [96.0, 116.0, "s"], [93.6, 112.0, "s"], [91.6, 108.0, "s"],
+  [89.6, 103.0, "s"], [88.2, 96.0, "c"], [89.6, 91.5, "s"], [90.4, 85.0, "s"],
+  [91.6, 80.0, "s"], [92.6, 75.0, "s"], [93.7, 70.5, "s"], [95.6, 66.5, "s"],
+  [96.2, 61.0, "s"], [95.4, 54.0, "s"], [96.2, 45.0, "s"], [95.5, 36.0, "s"],
+  [96.2, 30.0, "s"], [97.6, 27.0, "s"],
 ]
 holes = [
-  [[44.0, 20.0, "c"], [56.0, 20.0, "c"], [56.0, 30.0, "c"], [44.0, 30.0, "c"]],
-  [[43.0, 56.0, "c"], [57.0, 54.0, "c"], [55.0, 72.0, "c"], [45.0, 72.0, "c"]],
+  # Upper hole: a tilted teardrop, pointed at the top, with a sloped hard base.
+  [[99.6, 90.0, "c"], [101.4, 93.0, "s"], [103.0, 96.5, "s"], [104.0, 100.0, "s"],
+   [105.0, 103.5, "s"], [106.0, 107.0, "s"], [105.8, 110.0, "c"], [102.6, 109.2, "s"],
+   [100.3, 107.6, "c"], [99.0, 104.0, "s"], [97.8, 100.0, "s"], [97.2, 96.0, "s"],
+   [98.0, 92.0, "s"]],
+  # Lower hole: a long lens with a flat cut top and a pinched foot, leaning right.
+  [[105.4, 135.9, "c"], [107.7, 135.9, "c"], [109.6, 139.5, "s"], [110.8, 145.0, "s"],
+   [111.9, 152.0, "s"], [112.0, 160.0, "s"], [111.0, 166.0, "s"], [110.0, 172.0, "s"],
+   [108.8, 177.0, "s"], [107.8, 181.0, "s"], [106.8, 185.0, "c"], [104.2, 183.6, "c"],
+   [103.4, 179.0, "s"], [102.0, 174.0, "s"], [100.9, 168.0, "s"], [100.1, 161.0, "s"],
+   [100.6, 152.0, "s"], [101.6, 145.0, "s"], [102.6, 140.0, "s"], [103.8, 137.5, "s"]],
 ]
 
 # Side strokes: centerline points [x, y, width]; chisel caps: cut angle in degrees, asym -1..1.
+# The cap corners sit on the carved corners of the source; widths follow its swelling and necking.
+
+# Upper left: narrow slanted top, full belly, lower end cut toward the lower left.
 [[stroke]]
 id = "S02"
-points = [[8.0, 22.0, 6.0], [20.0, 28.0, 7.0], [30.0, 36.0, 5.0]]
-cap_start = { cut = 20.0, asym = 0.1 }
-cap_end = { cut = -25.0, asym = -0.1 }
+points = [[60.24, 55.75, 5.18], [61.90, 60.60, 10.30], [62.10, 70.00, 9.90], [62.50, 84.00, 10.90], [62.10, 94.50, 10.10], [61.93, 99.04, 7.33]]
+cap_start = { cut = 13.5, asym = 0.12 }
+cap_end = { cut = 15.0, asym = -0.1 }
 
+# Upper right: leans right as it descends, steep chisel at the foot.
 [[stroke]]
 id = "S03"
-points = [[8.0, 52.0, 6.0], [30.0, 62.0, 5.0]]
-cap_start = { cut = 15.0, asym = 0.0 }
-cap_end = { cut = -20.0, asym = 0.1 }
+points = [[135.49, 52.54, 4.34], [136.40, 58.00, 9.00], [136.60, 67.00, 9.60], [138.80, 78.00, 11.00], [141.60, 88.00, 10.40], [144.15, 96.12, 5.59]]
+cap_start = { cut = -6.4, asym = -0.1 }
+cap_end = { cut = 20.8, asym = 0.15 }
 
+# Lower left: thin waist, thickening toward a broad slanted foot.
 [[stroke]]
 id = "S04"
-points = [[92.0, 22.0, 6.0], [80.0, 28.0, 7.0], [70.0, 36.0, 5.0]]
-cap_start = { cut = -20.0, asym = 0.1 }
-cap_end = { cut = 25.0, asym = -0.1 }
+points = [[68.97, 157.74, 6.83], [69.20, 163.00, 9.40], [70.10, 172.00, 8.60], [71.60, 182.00, 10.60], [72.70, 192.00, 11.00], [73.42, 201.04, 8.82]]
+cap_start = { cut = -5.1, asym = 0.08 }
+cap_end = { cut = 7.1, asym = -0.12 }
 
+# Lower right: the heaviest side stroke, swelling mid-length and pinched at both ends.
 [[stroke]]
 id = "S05"
-points = [[92.0, 52.0, 6.0], [70.0, 62.0, 5.0]]
-cap_start = { cut = -15.0, asym = 0.0 }
-cap_end = { cut = 20.0, asym = 0.1 }
+points = [[146.23, 144.04, 4.29], [146.10, 149.00, 8.20], [146.20, 156.00, 11.40], [146.60, 166.00, 12.60], [147.00, 177.00, 11.60], [147.20, 185.00, 9.80], [147.35, 190.04, 4.99]]
+cap_start = { cut = -8.1, asym = -0.15 }
+cap_end = { cut = -5.1, asym = 0.1 }

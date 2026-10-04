@@ -1,0 +1,29 @@
+# Mono dark (designer "纯色版"): F01 ivory mark on B01, no texture. For exports (README, favicon,
+# social), not an iOS appearance.
+name = "mono-dark"
+
+[background]
+kind = "solid"
+color = "#0b0b0c"         # B01
+
+[texture]
+enabled = false
+seed = 20241004
+grain = 0.0
+cracks = 0
+motifs = 0
+color = "#f7f5f2"
+opacity = 0.0
+keepout = 0.04
+
+[mark]
+fill = "#f7f5f2"          # F01
+weight = 0.0
+scale = 0.64
+offset = [0.0, 0.0]
+
+[gloss]
+enabled = false
+
+[container]
+kind = "squircle"
