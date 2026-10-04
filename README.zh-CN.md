@@ -92,7 +92,8 @@ Enclave 密钥、主机 iCloud 同步、快捷键自定义。之后：APNs 中�
 
 ## 参与贡献
 
-欢迎提交 issue 与 PR，请先阅读 [Contributing](docs/development/contributing.md)。
+欢迎提交 issue 与 PR，请先阅读 [Contributing](docs/development/contributing.md)。安全漏洞请私下报告，见
+[SECURITY.md](SECURITY.md)。
 
 ## 许可
 

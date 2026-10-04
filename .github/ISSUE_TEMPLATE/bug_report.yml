@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include private keys, passwords, tokens, real host names or terminal output you
+        would not publish. Security issues: use the private reporting link in the Security tab.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: shuai version or commit
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: iPad model and iPadOS version
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Server setup
+      description: OS, tmux version, Claude Code version, whether AI integration is enabled.
