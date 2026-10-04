@@ -10,6 +10,6 @@ description = "Deterministic app icon generator (layered SVG -> PNG)"
 
 [dependencies]
 png = "0.18"
-resvg = { version = "0.45", default-features = false }
+resvg = { version = "0.48", default-features = false }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
