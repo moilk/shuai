@@ -1,9 +1,28 @@
-# plugin
+# shuai Claude Code plugin
 
-Claude Code plugin for shuai. Registers hooks that run `$HOME/.shuai/bin/shuai-agent hook <Event>`
-(the binary is installed there by the app over SFTP; the hooks are a silent no-op if it is missing).
+Forwards Claude Code hook events to `shuai-agent`, so the shuai iPad app can show agent status and
+answer permission requests. Every hook runs:
 
-- All events are `async` except `PermissionRequest` (sync, timeout 120s; the agent waits up to 110s
-  for the app, then falls back silently to the normal local dialog).
-- Install: `claude plugin marketplace add moilk/shuai && claude plugin install shuai@shuai`
-- Validate: `claude plugin validate plugin --strict`
+```sh
+[ -x "$HOME/.shuai/bin/shuai-agent" ] || exit 0; exec "$HOME/.shuai/bin/shuai-agent" hook <Event>
+```
+
+The app uploads the binary to `~/.shuai/bin/shuai-agent` over SSH; without it the hooks are a
+silent no-op.
+
+- Hooks: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+  `Notification`, `Stop`, `SubagentStop`, `StopFailure` (all `async`, timeout 15 s) and
+  `PermissionRequest` (synchronous, timeout 120 s). For a permission request the agent waits up to
+  110 s for an answer from the app and exits immediately when no app is connected; in both cases
+  Claude then shows its normal local dialog.
+- Install (normally done by the app's "Enable AI integration…"):
+  ```sh
+  claude plugin marketplace add moilk/shuai
+  claude plugin install shuai@shuai
+  ```
+- Uninstall: `claude plugin uninstall shuai@shuai && claude plugin marketplace remove shuai`.
+- Validate after editing: `claude plugin validate plugin --strict`.
+
+The marketplace manifest is `.claude-plugin/marketplace.json` at the repository root. The plugin
+version must equal the Rust workspace version (checked by `core/shuai-agent/tests/plugin.rs`).
+Protocol details: [docs/design/agent-protocol.md](../docs/design/agent-protocol.md).
