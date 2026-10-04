@@ -3,11 +3,14 @@ options:
   bundleIdPrefix: io.github.moilk
   deploymentTarget:
     iOS: "18.0"
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
 settings:
   base:
     SWIFT_VERSION: "6.0"
     TARGETED_DEVICE_FAMILY: "2"
-    CODE_SIGNING_ALLOWED: "NO"
+    # Device signing comes from Signing.xcconfig (+ optional gitignored Local.xcconfig).
     # Simulator builds are ad-hoc signed so the Keychain works (-34018 without entitlements).
     CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]: "YES"
     CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"
@@ -54,7 +57,7 @@ targets:
     settings:
       base:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHUAI_BUNDLE_ID)
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
@@ -66,7 +69,7 @@ targets:
       - target: Shuai
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai.tests
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHUAI_BUNDLE_ID).tests
   ShuaiUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -75,7 +78,7 @@ targets:
       - target: Shuai
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.moilk.shuai.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHUAI_BUNDLE_ID).uitests
 schemes:
   Shuai:
     build:

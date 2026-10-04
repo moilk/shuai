@@ -6,7 +6,7 @@ iPad AI-coding SSH terminal. Rust core + UniFFI, native Swift UI. Plan: `docs/pl
 - `core/` Cargo workspace (shuai-proto, -keys, -ssh, -tmux, -agentkit, -ffi, -agent, -testkit (dev only: in-process SSH server), uniffi-bindgen)
 - `apple/ShuaiKit` Swift package: `ShuaiCore` (binaryTarget ShuaiCoreFFI + generated bindings, Swift 5 mode) and `ShuaiPlatform` (Swift 6: Keychain key store, known_hosts/TOFU, `Connection`/`Shell` wrappers)
 - `apple/ShuaiKit/Sources/ShuaiTerminal` terminal module (see below)
-- `apple/App` iPad app (XcodeGen `project.yml`; the .xcodeproj is generated, never committed)
+- `apple/App` iPad app (XcodeGen `project.yml`; the .xcodeproj is generated, never committed). Device signing: `apple/App/Signing.xcconfig` (unsigned by default) + gitignored `Local.xcconfig` (`DEVELOPMENT_TEAM`, `SHUAI_BUNDLE_ID`); never hardcode a team or bundle id in project.yml
 - `plugin/` Claude Code plugin, `android/` future, `scripts/` build scripts
 
 ## Environment
