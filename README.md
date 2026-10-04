@@ -137,7 +137,8 @@ transport, native tmux splits and an Android app. See the [roadmap](docs/roadmap
 ## Contributing
 
 Issues and pull requests are welcome. Please read [Contributing](docs/development/contributing.md):
-test-first development, Conventional Commits, and the review checklist.
+test-first development, Conventional Commits, and the review checklist. Report vulnerabilities
+privately, see [SECURITY.md](SECURITY.md).
 
 ## License
 
