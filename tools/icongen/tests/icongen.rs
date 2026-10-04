@@ -684,3 +684,52 @@ fn shipped_themes_keep_7_to_1_mark_contrast() {
         assert!(worst >= 7.0, "{n}: contrast {worst:.2}");
     }
 }
+
+fn ids(svg: &str) -> Vec<String> {
+    svg.split("id=\"")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn enabled_gloss_draws_and_has_unique_ids() {
+    let (plain, g) = theme_and_glyph();
+    let mut glossy = plain.clone();
+    glossy.gloss.enabled = true;
+    let (a, b) = (svg::layers(&plain, &g, 128), svg::layers(&glossy, &g, 128));
+    for svg_text in [&b.composite, &b.gloss] {
+        let mut all = ids(svg_text);
+        let n = all.len();
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len(), n, "duplicate ids in {svg_text}");
+    }
+    let (pa, pb) = (
+        render::render(&a.composite, 128).unwrap(),
+        render::render(&b.composite, 128).unwrap(),
+    );
+    assert_ne!(pa.data(), pb.data(), "the gloss must change some pixel");
+    let gloss_only = render::render(&b.gloss, 128).unwrap();
+    assert!(gloss_only.pixels().iter().any(|p| p.alpha() > 0));
+}
+
+#[test]
+fn container_border_scales_with_the_canvas() {
+    let (mut t, g) = theme_and_glyph();
+    t.container.kind = "squircle".into();
+    for px in [16u32, 32, 48, 256, 1024] {
+        let c = svg::layers(&t, &g, px).container;
+        let attr = |name: &str| -> f64 {
+            let key = format!(" {name}=\"");
+            let rest = c.split(&key).nth(1).unwrap_or_else(|| panic!("{name}"));
+            rest.split('"').next().unwrap().parse().unwrap()
+        };
+        let s = f64::from(px);
+        let sw = attr("stroke-width");
+        assert!((sw - s * 2.0 / 1024.0).abs() < 1e-3, "{px}: stroke {sw}");
+        assert!((attr("x") - sw / 2.0).abs() < 1e-3, "{px}: x inset");
+        assert!((attr("y") - sw / 2.0).abs() < 1e-3, "{px}: y inset");
+        assert!((attr("width") - (s - sw)).abs() < 1e-3, "{px}: width");
+    }
+}
