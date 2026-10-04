@@ -191,8 +191,80 @@ pub fn png_close(a: &[u8], b: &[u8], tol: u8) -> Result<bool, String> {
         && da.iter().zip(&db).all(|(x, y)| x.abs_diff(*y) <= tol))
 }
 
+/// Numeric tolerance for SVG/JSON comparison, in user units.
+pub const TEXT_TOL: f64 = 1e-3;
+
+enum Tok<'a> {
+    Text(&'a str),
+    Num(f64),
+}
+
+/// Splits text into numbers (`-?digits(.digits)?`) and everything else. Hex colours (`#` plus
+/// its alphanumeric run) stay text; an identifier such as `S01` yields a small number, which
+/// still differs from `S02` by far more than any tolerance.
+fn tokens(s: &str) -> Vec<Tok<'_>> {
+    let b = s.as_bytes();
+    let (mut out, mut start, mut i) = (Vec::new(), 0, 0);
+    while i < b.len() {
+        if b[i] == b'#' {
+            i += 1;
+            while i < b.len() && b[i].is_ascii_alphanumeric() {
+                i += 1;
+            }
+            continue;
+        }
+        let starts =
+            b[i].is_ascii_digit() || (b[i] == b'-' && b.get(i + 1).is_some_and(u8::is_ascii_digit));
+        if !starts {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        while j < b.len() && b[j].is_ascii_digit() {
+            j += 1;
+        }
+        if j + 1 < b.len() && b[j] == b'.' && b[j + 1].is_ascii_digit() {
+            j += 1;
+            while j < b.len() && b[j].is_ascii_digit() {
+                j += 1;
+            }
+        }
+        match s[i..j].parse::<f64>() {
+            Ok(v) => {
+                if start < i {
+                    out.push(Tok::Text(&s[start..i]));
+                }
+                out.push(Tok::Num(v));
+                (start, i) = (j, j);
+            }
+            Err(_) => i = j,
+        }
+    }
+    if start < b.len() {
+        out.push(Tok::Text(&s[start..]));
+    }
+    out
+}
+
+/// True when two SVG/JSON texts have identical non-numeric text and every number differs by at
+/// most `tol`, so float formatting differences between platforms do not fail `check`. Content
+/// that is not UTF-8 must match byte for byte.
+pub fn text_close(a: &[u8], b: &[u8], tol: f64) -> bool {
+    let (Ok(a), Ok(b)) = (std::str::from_utf8(a), std::str::from_utf8(b)) else {
+        return a == b;
+    };
+    let (ta, tb) = (tokens(a), tokens(b));
+    ta.len() == tb.len()
+        && ta.iter().zip(&tb).all(|pair| match pair {
+            (Tok::Text(x), Tok::Text(y)) => x == y,
+            (Tok::Num(x), Tok::Num(y)) => (x - y).abs() <= tol,
+            _ => false,
+        })
+}
+
 /// Compares regenerated output with the committed files; returns one message per mismatch.
-/// SVG/JSON must match byte for byte, PNG within +-2 per channel.
+/// SVG/JSON must match up to [`TEXT_TOL`] on numbers (other text exactly), PNG within +-2 per
+/// channel.
 pub fn check(brand: &Path) -> Result<(), Vec<String>> {
     let files = build(brand).map_err(|e| vec![e])?;
     let mut problems = Vec::new();
@@ -204,7 +276,9 @@ pub fn check(brand: &Path) -> Result<(), Vec<String>> {
                 Ok(false) => problems.push(format!("{rel}: pixels differ")),
                 Err(e) => problems.push(format!("{rel}: {e}")),
             },
-            Ok(actual) if &actual != expected => problems.push(format!("{rel}: out of date")),
+            Ok(actual) if !text_close(expected, &actual, TEXT_TOL) => {
+                problems.push(format!("{rel}: out of date"));
+            }
             Ok(_) => {}
         }
     }

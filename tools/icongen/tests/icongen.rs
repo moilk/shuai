@@ -395,7 +395,10 @@ fn weight_widens_strokes() {
     };
     assert_eq!(ys(0.0), (-2.0, 2.0));
     let (lo, hi) = ys(2.0);
-    assert!((lo + 4.0).abs() < 1e-9 && (hi - 4.0).abs() < 1e-9, "{lo} {hi}");
+    assert!(
+        (lo + 4.0).abs() < 1e-9 && (hi - 4.0).abs() < 1e-9,
+        "{lo} {hi}"
+    );
 }
 
 fn pts(c: &[Vertex]) -> Vec<(f64, f64)> {
@@ -686,12 +689,20 @@ fn text_tolerance_compare_for_svg_and_json() {
         b"<path d=\"M0 0L10.5 -3.25Z\" opacity=\"0.12\"/>{\"b\": [1, 2.5]}\n",
         b"",
     ] {
-        assert!(!pipeline::text_close(a, bad, 1e-3), "{:?}", String::from_utf8_lossy(bad));
+        assert!(
+            !pipeline::text_close(a, bad, 1e-3),
+            "{:?}",
+            String::from_utf8_lossy(bad)
+        );
     }
     // Digits inside identifiers are text, not numbers.
     assert!(!pipeline::text_close(b"id=\"S01\"", b"id=\"S02\"", 1e-3));
     // Hex colours are text too.
-    assert!(!pipeline::text_close(b"fill=\"#0b0b0c\"", b"fill=\"#0b0b0d\"", 1.0));
+    assert!(!pipeline::text_close(
+        b"fill=\"#0b0b0c\"",
+        b"fill=\"#0b0b0d\"",
+        1.0
+    ));
     // Non-UTF-8 content compares exactly.
     assert!(pipeline::text_close(&[0xff, 0xfe], &[0xff, 0xfe], 1e-3));
     assert!(!pipeline::text_close(&[0xff, 0xfe], &[0xff, 0xfd], 1e-3));
