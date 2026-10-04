@@ -16,7 +16,7 @@ pub struct State {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {
-    /// Id of this host in deep links (`shuai://host/<id>/...`); defaults to the hostname.
+    /// Id of this host in deep links (`shuai://open?host=<id>&pane=<%N>`); defaults to the hostname.
     pub host_id: Option<String>,
     /// Human-readable host name shown in pushes (the app's host profile name).
     pub host_name: Option<String>,
