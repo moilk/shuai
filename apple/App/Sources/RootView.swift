@@ -37,7 +37,7 @@ struct RootView: View {
             if let message = model.transientNotice, model.selection.flatMap({ model.hosts.host(id: $0) }) == nil {
                 NoticeView(text: message) { model.transientNotice = nil }
                     .task(id: message) {
-                        try? await Task.sleep(for: .seconds(4))
+                        try? await Task.sleep(for: .seconds(NoticeView.transientSeconds))
                         model.transientNotice = nil
                     }
             }
