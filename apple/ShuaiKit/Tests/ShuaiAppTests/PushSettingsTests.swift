@@ -138,6 +138,44 @@ struct PushSettingsTests {
         #expect(NtfyTopic.isValid(s.topic))
     }
 
+    @Test func regeneratingTheTopicAndTogglingPushNotifyTheApp() {
+        let s = make()
+        var calls = 0
+        s.onSyncRelevantChange = { calls += 1 }
+        s.regenerateTopic()
+        #expect(calls == 1)
+        s.enabled = true
+        s.enabled = false
+        #expect(calls == 3)
+        s.enabled = false
+        #expect(calls == 3, "no change, no sync")
+    }
+
+    @Test func windowNamesAreOptInAndPersist() {
+        let defaults = UserDefaults(suiteName: "push-\(UUID().uuidString)")!
+        let secrets = InMemoryPushSecretStore()
+        let s = make(defaults: defaults, secrets: secrets)
+        s.enabled = true
+        #expect(!s.includeWindowNames)
+        #expect(s.config?.includeWindowNames == false)
+        s.includeWindowNames = true
+        #expect(s.config?.includeWindowNames == true)
+        #expect(make(defaults: defaults, secrets: secrets).includeWindowNames)
+    }
+
+    @Test func failureMessagesNeverContainTheTopicOrToken() async {
+        struct Leaky: Error, LocalizedError {
+            let text: String
+            var errorDescription: String? { text }
+        }
+        let bad = RecordingTransport()
+        let s = make(transport: bad)
+        s.token = "tk_SECRET"
+        bad.error = Leaky(text: "could not reach https://ntfy.sh/\(s.topic) with Bearer tk_SECRET")
+        guard case .failed(let m) = await s.sendTest() else { Issue.record("expected failure"); return }
+        #expect(!m.contains(s.topic) && !m.contains("tk_SECRET"), "\(m)")
+    }
+
     @Test func configIsBuiltOnlyWhenEnabledAndValid() {
         let s = make()
         s.enabled = true

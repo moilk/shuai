@@ -53,6 +53,15 @@ struct DeepLinkParseTests {
         "shuai://host/\(idText)/pane/%255",
         "http://open?host=\(idText)",
         "ntfy://open?host=\(idText)",
+        "shuai://open?host=\(idText)&pane=%255%CC%81",  // combining accent on the digit
+        "shuai://open?host=\(idText)&pane=%25%EF%BC%95",  // full-width digit
+        "shuai://open?host=\(idText)&pane=%25%D9%A5",  // Arabic-indic digit
+        "shuai://open?host=\(idText)&pane=%255%0A",
+        "shuai://open?host=\(idText)&pane=%255%00",
+        "shuai://user:pw@open?host=\(idText)",
+        "shuai://open:80?host=\(idText)",
+        "shuai://allow?host=\(idText)",
+        "shuai://respond?host=\(idText)&behavior=allow",
     ])
     func rejectsHostileInput(_ s: String) {
         if case .success(let l) = parse(s) { Issue.record("accepted \(s) as \(l)") }
@@ -139,5 +148,45 @@ struct DeepLinkRouterTests {
         let outcome = await DeepLinkRouter(navigator: nav).handle(DeepLink(hostID: id, pane: "%4"))
         #expect(outcome == .opened)
         #expect(nav.calls[0].1 == "%4")
+    }
+}
+
+@Suite("DeepLink safety")
+@MainActor
+struct DeepLinkSafetyTests {
+    /// Any web page or app can open a `shuai://` URL. Whatever it contains, the only thing that
+    /// may ever happen is `navigate(hostID:pane:)` for a configured host with a strict pane id:
+    /// no approval, no text for the terminal, no unknown host, nothing but that one call.
+    @Test func hostileLinksOnlyEverReachNavigateWithValidatedArguments() async {
+        let nav = FakeNavigator()
+        let router = DeepLinkRouter(navigator: nav)
+        let other = "99999999-2222-3333-4444-555555555555"
+        let urls = [
+            "shuai://open?host=\(idText)&pane=%251&behavior=allow&decision=allow&respond=allow&request_id=abc",
+            "shuai://open?host=\(idText)&pane=%251&send=rm%20-rf%20%2F&text=rm&command=rm&cmd=rm&keys=y%0A",
+            "shuai://open?host=\(idText)&pane=%251%3Bkill-server",
+            "shuai://open?host=\(idText)&pane=%251%0Aexit",
+            "shuai://open?host=\(other)&pane=%251",
+            "shuai://open?host=evil.example.com&pane=%251",
+            "shuai://open?host=\(idText)&host=\(other)",
+            "shuai://open?host=\(idText)&pane=%255%CC%81",
+            "shuai://allow?host=\(idText)&request=1",
+            "shuai://open?host=\(idText)#pane=%251;allow",
+            "shuai://open?host=\(idText)&accept-host-key=1&trust=1&password=hunter2",
+        ]
+        for u in urls { _ = await router.handle(URL(string: u)!) }
+        for (host, pane) in nav.calls {
+            #expect(host == id, "only the configured host")
+            if let pane { #expect(DeepLink.isValidPane(pane) && pane.utf8.allSatisfy { $0 < 0x80 }, "pane \(pane)") }
+        }
+        // the four that are ours and well formed navigate (extras ignored); everything else is refused
+        #expect(nav.calls.count == 4)
+    }
+
+    @Test func navigatorProtocolOffersNoWayToActOnPermissionsOrInput() {
+        // Compile-time pin: if PaneNavigating grows anything but these two requirements, update
+        // the safety review of deep links first.
+        let nav: any PaneNavigating = FakeNavigator()
+        _ = nav.hostExists(id)
     }
 }

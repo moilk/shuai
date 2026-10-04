@@ -56,7 +56,27 @@ struct AgentConfigWriterTests {
         #expect(remote.uploads.get == [UploadRecord(path: "/home/u/.shuai/config.toml.tmp", data: Data("toml-text".utf8), mode: 0o600)])
         let cmds = remote.commands.get
         #expect(cmds.first == "mkdir -p /home/u/.shuai && chmod 700 /home/u/.shuai")
-        #expect(cmds.last == "mv -f /home/u/.shuai/config.toml.tmp /home/u/.shuai/config.toml")
+        #expect(cmds.last == "mv -f /home/u/.shuai/config.toml.tmp /home/u/.shuai/config.toml && chmod 600 /home/u/.shuai/config.toml")
+    }
+
+    /// The token must never sit in a world-readable file, not even for the instant between `cat >`
+    /// creating the temp file and the `chmod`: it is pre-created 0600 under umask 077 (and any
+    /// old file or symlink at that path removed first).
+    @Test func tempFileExistsPrivateBeforeAnyContentIsUploaded() async throws {
+        let remote = FakeAgentRemote()
+        try await AgentConfigWriter.write("secret", remote: remote, home: "/home/u")
+        let cmds = remote.commands.get
+        #expect(cmds.count == 3)
+        #expect(cmds[1] == "rm -f /home/u/.shuai/config.toml.tmp && (umask 077 && : > /home/u/.shuai/config.toml.tmp)")
+        #expect(remote.uploads.get.count == 1)
+    }
+
+    @Test func windowNamesAreOffUnlessOptedIn() {
+        let off = AgentConfigToml.render(hostID: hostileID, hostName: "h", ntfy: NtfyConfig(server: "https://ntfy.sh", topic: "t"))
+        #expect(!off.contains("window_names"))
+        let on = AgentConfigToml.render(
+            hostID: hostileID, hostName: "h", ntfy: NtfyConfig(server: "https://ntfy.sh", topic: "t", includeWindowNames: true))
+        #expect(on.contains("window_names = true\n"))
     }
 
     @Test func hostileHomeIsShellQuoted() async throws {
@@ -66,7 +86,7 @@ struct AgentConfigWriterTests {
             #expect(!c.contains("$(rm -rf ~)/") || c.contains("'/home/o'\\''b $(rm -rf ~)/`x`/.shuai"), "\(c)")
         }
         #expect(remote.commands.get[0] == "mkdir -p '/home/o'\\''b $(rm -rf ~)/`x`/.shuai' && chmod 700 '/home/o'\\''b $(rm -rf ~)/`x`/.shuai'")
-        #expect(remote.commands.get[1] == "mv -f '/home/o'\\''b $(rm -rf ~)/`x`/.shuai/config.toml.tmp' '/home/o'\\''b $(rm -rf ~)/`x`/.shuai/config.toml'")
+        #expect(remote.commands.get.last == "mv -f '/home/o'\\''b $(rm -rf ~)/`x`/.shuai/config.toml.tmp' '/home/o'\\''b $(rm -rf ~)/`x`/.shuai/config.toml' && chmod 600 '/home/o'\\''b $(rm -rf ~)/`x`/.shuai/config.toml'")
     }
 
     @Test func failureSurfaces() async {
@@ -125,6 +145,17 @@ struct PushSyncCoordinatorTests {
         settings.enabled = false
         #expect(await sync.syncIfNeeded(host: host, remote: r) == .synced)
         #expect(!String(decoding: r.uploads.get[1].data, as: UTF8.self).contains("[ntfy]"))
+    }
+
+    @Test func aNewTopicIsWrittenOnTheNextSync() async {
+        let (sync, settings, host) = make()
+        let r = remote()
+        _ = await sync.syncIfNeeded(host: host, remote: r)
+        let old = settings.topic
+        settings.regenerateTopic()
+        #expect(await sync.syncIfNeeded(host: host, remote: r) == .synced)
+        let text = String(decoding: r.uploads.get[1].data, as: UTF8.self)
+        #expect(text.contains("topic = \"\(settings.topic)\"") && !text.contains(old))
     }
 
     @Test func aFailedWriteIsRetriedNextTime() async {
