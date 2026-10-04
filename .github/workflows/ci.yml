@@ -4,8 +4,49 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to a pull request cancels its superseded run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Decides which jobs a change needs; a skipped job counts as passed. Docs-only changes run nothing.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      icon: ${{ steps.filter.outputs.icon }}
+      apple: ${{ steps.filter.outputs.apple }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'core/**'
+              - 'plugin/**'
+              - '.claude-plugin/**'
+              - 'fixtures/**'
+              - '.github/workflows/ci.yml'
+            icon:
+              - 'tools/icongen/**'
+              - 'brand/**'
+              - 'apple/App/Resources/Assets.xcassets/**'
+              - '.github/workflows/ci.yml'
+            apple:
+              - 'apple/**'
+              - 'core/**'
+              - 'scripts/**'
+              - 'fixtures/**'
+              - '.github/workflows/ci.yml'
+
   rust:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,6 +65,8 @@ jobs:
       - run: cargo test -p shuai-ffi --features testkit
 
   icon:
+    needs: changes
+    if: needs.changes.outputs.icon == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,7 +86,29 @@ jobs:
       - run: cargo run --release -- check
       - run: cargo run --release -- fidelity
 
-  apple:
+  # Real-SSH Swift tests against the testkit xcframework. Never shipped.
+  apple-kit:
+    needs: changes
+    if: needs.changes.outputs.apple == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: Build xcframework (testkit)
+        run: SHUAI_FFI_TESTKIT=1 scripts/build-xcframework.sh
+      - name: swift test (testkit)
+        working-directory: apple/ShuaiKit
+        run: SHUAI_FFI_TESTKIT=1 swift test
+
+  # The normal xcframework is what the app is tested against and what could ship.
+  apple-app:
+    needs: changes
+    if: needs.changes.outputs.apple == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,10 +119,20 @@ jobs:
         with:
           workspaces: core
       - run: brew install xcodegen
-      # Cross-compiles shuai-agent for Linux (bundled into the app as resources).
-      - uses: mlugg/setup-zig@v2
-      - run: cargo install cargo-zigbuild --locked
+      # The Linux shuai-agent binaries are bundled into the app. They only depend on core/, so the
+      # cache skips the zig cross-build when core/ did not change.
+      - name: Restore bundled shuai-agent binaries
+        id: agent
+        uses: actions/cache@v4
+        with:
+          path: apple/App/Resources/agent
+          key: agent-${{ hashFiles('core/**/*.rs', 'core/**/Cargo.toml', 'core/Cargo.lock', 'scripts/build-agent.sh') }}
+      - if: steps.agent.outputs.cache-hit != 'true'
+        uses: mlugg/setup-zig@v2
+      - if: steps.agent.outputs.cache-hit != 'true'
+        run: cargo install cargo-zigbuild --locked
       - name: Build bundled shuai-agent binaries
+        if: steps.agent.outputs.cache-hit != 'true'
         run: |
           rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
           scripts/build-agent.sh
@@ -65,13 +140,6 @@ jobs:
         run: |
           scripts/test-check-no-testkit.sh
           scripts/test-check-app-icon.sh
-      # 1) testkit build (in-process SSH server) for the real-SSH Swift tests. Never shipped.
-      - name: Build xcframework (testkit)
-        run: SHUAI_FFI_TESTKIT=1 scripts/build-xcframework.sh
-      - name: swift test (testkit)
-        working-directory: apple/ShuaiKit
-        run: SHUAI_FFI_TESTKIT=1 swift test
-      # 2) the normal build, which is what the App is tested against and what could ship.
       - name: Build xcframework (release configuration, no testkit)
         run: scripts/build-xcframework.sh
       - name: Guard - no testkit symbols in the xcframework
@@ -97,6 +165,8 @@ jobs:
         run: scripts/check-app-icon.sh "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/Shuai.app"
 
   agent-build:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
