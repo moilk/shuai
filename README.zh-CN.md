@@ -1,12 +1,36 @@
-# shuai
+<p align="center">
+  <img src="brand/out/exports/readme-256.png" width="128" alt="shuai 应用图标">
+</p>
 
-[English](README.md)
+<h1 align="center">shuai</h1>
 
-**感知 AI 编程的 iPad SSH 终端。** shuai 是一个带原生 tmux 导航的真终端，并且知道服务器上各个 Claude Code
-会话在做什么：哪个在工作、哪个在等你审批、哪个已完成。App 通过 SSH 直连你的服务器，没有中转，也没有
-shuai 云服务。以 MIT 许可证开源。
+<p align="center">
+  <b>感知 AI 编程的 iPad SSH 终端。</b><br>
+  <i>率，智以驭Shell。</i>
+</p>
 
-![shuai（演示数据）：带 agent 徽章的 tmux 侧栏、终端、原生审批卡片、Claude 快捷键条](docs/assets/integration.png)
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="iPadOS 18+" src="https://img.shields.io/badge/iPadOS-18%2B-black">
+  <img alt="Rust 核心，SwiftUI App" src="https://img.shields.io/badge/Rust%20%2B%20SwiftUI-orange">
+</p>
+
+<p align="center">
+  <a href="#特点">特点</a> ·
+  <a href="#功能">功能</a> ·
+  <a href="#工作原理">工作原理</a> ·
+  <a href="#从源码构建">构建</a> ·
+  <a href="#文档">文档</a> ·
+  <a href="README.md">English</a>
+</p>
+
+shuai 是一个带原生 tmux 导航的真终端，并且知道服务器上各个 Claude Code 会话在做什么：哪个在工作、
+哪个在等你审批、哪个已完成。App 通过 SSH 直连你的服务器，没有中转，也没有 shuai 云服务。以 MIT
+许可证开源。
+
+<p align="center">
+  <img src="docs/assets/integration.png" width="900" alt="shuai 横屏运行在 iPad 上（演示数据）：带 agent 徽章的 tmux 侧栏、终端、原生审批卡片、Claude 快捷键条">
+</p>
 
 ## 特点
 
