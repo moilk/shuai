@@ -513,3 +513,20 @@ fn theme_gates_reject_the_unweighted_small_mark() {
     let f = theme_failures(&c);
     assert!(f.iter().any(|m| m.contains("40 px")), "{f:?}");
 }
+
+#[test]
+#[should_panic(expected = "render")]
+fn a_failed_render_is_an_error_not_an_empty_mask() {
+    let g = Glyph::from_toml(GLYPH).unwrap();
+    let _ = rasterize(&g, 0.0, 0, 0, 1.0);
+}
+
+#[test]
+fn an_empty_render_against_an_empty_source_fails_the_gates() {
+    let g = Glyph::from_toml(GLYPH).unwrap();
+    let blank_src = field_of(&blank(60, 40));
+    // A NaN weight yields unparsable path data: nothing is drawn.
+    let r = evaluate(&g, f64::NAN, &blank_src);
+    let f = failures(&r);
+    assert!(f.iter().any(|m| m.contains("empty")), "{f:?}");
+}
