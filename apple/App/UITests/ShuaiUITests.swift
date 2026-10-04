@@ -158,9 +158,10 @@ final class ShuaiUITests: XCTestCase {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         app.open(URL(string: "shuai://open?host=\(Self.fixtureHost)&pane=%2599")!)
-        let notice = app.descendants(matching: .any)["session-notice"].firstMatch
+        // The notice is transient: match its text in the query itself instead of re-reading it later.
+        let notice = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'session-notice' AND label CONTAINS 'no longer exists'")).firstMatch
         XCTAssertTrue(notice.waitForExistence(timeout: 10))
-        XCTAssertTrue(notice.label.contains("no longer exists"), notice.label)
         XCTAssertEqual(app.buttons["tmux-window-@1"].value as? String, "active", "nothing moved")
 
         app.open(URL(string: "shuai://open?host=00000000-0000-4000-8000-000000000000&pane=%250")!)
