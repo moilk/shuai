@@ -359,7 +359,7 @@ struct AgentInstallerTests {
         let up = try #require(remote.uploads.get.first { $0.path == "/home/u/.shuai/config.toml.tmp" })
         #expect(up.mode == 0o600)
         #expect(String(decoding: up.data, as: UTF8.self) == "host_id = \"x\"\n")
-        #expect(remote.commands.get.contains("mv -f /home/u/.shuai/config.toml.tmp /home/u/.shuai/config.toml"))
+        #expect(remote.commands.get.contains("mv -f /home/u/.shuai/config.toml.tmp /home/u/.shuai/config.toml && chmod 600 /home/u/.shuai/config.toml"))
     }
 
     @Test func installWithoutConfigWritesNone() async throws {

@@ -108,6 +108,8 @@ private struct PushSettingsSection: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .accessibilityIdentifier("push-token-field")
+            Toggle("Include tmux window names", isOn: $push.includeWindowNames)
+                .accessibilityIdentifier("push-window-names-toggle")
             Button("Open in ntfy app", systemImage: "arrow.up.forward.app") { openNtfy(push) }
                 .accessibilityIdentifier("push-open-ntfy")
             Button {
@@ -135,7 +137,7 @@ private struct PushSettingsSection: View {
         } header: {
             Text("Background notifications")
         } footer: {
-            Text("When no Shuai window is watching, the agent on your host sends a push through ntfy. The official ntfy app (free, from the App Store) shows it; subscribe to the topic above with “Open in ntfy app”. Pushes contain status only, such as “Claude needs approval” and the host and tmux window name, never commands, prompts, messages or paths. The default server is the public ntfy.sh; anyone who knows the topic can read these status messages, so keep it private, or use your own server and an access token. Changes reach each host on its next connect, or right away with “Sync to connected hosts”.")
+            Text("When no Shuai window is watching, the agent on your host sends a push through ntfy. The official ntfy app (free, from the App Store) shows it; subscribe to the topic above with “Open in ntfy app”. Pushes contain status only, such as “Claude needs approval” with the host and the tmux session and window number, never commands, prompts, messages or paths. tmux names windows after the command running in them, so window names are left out unless you turn on “Include tmux window names”. The default server is the public ntfy.sh; anyone who knows the topic can read these status messages, so keep it private, or use your own server and an access token. A new topic or turning push on or off reaches connected hosts right away; other changes on each host’s next connect, or with “Sync to connected hosts”.")
         }
         .confirmationDialog("Create a new topic?", isPresented: $confirmRegenerate, titleVisibility: .visible) {
             Button("New topic", role: .destructive) {
@@ -143,7 +145,7 @@ private struct PushSettingsSection: View {
                 testResult = nil
             }
         } message: {
-            Text("Subscribe to the new topic in the ntfy app. Hosts get it on their next connect.")
+            Text("Connected hosts get the new topic right away, others on their next connect. Subscribe to the new topic in the ntfy app.")
         }
     }
 

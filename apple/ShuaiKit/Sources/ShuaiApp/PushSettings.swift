@@ -60,7 +60,16 @@ public final class PushSettings {
     /// The official ntfy iOS app (shows the pushes).
     public static let appStoreURL = URL(string: "https://apps.apple.com/app/ntfy/id1625396347")!
 
-    public var enabled: Bool { didSet { defaults.set(enabled, forKey: Keys.enabled) } }
+    public var enabled: Bool {
+        didSet {
+            defaults.set(enabled, forKey: Keys.enabled)
+            if enabled != oldValue { onSyncRelevantChange?() }
+        }
+    }
+    /// Put the tmux window name in pushes (off by default: it may be the running command line).
+    public var includeWindowNames: Bool { didSet { defaults.set(includeWindowNames, forKey: Keys.windowNames) } }
+    /// Called when enabling/disabling or a new topic means connected hosts should be re-synced.
+    @ObservationIgnored public var onSyncRelevantChange: (@MainActor () -> Void)?
     public var serverText: String { didSet { defaults.set(serverText, forKey: Keys.server) } }
     public private(set) var topic: String
     public var token: String {
@@ -74,6 +83,7 @@ public final class PushSettings {
     private enum Keys {
         static let enabled = "pushEnabled"
         static let server = "pushServer"
+        static let windowNames = "pushWindowNames"
     }
 
     public init(
@@ -85,6 +95,7 @@ public final class PushSettings {
         self.transport = transport
         enabled = defaults.object(forKey: Keys.enabled) as? Bool ?? false
         serverText = defaults.string(forKey: Keys.server) ?? Self.defaultServer
+        includeWindowNames = defaults.object(forKey: Keys.windowNames) as? Bool ?? false
         token = secrets.get(.token) ?? ""
         if let t = secrets.get(.topic), NtfyTopic.isValid(t) {
             topic = t
@@ -99,6 +110,7 @@ public final class PushSettings {
         let t = NtfyTopic.generate(randomBytes: randomBytes)
         secrets.set(t, for: .topic)
         topic = t
+        onSyncRelevantChange?()
     }
 
     public var serverValidation: NtfyServer.Validation { NtfyServer.validate(serverText) }
@@ -110,7 +122,8 @@ public final class PushSettings {
     /// What goes into the host's `[ntfy]` section; nil while push is off or the server is invalid.
     public var config: NtfyConfig? {
         guard enabled, let url = serverValidation.url else { return nil }
-        return NtfyConfig(server: url.absoluteString, topic: topic, token: token.isEmpty ? nil : token)
+        return NtfyConfig(
+            server: url.absoluteString, topic: topic, token: token.isEmpty ? nil : token, includeWindowNames: includeWindowNames)
     }
 
     /// `ntfy://<server>/<topic>`: opens the ntfy app on this topic.
@@ -128,7 +141,14 @@ public final class PushSettings {
             let status = try await transport.send(request)
             return (200 ..< 300).contains(status) ? .sent : .failed("The server answered HTTP \(status).")
         } catch {
-            return .failed(error.localizedDescription)
+            return .failed(redacted(error.localizedDescription))
         }
+    }
+
+    /// Error text from the network stack can quote the request URL (the topic) or headers.
+    private func redacted(_ text: String) -> String {
+        var out = text
+        for secret in [topic, token] where !secret.isEmpty { out = out.replacingOccurrences(of: secret, with: "…") }
+        return out
     }
 }

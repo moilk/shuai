@@ -114,6 +114,8 @@ final class AppModel {
         notifier?.onOpen = { [weak self] profile, pane in
             Task { @MainActor in await self?.open(DeepLink(hostID: profile, pane: pane)) }
         }
+        // A new topic or push turned on/off reaches every connected host right away (others on connect).
+        pushSettings.onSyncRelevantChange = { [weak self] in self?.syncPushConfigToConnectedHosts() }
         hub.onAgentReady = { [weak self] id, remote in
             guard let self, let host = self.hosts.host(id: id) else { return }
             _ = await self.pushSync.syncIfNeeded(host: host, remote: remote)
@@ -295,6 +297,14 @@ final class AppModel {
             case .upToDate: break
             case .failed(let m): transientNotice = "Could not sync to \(host.name): \(m)"
             }
+        }
+    }
+
+    /// Silent: writes `config.toml` only to connected hosts whose copy differs from what we would write.
+    private func syncPushConfigToConnectedHosts() {
+        for host in hosts.hosts where agentHub.status(for: host.id).isInstalled {
+            guard let remote = sessions.existingController(for: host.id)?.agentRemote else { continue }
+            Task { _ = await pushSync.syncIfNeeded(host: host, remote: remote) }
         }
     }
 

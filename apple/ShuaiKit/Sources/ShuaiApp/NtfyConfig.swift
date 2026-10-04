@@ -118,11 +118,14 @@ public struct NtfyConfig: Equatable, Sendable {
     public var server: String
     public var topic: String
     public var token: String?
+    /// Send tmux window names in pushes. Off: automatic-rename makes them the running command line.
+    public var includeWindowNames: Bool
 
-    public init(server: String, topic: String, token: String? = nil) {
+    public init(server: String, topic: String, token: String? = nil, includeWindowNames: Bool = false) {
         self.server = server
         self.topic = topic
         self.token = token
+        self.includeWindowNames = includeWindowNames
     }
 }
 
@@ -138,6 +141,7 @@ public enum AgentConfigToml {
             out += "server = \(quote(n.server))\n"
             out += "topic = \(quote(n.topic))\n"
             if let t = n.token, !t.isEmpty { out += "token = \(quote(t))\n" }
+            if n.includeWindowNames { out += "window_names = true\n" }
         }
         return out
     }

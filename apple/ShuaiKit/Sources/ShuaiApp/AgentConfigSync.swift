@@ -19,9 +19,14 @@ public enum AgentConfigWriter {
             }
         }
         let dir = ShellQuote.quote(p.dir)
+        let tmp = ShellQuote.quote(p.tmp)
+        let final = ShellQuote.quote(p.final)
         try await run("mkdir -p \(dir) && chmod 700 \(dir)", "mkdir")
+        // The file holds the ntfy topic/token: create it 0600 (and drop any old file or symlink)
+        // *before* any content is written, so it is never readable by others, even briefly.
+        try await run("rm -f \(tmp) && (umask 077 && : > \(tmp))", "prepare config.toml")
         try await remote.upload(Data(toml.utf8), to: p.tmp, mode: 0o600)
-        try await run("mv -f \(ShellQuote.quote(p.tmp)) \(ShellQuote.quote(p.final))", "replace config.toml")
+        try await run("mv -f \(tmp) \(final) && chmod 600 \(final)", "replace config.toml")
     }
 
     /// The remote `$HOME` (absolute), for hosts the installer's probe did not run on.

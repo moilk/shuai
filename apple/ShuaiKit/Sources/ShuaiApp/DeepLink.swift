@@ -21,7 +21,8 @@ public struct DeepLink: Equatable, Sendable {
     public static func isValidPane(_ s: String) -> Bool {
         guard s.hasPrefix("%") else { return false }
         let digits = s.dropFirst()
-        return (1 ... 9).contains(digits.count) && digits.allSatisfy { $0 >= "0" && $0 <= "9" }
+        // ASCII bytes only: Character comparison would accept "5" + a combining accent.
+        return (1 ... 9).contains(digits.utf8.count) && digits.utf8.allSatisfy { $0 >= 0x30 && $0 <= 0x39 }
     }
 
     public static func parse(_ url: URL) -> Result<DeepLink, DeepLinkError> {
