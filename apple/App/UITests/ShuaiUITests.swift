@@ -133,6 +133,84 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(pane.exists)
     }
 
+    // MARK: deep links (shuai://open?host=&pane=, what an ntfy push click opens)
+
+    private static let fixtureHost = "5B0F1C00-0000-4000-8000-00000000F1E1"
+
+    @MainActor
+    func testDeepLinkSelectsTheNamedPane() throws {
+        let app = launchWithTmuxFixture()
+        let shell = app.buttons["tmux-window-@0"]
+        let claude = app.buttons["tmux-window-@1"]
+        XCTAssertTrue(claude.waitForExistence(timeout: 10))
+        XCTAssertEqual(claude.value as? String, "active")
+        XCTAssertNotEqual(shell.value as? String, "active")
+        app.open(URL(string: "shuai://open?host=\(Self.fixtureHost)&pane=%250")!)
+        // pane %0 lives in window @0: it becomes the active window, @1 no longer is
+        let active = NSPredicate(format: "value == 'active'")
+        expectation(for: active, evaluatedWith: shell)
+        waitForExpectations(timeout: 15)
+        XCTAssertNotEqual(claude.value as? String, "active")
+    }
+
+    @MainActor
+    func testDeepLinkToAMissingPaneOrHostShowsAFriendlyNotice() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.open(URL(string: "shuai://open?host=\(Self.fixtureHost)&pane=%2599")!)
+        let notice = app.descendants(matching: .any)["session-notice"].firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertTrue(notice.label.contains("no longer exists"), notice.label)
+        XCTAssertEqual(app.buttons["tmux-window-@1"].value as? String, "active", "nothing moved")
+
+        app.open(URL(string: "shuai://open?host=00000000-0000-4000-8000-000000000000&pane=%250")!)
+        let unknown = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'not in Shuai'")).firstMatch
+        XCTAssertTrue(unknown.waitForExistence(timeout: 10))
+
+        app.open(URL(string: "shuai://open?host=nope&pane=%250;rm")!)
+        let invalid = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'not a valid'")).firstMatch
+        XCTAssertTrue(invalid.waitForExistence(timeout: 10))
+    }
+
+    /// Scrolls the list inside the open sheet (not the whole app) until `target` is hittable; bounded.
+    @MainActor
+    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, maxSwipes: Int = 12) {
+        let bar = app.navigationBars["Settings"]
+        let sheetX = bar.frame.midX
+        let lists = app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex
+        let list = lists.first { $0.frame.minX <= sheetX && sheetX <= $0.frame.maxX && $0.frame.width < app.frame.width * 0.95 }
+            ?? lists.first { $0.frame.minX <= sheetX && sheetX <= $0.frame.maxX }
+        var swipes = 0
+        while !target.isHittable, swipes < maxSwipes {
+            _ = target.waitForExistence(timeout: 0.5)
+            if target.isHittable { break }
+            (list ?? app).swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        XCTAssertTrue(target.isHittable, "\(target) not reachable after \(swipes) swipes\n\(app.debugDescription)")
+    }
+
+    @MainActor
+    func testNotificationSettingsShowTopicAndTestButton() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
+        // top to bottom, so scrolling for the next target never passes an earlier one
+        scrollSheet(app, until: app.textFields["push-server-field"])
+        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
+        let topic = app.staticTexts["push-topic"]
+        scrollSheet(app, until: topic)
+        // the row's label is "Topic, <topic>" (LabeledContent)
+        let value = topic.label.components(separatedBy: ", ").last ?? ""
+        XCTAssertNotNil(value.wholeMatch(of: /shuai-[a-z2-7]{26}/), topic.label)
+        scrollSheet(app, until: app.buttons["push-send-test"])
+        XCTAssertTrue(app.buttons["push-send-test"].exists)
+        scrollSheet(app, until: app.buttons["push-open-ntfy"])
+        XCTAssertTrue(app.buttons["push-open-ntfy"].exists)
+    }
+
     // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
 
     @MainActor

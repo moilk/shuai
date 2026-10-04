@@ -67,6 +67,9 @@ enum Cmd {
     CodexNotify { json: String },
     /// Print an environment report as JSON.
     Doctor,
+    /// Internal: send one push described by a JSON job on stdin (spawned detached by hooks).
+    #[command(hide = true)]
+    PushSend,
 }
 
 fn main() -> ExitCode {
@@ -161,8 +164,12 @@ fn main() -> ExitCode {
             };
             match ntfy::send(&cfg, &m) {
                 Ok(()) => ExitCode::SUCCESS,
-                Err(e) => fail(&format!("notify: {e}")),
+                Err(e) => fail(&format!("notify: {}", ntfy::redact(&cfg, &e.to_string()))),
             }
+        }
+        Cmd::PushSend => {
+            ntfy::push_send(&state);
+            ExitCode::SUCCESS
         }
         Cmd::Doctor => {
             println!(

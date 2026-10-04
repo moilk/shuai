@@ -1,0 +1,8 @@
+# Written by the Shuai app. Changes are overwritten.
+host_id = "11111111-2222-3333-4444-555555555555"
+host_name = "a\"b\\c\n\tü\u007F"
+
+[ntfy]
+server = "https://ntfy.example.com"
+topic = "shuai-abc"
+token = "tk\"\\x"

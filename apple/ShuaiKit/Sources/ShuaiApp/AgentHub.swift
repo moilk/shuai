@@ -53,6 +53,10 @@ public final class AgentHub: PaneAgentInfoProvider {
     /// Live (never replayed) changes of a host, translated to its profile id.
     @ObservationIgnored public var onLiveChanges: (@MainActor (UUID, [FfiTrackerChange]) -> Void)?
 
+    /// A connected host turned out to have the agent installed (called after every such connect).
+    /// Used to bring its `config.toml` (push settings) up to date.
+    @ObservationIgnored public var onAgentReady: (@MainActor (UUID, AgentRemote) async -> Void)?
+
     @ObservationIgnored private let expectedVersion: String
     @ObservationIgnored private let now: @Sendable () -> UInt64
     @ObservationIgnored private let reconcileInterval: Duration
@@ -103,6 +107,7 @@ public final class AgentHub: PaneAgentInfoProvider {
             monitors[id] = monitor
         }
         monitor.attach(remote: remote, claudePath: info.claudePath)
+        if let ready = onAgentReady { Task { await ready(id, remote) } }
     }
 
     /// The connection of `id` went away (state is kept for the UI until it comes back).

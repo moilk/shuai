@@ -38,7 +38,7 @@
 - [ ] **D2 审批卡片 Deny**：同上，点 Deny（可附消息）。预期：Claude 收到拒绝，不执行该操作。
 - [ ] **D3 App 离线回落**：退出并杀掉 shuai，再让 Claude 请求权限。预期：Claude 立即在终端弹出自己的本地对话框，不卡住。
 - [ ] **D4 徽章与跳转**：观察侧栏徽章随 工作/等待/完成 变化；⌘K、⌘⇧A 能跳到等待中的 pane。
-- [ ] **D5 ntfy 推送**（需 `feat/push` 构建）：Settings 开启 Push，在 ntfy App 订阅 topic，“Send test notification” 能收到。然后把 shuai 切到后台或锁屏，让 Claude 请求权限。预期：几秒内收到 “Claude needs approval”；正文只有主机与 `会话 › 窗口序号`，默认不含窗口名。
+- [ ] **D5 ntfy 推送**：Settings 开启 Push，在 ntfy App 订阅 topic，“Send test notification” 能收到。然后把 shuai 切到后台或锁屏，让 Claude 请求权限。预期：几秒内收到 “Claude needs approval”；正文只有主机与 `会话 › 窗口序号`，默认不含窗口名。
 - [ ] **D6 点击通知跳转**：点击上一条通知。预期：shuai 打开、连接该主机并选中正确的 pane。
 
 ## 如何反馈

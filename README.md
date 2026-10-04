@@ -21,7 +21,7 @@
 - 硬件快捷键（⌘1–9、⌘T、⌘D、⌘K 快速切换器、⌘⇧A 跳到待处理 agent 等）
 - 一键「Enable AI integration…」：安装 `shuai-agent`、Claude Code 插件、tmux 配置块，并可完整卸载
 - 原生审批卡片（Allow / Deny，App 离线时无缝回落到 Claude 本地对话框）
-- 后台通知（ntfy，status-only）与 `shuai://` 深链接跳转到对应 pane（分支 `feat/push`，合并后进入 main）
+- 后台通知（ntfy，status-only）与 `shuai://` 深链接跳转到对应 pane
 
 ## 架构
 
@@ -71,7 +71,7 @@ flowchart LR
 
 ## 状态与路线
 
-- **v1 已完成**：Rust 核心与 FFI、SSH/密钥/TOFU/重连、终端（libghostty）、主机管理、tmux 原生化、Claude 集成（agent + plugin + 一键安装 + 徽章 + 原生审批 + Codex notify）、ntfy 后台通知与深链接（`feat/push`）。
+- **v1 已完成**：Rust 核心与 FFI、SSH/密钥/TOFU/重连、终端（libghostty）、主机管理、tmux 原生化、Claude 集成（agent + plugin + 一键安装 + 徽章 + 原生审批 + Codex notify）、ntfy 后台通知与深链接。
 - **待办（需要真机）**：中文拼音 IME 与硬件键盘的真机验证，见[真机测试清单](docs/guide/device-checklist.md)。
 - **v1.x**：图片粘贴（SFTP 上传后插入路径）、语音听写、SFTP 浏览、Secure Enclave 密钥、主机配置 iCloud 同步。
 - **v2**：自建 APNs relay + Live Activity / 锁屏审批、clean-room mosh（Rust）、完整 `tmux -CC` 原生分屏、多 agent 看板、Android app。
@@ -107,7 +107,7 @@ MIT，见 [LICENSE](LICENSE)。
 
 shuai is an open-source (MIT), iPad-first SSH terminal that is aware of AI coding agents (Claude Code, and Codex via notify) running inside tmux. It connects **directly** to your server over SSH. There is no relay and no shuai cloud.
 
-**Features (v1):** real terminal (libghostty) with CJK/IME support, tmux-native window management (sidebar tree, quick switcher, hardware shortcuts), a Claude key strip (Yes/Always/No), a per-pane agent status dashboard, native permission cards (when the app is offline Claude falls back to its own local dialog immediately), one-tap "Enable AI integration" that installs `shuai-agent` and a Claude Code plugin on the host (fully removable), and opt-in background notifications through ntfy that carry status text only (never commands, prompts or paths; tmux window names are off by default), with `shuai://` deep links back to the pane. The ntfy and deep-link work lives on branch `feat/push` until merged.
+**Features (v1):** real terminal (libghostty) with CJK/IME support, tmux-native window management (sidebar tree, quick switcher, hardware shortcuts), a Claude key strip (Yes/Always/No), a per-pane agent status dashboard, native permission cards (when the app is offline Claude falls back to its own local dialog immediately), one-tap "Enable AI integration" that installs `shuai-agent` and a Claude Code plugin on the host (fully removable), and opt-in background notifications through ntfy that carry status text only (never commands, prompts or paths; tmux window names are off by default), with `shuai://` deep links back to the pane.
 
 **Architecture:** a shared Rust core (russh, UniFFI) drives a native SwiftUI/UIKit iPad app; a small static Rust binary, `shuai-agent`, runs on the server and is driven by Claude Code plugin hooks. Android (Compose) is planned.
 

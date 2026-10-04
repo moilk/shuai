@@ -33,7 +33,7 @@ private struct TerminalSessionView: View {
             if let message = model.transientNotice {
                 NoticeView(text: message) { model.transientNotice = nil }
                     .task(id: message) {
-                        try? await Task.sleep(for: .seconds(3))
+                        try? await Task.sleep(for: .seconds(NoticeView.transientSeconds))
                         model.transientNotice = nil
                     }
             }
@@ -333,7 +333,9 @@ private struct StatusBadge: View {
 }
 
 /// Non-blocking info banner (the terminal stays usable underneath).
-private struct NoticeView: View {
+struct NoticeView: View {
+    /// How long an app-level notice (deep-link failures, sync results) stays; long enough to read, and for slow CI to observe.
+    static let transientSeconds = 8
     let text: String
     let dismiss: () -> Void
     var body: some View {

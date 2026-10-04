@@ -345,6 +345,40 @@ struct AgentInstallerTests {
         #expect(remote.uploads.get.isEmpty)
     }
 
+    @Test func installWritesTheNotificationConfigBeforeTheDoctorRuns() async throws {
+        let remote = host(probe: probeText())
+        let inst = installer(remote)
+        let probe = try await inst.probe()
+        let options = InstallOptions(pluginSource: .local, agentConfigToml: "host_id = \"x\"\n")
+        let report = await inst.run(probe: probe, options: options)
+        #expect(report.ok)
+        let t = steps(report)
+        let cfg = try #require(t.firstIndex(of: "Write notification settings"))
+        let doc = try #require(t.firstIndex(of: "Run diagnostics"))
+        #expect(cfg < doc)
+        let up = try #require(remote.uploads.get.first { $0.path == "/home/u/.shuai/config.toml.tmp" })
+        #expect(up.mode == 0o600)
+        #expect(String(decoding: up.data, as: UTF8.self) == "host_id = \"x\"\n")
+        #expect(remote.commands.get.contains("mv -f /home/u/.shuai/config.toml.tmp /home/u/.shuai/config.toml && chmod 600 /home/u/.shuai/config.toml"))
+    }
+
+    @Test func installWithoutConfigWritesNone() async throws {
+        let remote = host(probe: probeText())
+        let inst = installer(remote)
+        let report = await inst.run(probe: try await inst.probe(), options: InstallOptions(pluginSource: .local))
+        #expect(!steps(report).contains("Write notification settings"))
+        #expect(!remote.uploads.get.contains { $0.path.hasSuffix("config.toml.tmp") })
+    }
+
+    @Test func dryRunDoesNotWriteTheConfig() async throws {
+        let remote = host(probe: probeText())
+        let inst = installer(remote)
+        let report = await inst.run(
+            probe: try await inst.probe(), options: InstallOptions(dryRun: true, agentConfigToml: "x"))
+        #expect(steps(report).contains("Write notification settings"))
+        #expect(remote.uploads.get.isEmpty)
+    }
+
     @Test func doctorReportDecodes() throws {
         let d = try DoctorReport.decode(doctorJSON)
         #expect(d.os == "linux")

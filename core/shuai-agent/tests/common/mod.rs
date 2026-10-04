@@ -175,6 +175,11 @@ pub struct Mock {
 }
 
 pub fn mock_server() -> Mock {
+    mock_server_delayed(Duration::ZERO)
+}
+
+/// Like `mock_server`, but sleeps `delay` after recording a request and before answering.
+pub fn mock_server_delayed(delay: Duration) -> Mock {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", l.local_addr().unwrap());
     let (tx, rx) = mpsc::channel();
@@ -202,13 +207,14 @@ pub fn mock_server() -> Mock {
                 .unwrap_or(0);
             let mut body = vec![0u8; n];
             let _ = r.read_exact(&mut body);
-            let _ =
-                s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
             let _ = tx.send(Req {
                 request_line: request_line.trim_end().to_string(),
                 headers,
                 body: String::from_utf8_lossy(&body).into_owned(),
             });
+            std::thread::sleep(delay);
+            let _ =
+                s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
         }
     });
     Mock { url, rx }
@@ -220,4 +226,18 @@ pub fn seqs(evs: &[Value]) -> Vec<u64> {
 
 pub fn path_in(home: &Path, rel: &str) -> PathBuf {
     home.join(rel)
+}
+
+/// Poll `f` until it returns Some (up to `secs`).
+pub fn wait_for<T>(secs: u64, mut f: impl FnMut() -> Option<T>) -> Option<T> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(secs);
+    loop {
+        if let Some(v) = f() {
+            return Some(v);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

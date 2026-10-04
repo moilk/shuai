@@ -52,7 +52,8 @@ fn codex_notify_pushes_when_app_absent() {
         .output()
         .unwrap();
     let r = m.rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert!(r.body.contains("Renamed foo"));
+    assert_eq!(r.headers["title"], "Codex finished");
+    assert!(!r.body.contains("Renamed foo"));
 }
 
 #[test]

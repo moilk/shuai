@@ -294,3 +294,25 @@ struct ConnectionAgentRemoteTests {
         #expect(conn.uploads.get == [UploadRecord(path: "/p", data: Data("x".utf8), mode: 0o755)])
     }
 }
+
+@Suite("AgentHub agent-ready hook")
+@MainActor
+struct AgentHubReadyTests {
+    @Test func firesOnceForAnInstalledAgentWithItsHostID() async {
+        let h = hub()
+        let id = UUID()
+        let seen = Locked<[UUID]>([])
+        h.onAgentReady = { host, _ in seen.with { $0.append(host) } }
+        await h.hostConnected(id: id, remote: remote())
+        #expect(await waitUntil { seen.get == [id] })
+    }
+
+    @Test func doesNotFireWithoutAnInstalledAgent() async {
+        let h = hub()
+        let fired = Locked(false)
+        h.onAgentReady = { _, _ in fired.with { $0 = true } }
+        await h.hostConnected(id: UUID(), remote: remote(probe: "host=box\n"))
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(!fired.get)
+    }
+}

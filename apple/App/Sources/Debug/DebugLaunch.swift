@@ -19,6 +19,10 @@ enum DebugLaunch {
         return args[i + 1]
     }
 
+    /// Fixed id of the fixture host, so UI tests can build `shuai://open?host=...` links for it.
+    static let fixtureHostID = UUID(uuidString: "5B0F1C00-0000-4000-8000-00000000F1E1")!
+    static func isFixtureHost(_ id: UUID) -> Bool { id == fixtureHostID && (args.contains("-debugTmuxFixture") || agentFixture) }
+
     static var agentFixture: Bool { args.contains("-debugAgentFixture") }
     static var autoAccept: Bool { args.contains("-debugAutoAcceptHostKey") }
     static var sendAfterConnect: String? { value(of: "-debugSendAfterConnect") }
@@ -63,7 +67,7 @@ enum DebugLaunch {
     @MainActor
     static func applyTmuxFixtureIfRequested(model: AppModel) {
         guard args.contains("-debugTmuxFixture") || agentFixture else { return }
-        var profile = HostProfile(name: "fixture-host", host: "example.invalid", username: "alice")
+        var profile = HostProfile(id: fixtureHostID, name: "fixture-host", host: "example.invalid", username: "alice")
         profile.tmux = TmuxPrefs(enabled: true, sessionName: "main")
         if model.hosts.host(id: profile.id) == nil { try? model.hosts.add(profile) }
         func pane(_ id: String, _ i: UInt32, _ active: Bool, _ cmd: String) -> FfiTmuxPane {
@@ -125,5 +129,26 @@ enum DebugLaunch {
     }
 
     @MainActor private static var sentOnce = false
+}
+
+extension AppModel {
+    /// Fixture hosts have no server: a deep link selects the pane in the made-up topology instead
+    /// (the real parsing, host lookup and pane-exists check have already run).
+    func debugNavigate(host: HostProfile, pane: String?) -> PaneNavigationResult {
+        selection = host.id
+        guard let pane else { return .opened }
+        let monitor = sessions.controller(for: host).tmux
+        guard var topology = monitor.topology,
+            let si = topology.sessions.firstIndex(where: { $0.windows.contains { $0.panes.contains { $0.id == pane } } })
+        else { return .paneNotFound }
+        let wi = topology.sessions[si].windows.firstIndex { $0.panes.contains { $0.id == pane } }!
+        for i in topology.sessions[si].windows.indices { topology.sessions[si].windows[i].active = i == wi }
+        for pi in topology.sessions[si].windows[wi].panes.indices {
+            topology.sessions[si].windows[wi].panes[pi].active = topology.sessions[si].windows[wi].panes[pi].id == pane
+        }
+        monitor.debugSeed(topology: topology, viewedSessionID: topology.sessions[si].id)
+        agentHub.markSeen(profileID: host.id, paneID: pane)
+        return .opened
+    }
 }
 #endif

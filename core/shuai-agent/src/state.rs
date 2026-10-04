@@ -16,8 +16,10 @@ pub struct State {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Config {
-    /// Id of this host in deep links (`shuai://host/<id>/...`); defaults to the hostname.
+    /// Id of this host in deep links (`shuai://open?host=<id>&pane=<%N>`); defaults to the hostname.
     pub host_id: Option<String>,
+    /// Human-readable host name shown in pushes (the app's host profile name).
+    pub host_name: Option<String>,
     pub ntfy: Option<Ntfy>,
 }
 
@@ -26,6 +28,10 @@ pub struct Ntfy {
     pub server: String,
     pub topic: String,
     pub token: Option<String>,
+    /// Include tmux's window name in pushes. Off by default: automatic-rename turns it into the
+    /// running command line, which is not status.
+    #[serde(default)]
+    pub window_names: bool,
 }
 
 fn env_f64(name: &str, default: f64) -> f64 {
@@ -130,6 +136,18 @@ impl State {
         Duration::from_secs_f64(env_f64("SHUAI_PRESENCE_TTL_SECS", 30.0).max(0.0))
     }
 
+    /// Minimum seconds between two non-approval pushes of one session.
+    pub fn push_min_interval(&self) -> Duration {
+        Duration::from_secs_f64(env_f64("SHUAI_PUSH_MIN_INTERVAL_SECS", 10.0).max(0.0))
+    }
+
+    pub fn push_gate_path(&self) -> PathBuf {
+        self.dir.join("push.json")
+    }
+    pub fn push_lock_path(&self) -> PathBuf {
+        self.dir.join("push.lock")
+    }
+
     pub fn poll_interval(&self) -> Duration {
         Duration::from_millis(env_f64("SHUAI_POLL_MS", 50.0).max(1.0) as u64)
     }
@@ -170,13 +188,27 @@ impl State {
         })();
     }
 
+    /// Parse `config.toml`. It can hold the ntfy topic and token, so a pre-existing file and
+    /// directory are tightened to 0600/0700 here, and a parse error is logged by position only
+    /// (toml's own message quotes the offending line, i.e. possibly the secrets).
     pub fn config(&self) -> Config {
-        match fs::read_to_string(self.config_path()) {
-            Ok(s) => toml::from_str(&s).unwrap_or_else(|e| {
-                self.log(&format!("config.toml: {e}"));
-                Config::default()
-            }),
-            Err(_) => Config::default(),
+        let path = self.config_path();
+        let Ok(text) = fs::read_to_string(&path) else {
+            return Config::default();
+        };
+        let _ = private_dir(&self.dir);
+        if fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o777 != 0o600) {
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
         }
+        toml::from_str(&text).unwrap_or_else(|e| {
+            let line = e
+                .span()
+                .map(|s| text[..s.start.min(text.len())].matches('\n').count() + 1);
+            match line {
+                Some(l) => self.log(&format!("config.toml: parse error at line {l}")),
+                None => self.log("config.toml: parse error"),
+            }
+            Config::default()
+        })
     }
 }

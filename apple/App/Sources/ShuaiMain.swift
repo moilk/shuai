@@ -21,6 +21,8 @@ struct ShuaiMain: App {
             RootView()
                 .environment(model)
                 .onChange(of: scenePhase) { _, phase in model.scenePhaseChanged(phase) }
+                // ntfy push taps: shuai://open?host=<uuid>&pane=%N
+                .onOpenURL { url in Task { await model.open(url: url) } }
         }
         .commands {
             CommandGroup(replacing: .newItem) {

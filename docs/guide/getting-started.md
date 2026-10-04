@@ -1,7 +1,5 @@
 # 快速上手
 
-> 「后台通知（ntfy）」与 `shuai://` 深链接在分支 `feat/push` 中实现。若你的构建尚未合并该分支，设置里不会出现 “Background notifications”，第 9 节不适用。其余内容对应 `main`。
-
 ![shuai 主界面：侧栏、终端、审批卡片、键盘栏（演示数据）](../screens/integration.png)
 
 ## 1. 添加主机
@@ -114,8 +112,6 @@ Claude 请求权限（如 Bash 命令、编辑文件）时：
 - 你始终可以用键盘栏的 Yes/Always/No 直接回答终端里的对话框。
 
 ## 9. 后台通知（ntfy）
-
-> 需要包含 `feat/push` 的构建。
 
 iOS 不允许 App 在后台长期保持 SSH 连接，所以 v1 用 [ntfy](https://ntfy.sh) 做后台推送，**设计上只推送状态**：
 

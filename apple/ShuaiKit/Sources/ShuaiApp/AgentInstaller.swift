@@ -25,11 +25,17 @@ public struct InstallOptions: Sendable {
     public var dryRun: Bool
     public var pluginSource: PluginSource
     public var codexConflict: CodexConflictResolution
+    /// Rendered `~/.shuai/config.toml` (push settings, host id) to write during install; nil leaves it alone.
+    public var agentConfigToml: String?
 
-    public init(dryRun: Bool = false, pluginSource: PluginSource = .github, codexConflict: CodexConflictResolution = .skip) {
+    public init(
+        dryRun: Bool = false, pluginSource: PluginSource = .github, codexConflict: CodexConflictResolution = .skip,
+        agentConfigToml: String? = nil
+    ) {
         self.dryRun = dryRun
         self.pluginSource = pluginSource
         self.codexConflict = codexConflict
+        self.agentConfigToml = agentConfigToml
     }
 }
 
@@ -156,7 +162,12 @@ public struct AgentInstaller: Sendable {
         progress: @escaping @Sendable (InstallProgress) -> Void = { _ in }
     ) async -> InstallReport {
         let runner = Runner(remote: remote, binaries: binaries, probe: probe, options: options)
-        let steps = plan(for: probe).map { runner.action(for: $0) }
+        var steps: [Action] = []
+        for step in plan(for: probe) {
+            // The config goes in before the doctor run so its report sees it.
+            if case .runDoctor = step, let toml = options.agentConfigToml { steps.append(runner.configAction(toml)) }
+            steps.append(runner.action(for: step))
+        }
         return await runner.execute(steps, progress: progress)
     }
 
@@ -350,6 +361,14 @@ private final class Runner: @unchecked Sendable {
                 if r.doctor == nil { r.warnings.append("Could not read the doctor report.") }
                 return .done
             }
+        }
+    }
+
+    func configAction(_ toml: String) -> Action {
+        Action(title: "Write notification settings", preview: ["Would write ~/.shuai/config.toml (push settings and this host's id)"]) { r in
+            try await AgentConfigWriter.write(toml, remote: r.remote, home: r.home)
+            r.log("Wrote \(AgentConfigWriter.paths(home: r.home).final)")
+            return .done
         }
     }
 
