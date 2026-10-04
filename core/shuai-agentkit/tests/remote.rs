@@ -289,7 +289,10 @@ fn removing_the_block_deletes_a_file_that_is_left_empty() {
     assert!(sh(&append_tmux_block_command(f.to_str().unwrap(), &lines)).0);
     assert!(f.exists());
     assert!(sh(&remove_tmux_block_command(f.to_str().unwrap())).0);
-    assert!(!f.exists(), "an install-created file that ends up empty is removed");
+    assert!(
+        !f.exists(),
+        "an install-created file that ends up empty is removed"
+    );
     // a file with other content is kept
     std::fs::write(&f, "keep\n").unwrap();
     assert!(sh(&append_tmux_block_command(f.to_str().unwrap(), &lines)).0);
