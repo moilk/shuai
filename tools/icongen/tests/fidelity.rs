@@ -234,7 +234,9 @@ fn douglas_peucker_and_corners() {
         (20.0, 20.0),
         (0.0, 20.0),
     ];
-    assert_eq!(corner_points(&bend, 35.0).len(), 3);
+    let c = corner_points(&bend, 35.0);
+    assert_eq!(c, vec![0, 2, 3, 4]);
+    assert!(!c.contains(&1));
 }
 
 #[test]
