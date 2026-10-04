@@ -42,7 +42,8 @@ private struct Harness {
         profile: HostProfile = HostProfile(name: "dev", host: host, username: "alice", auth: .password),
         maxAttempts: UInt32? = 3,
         sleep: @escaping @Sendable (UInt64) async throws -> Void = { _ in await Task.yield() },
-        factory: FakeFactory = FakeFactory()
+        factory: FakeFactory = FakeFactory(),
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.profile = profile
         self.factory = factory
@@ -51,7 +52,7 @@ private struct Harness {
             profile: profile, engine: engine, factory: factory, keys: keys, passwords: passwords,
             knownHosts: knownHosts,
             makePolicy: { ReconnectPolicy(maxAttempts: maxAttempts, jitter: false) },
-            sleep: sleep, redrawNudgeDelay: .milliseconds(1))
+            sleep: sleep, now: now, redrawNudgeDelay: .milliseconds(1))
         try? passwords.setPassword("pw", for: profile.id)
     }
 
@@ -379,6 +380,56 @@ private struct Harness {
         for i in 0 ..< 20 { h.engine.onInput?(Data("k\(i);".utf8)) }
         #expect(await waitUntil { shell.writes.get.count == 20 })
         #expect(shell.writtenText == (0 ..< 20).map { "k\($0);" }.joined())
+    }
+
+    // MARK: engine replies (tmux types stale/duplicate DA replies into the pane)
+
+    private static let esc = "\u{1B}"
+
+    @Test func engineRepliesToQueriesAreWrittenOneContiguousWriteEachInOrder() async {
+        let h = Harness()
+        await h.controller.connect()
+        let shell = h.factory.last!.shell
+        let e = Self.esc
+        shell.emit("\(e)[?1049h\(e)[c\(e)[>c\(e)[>q")
+        #expect(await waitUntil { h.engine.fedText.hasSuffix("[>q") })
+        let replies = ["\(e)[?62;22;52c", "\(e)[>1;10;0c", "\(e)P>|ghostty 1.3.2\(e)\\"]
+        for r in replies { h.engine.onInput?(Data(r.utf8)) }
+        h.engine.onInput?(Data("1".utf8))
+        #expect(await waitUntil { shell.writes.get.count == 4 })
+        // One write per reply/key, never split (ESC alone) or merged, in order.
+        #expect(shell.writes.get.map { String(decoding: $0, as: UTF8.self) } == replies + ["1"])
+    }
+
+    @Test func unsolicitedAndDuplicateDeviceRepliesAreNeverWritten() async {
+        let h = Harness()
+        await h.controller.connect()
+        let shell = h.factory.last!.shell
+        let e = Self.esc
+        // Nothing asked yet (e.g. answering a stale query / before the remote read anything).
+        h.engine.onInput?(Data("\(e)[?62;22;52c".utf8))
+        shell.emit("\(e)[c")
+        #expect(await waitUntil { h.engine.fedText == "\(e)[c" })
+        h.engine.onInput?(Data("\(e)[?62;22;52c".utf8))
+        h.engine.onInput?(Data("\(e)[?62;22;52c".utf8)) // second surface / replay answering the same query
+        h.engine.onInput?(Data("x".utf8))
+        #expect(await waitUntil { shell.writes.get.count == 2 })
+        #expect(shell.writes.get.map { String(decoding: $0, as: UTF8.self) } == ["\(e)[?62;22;52c", "x"])
+    }
+
+    @Test func lateDeviceReplyIsDropped() async {
+        let clock = Locked(Date(timeIntervalSince1970: 5_000))
+        let h = Harness(now: { clock.get })
+        await h.controller.connect()
+        let shell = h.factory.last!.shell
+        let e = Self.esc
+        shell.emit("\(e)[>c")
+        #expect(await waitUntil { h.engine.fedText == "\(e)[>c" })
+        clock.with { $0 += 8 } // the engine answered long after tmux's own request timeout
+        h.engine.onInput?(Data("\(e)[>1;10;0c".utf8))
+        h.engine.onInput?(Data("y".utf8))
+        #expect(await waitUntil { shell.writes.get.count == 1 })
+        #expect(shell.writtenText == "y")
     }
 
     @Test func engineResizeIsForwardedToTheShell() async {
