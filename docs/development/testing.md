@@ -86,6 +86,23 @@ Phases: `testE2EInstall`, `testE2ETypeAndEnter` (`SHUAI_E2E_TEXT`), `testE2EPerm
 `testE2EQuickSwitcher`, `testE2EUninstall`. They are separate so you can inspect the server between
 phases. The app is launched with `-debugAutoAcceptHostKey`, so only use a server you control.
 
+## README screenshot
+
+`docs/assets/integration.png` is a landscape capture of the DEBUG agent fixture (fixture data only)
+on the iPad Pro 13-inch simulator. With a Debug build installed on the simulator, set its language
+to English, rotate it to landscape (⌘←) and run:
+
+```sh
+xcrun simctl status_bar <udid> override --time "2007-01-09T01:41:00.000Z" \
+  --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularMode notSupported
+xcrun simctl launch <udid> <bundle id> -uiTesting -debugAgentFixture
+xcrun simctl io <udid> screenshot docs/assets/integration.png     # after ~10 s
+```
+
+Use `simctl io`: `XCUIScreen` and `XCUIApplication` screenshots of a rotated simulator come out
+sideways. The time is UTC and renders as 9:41 AM in UTC+8; pick the matching value for your zone.
+The on-screen keyboard appears only after the terminal is tapped, so do not tap before capturing.
+
 ## Flaky tests
 
 - A flaky test is a bug. Do not add retries or longer sleeps to hide it; find the race and inject the

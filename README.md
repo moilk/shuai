@@ -1,13 +1,37 @@
-# shuai
+<p align="center">
+  <img src="brand/out/exports/readme-256.png" width="128" alt="shuai app icon">
+</p>
 
-[简体中文](README.zh-CN.md)
+<h1 align="center">shuai</h1>
 
-**An AI-coding-aware SSH terminal for iPad.** shuai is a real terminal with native tmux navigation
-that knows what the Claude Code sessions on your server are doing: which one is working, which one
-waits for your approval, which one is done. It connects directly to your server over SSH; there is
-no relay and no shuai cloud. Open source under the MIT license.
+<p align="center">
+  <b>An AI-coding-aware SSH terminal for iPad.</b><br>
+  <i>AI that leads your Shell.</i>
+</p>
 
-![shuai with fixture data: tmux sidebar with agent badges, terminal, native permission card, Claude key strip](docs/assets/integration.png)
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <img alt="iPadOS 18+" src="https://img.shields.io/badge/iPadOS-18%2B-black">
+  <img alt="Rust core, SwiftUI app" src="https://img.shields.io/badge/Rust%20%2B%20SwiftUI-orange">
+</p>
+
+<p align="center">
+  <a href="#why-shuai">Why</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#quick-start-build-from-source">Quick start</a> ·
+  <a href="#documentation">Docs</a> ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+shuai is a real terminal with native tmux navigation that knows what the Claude Code sessions on
+your server are doing: which one is working, which one waits for your approval, which one is done.
+It connects directly to your server over SSH; there is no relay and no shuai cloud. Open source
+under the MIT license.
+
+<p align="center">
+  <img src="docs/assets/integration.png" width="900" alt="shuai on an iPad in landscape, with fixture data: tmux sidebar with agent badges, terminal, a native permission card and the Claude key strip">
+</p>
 
 ## Why shuai
 

@@ -1,4 +1,4 @@
-# Mono light (designer "反色版"): black mark on F01 warm white, no texture. For exports on light
+# Mono light: black mark on F01 warm white, no texture. For exports on light
 # backgrounds (README, docs), not an iOS appearance.
 name = "mono-light"
 

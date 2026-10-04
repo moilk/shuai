@@ -1,4 +1,4 @@
-# Matte theme (designer "标准磨砂版"): B01 near-black, faint ivory oracle-bone texture, F01 ivory
+# Matte theme: B01 near-black, faint ivory oracle-bone texture, F01 ivory
 # mark on an 8x8 grid with a 1x safe margin. Used for the light and dark appearances.
 name = "matte"
 

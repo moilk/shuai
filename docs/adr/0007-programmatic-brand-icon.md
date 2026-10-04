@@ -22,15 +22,15 @@ everything from plain-text configuration under `brand/`:
 
 - The glyph is traced once from the source PNG at sub-pixel accuracy (bicubic 4x upsample, 50%
   iso-contour, smoothing between carved corners, simplification) into `brand/mark/mark.toml`, a
-  dense outline per piece. The tracer output is committed and then curated; the source PNG is the
-  reference the fidelity gates measure against.
+  dense outline per piece, committed. The source PNG is the reference the fidelity gates measure
+  against.
 - Themes (`brand/themes/*.toml`) describe background, texture, mark fill, weight and scale. A mark
   weight is a uniform mitred outline offset, never a different glyph.
 - `icongen generate` renders layered SVG (base, texture, mark, gloss, container, composite) with
   fixed-precision numbers, rasterises with resvg to opaque 8-bit sRGB RGB PNGs, and writes the
   asset catalog and exports. Outputs are committed.
-- `icongen check` regenerates in memory and compares (SVG and JSON numerically: numbers within 1e-3
-  user units, all other text exactly; PNG within +-2 per channel); `icongen fidelity` enforces numeric fidelity gates. Both run in CI (`icon` job).
+- `icongen check` regenerates in memory and compares (SVG and JSON numerically, PNG within +-2 per
+  channel); `icongen fidelity` enforces numeric fidelity gates. Both run in CI (`icon` job).
 - The app consumes the committed `AppIcon.appiconset` (iOS 18 single-size with dark and tinted
   appearances). `scripts/check-app-icon.sh` verifies the compiled `Assets.car` has all three.
 
@@ -40,8 +40,8 @@ everything from plain-text configuration under `brand/`:
   carved corners versus smooth edges, and no way to apply a uniform weight; hard to review and to
   hold to a numeric fidelity gate.
 - **Icon Composer `.icon` bundle**: the right format for iOS 26 Liquid Glass layering, but it is an
-  Xcode-only binary-ish authoring flow with no headless generation or CI check. Planned later as an
-  addition, fed from the same layer SVGs (see `docs/development/icon.md`).
+  Xcode-only authoring flow with no headless generation or CI check. It can be added later, fed from
+  the same layer SVGs (see `docs/development/icon.md`).
 - **Node or Python tooling** (sharp, cairosvg, Pillow): adds a second language runtime and
   system libraries (cairo) with version-dependent anti-aliasing. The repo already requires Rust, and
   resvg is pure Rust and deterministic.
@@ -57,4 +57,4 @@ everything from plain-text configuration under `brand/`:
   otherwise).
 - On iOS 26 and later the system applies its own glass treatment to icons that are not `.icon`
   bundles; the flat matte look is therefore not guaranteed pixel-identical there.
-- The glyph geometry is a curated artefact; re-tracing is an explicit, reviewed step.
+- Re-tracing the glyph is an explicit, reviewed step.
