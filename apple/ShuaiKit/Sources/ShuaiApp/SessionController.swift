@@ -37,7 +37,13 @@ public final class SessionController {
 
     public var windowTitle: String { title.isEmpty ? profile.name : title }
 
+    /// tmux side channel (topology for the sidebar, window/pane actions). Started on every
+    /// successful tmux attach, stopped when the transport goes away.
+    public let tmux: TmuxMonitor
+    public let tmuxActions: TmuxActions
+
     @ObservationIgnored var stateLog: [SessionState] = [.idle]
+    @ObservationIgnored private var tmuxStartTask: Task<Void, Never>?
 
     // Dependencies
     @ObservationIgnored private let engine: any TerminalEngine
@@ -59,6 +65,9 @@ public final class SessionController {
     @ObservationIgnored private var connection: RemoteConnection?
     @ObservationIgnored private var shell: RemoteShell?
     @ObservationIgnored private var commands: AsyncStream<Command>.Continuation?
+    /// Non-nil while the tmux -> plain shell switch is in flight: keystrokes typed meanwhile wait here
+    /// and are replayed into the new shell (resizes are dropped; the new shell opens at the current size).
+    @ObservationIgnored private var inputDuringSwitch: [Data]?
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
     @ObservationIgnored private var writerTask: Task<Void, Never>?
     @ObservationIgnored private var closedTask: Task<Void, Never>?
@@ -86,6 +95,8 @@ public final class SessionController {
     @ObservationIgnored private var passwordCancelled = false
     /// tmux was not found on this host; later (re)connects open a plain shell right away.
     @ObservationIgnored private var tmuxUnavailable = false
+    /// tmux is missing on this host (plain shell fallback): no tmux tree will ever arrive.
+    public var tmuxMissing: Bool { tmuxUnavailable }
 
     private struct Cancelled: Error {}
 
@@ -111,6 +122,12 @@ public final class SessionController {
         self.sleep = sleep
         self.now = now
         self.redrawNudgeDelay = redrawNudgeDelay
+        let monitor = TmuxMonitor(sessionName: profile.tmux.sessionName, ptySize: { [engine] in
+            let g = engine.gridSize
+            return g.isValid ? (UInt32(g.cols), UInt32(g.rows)) : (80, 24)
+        })
+        tmux = monitor
+        tmuxActions = TmuxActions(monitor: monitor)
         wireEngine()
     }
 
@@ -118,12 +135,12 @@ public final class SessionController {
 
     private func wireEngine() {
         engine.onInput = { [weak self] data in
-            MainActor.assumeIsolated { _ = self?.commands?.yield(.write(data)) }
+            MainActor.assumeIsolated { self?.enqueue(.write(data)) }
         }
         engine.onResize = { [weak self] grid in
             MainActor.assumeIsolated {
                 guard grid.isValid else { return }
-                self?.commands?.yield(.resize(cols: UInt32(grid.cols), rows: UInt32(grid.rows)))
+                self?.enqueue(.resize(cols: UInt32(grid.cols), rows: UInt32(grid.rows)))
             }
         }
         engine.onTitleChange = { [weak self] t in MainActor.assumeIsolated { self?.title = t } }
@@ -135,7 +152,15 @@ public final class SessionController {
     public func dismissNotice() { notice = nil }
 
     /// Types text into the remote (debug scripting, tests).
-    public func sendInput(_ text: String) { commands?.yield(.write(Data(text.utf8))) }
+    public func sendInput(_ text: String) { enqueue(.write(Data(text.utf8))) }
+
+    private func enqueue(_ command: Command) {
+        if let commands {
+            commands.yield(command)
+        } else if inputDuringSwitch != nil, case .write(let data) = command {
+            inputDuringSwitch?.append(data)
+        }
+    }
 
     // MARK: - Public lifecycle
 
@@ -380,9 +405,21 @@ public final class SessionController {
         lastReconnectError = nil
         state = .connected
         onConnected?()
+        if useTmux { startTmuxMonitor(on: conn) }
 
         if reconnecting { redrawNudge(gen: gen) }
         if !useTmux, !reconnecting { typeStartupCommand() }
+    }
+
+    private func startTmuxMonitor(on conn: RemoteConnection) {
+        tmuxStartTask?.cancel()
+        let monitor = tmux
+        tmuxStartTask = Task { await monitor.start(on: conn) }
+    }
+
+    private func stopTmuxMonitor() async {
+        tmuxStartTask?.cancel(); tmuxStartTask = nil
+        if tmux.state != .idle { await tmux.stop() }
     }
 
     private func openRemoteShell(on conn: RemoteConnection, tmux: Bool) async throws -> RemoteShell {
@@ -450,6 +487,9 @@ public final class SessionController {
         guard gen == generation, let conn = connection else { return }
         tmuxUnavailable = true
         notice = Self.tmuxMissingNotice
+        inputDuringSwitch = []
+        defer { inputDuringSwitch = nil }
+        await stopTmuxMonitor()
         commands?.finish(); commands = nil
         writerTask = nil
         eventsTask = nil
@@ -462,6 +502,7 @@ public final class SessionController {
             guard gen == generation else { await plain.close(); return }
             startShell(plain, gen: gen, tmuxAttempt: false)
             typeStartupCommand()
+            for data in inputDuringSwitch ?? [] { enqueue(.write(data)) }
         } catch {
             guard gen == generation else { return }
             generation += 1
@@ -537,6 +578,7 @@ public final class SessionController {
         let s = shell, c = connection
         shell = nil
         connection = nil
+        await stopTmuxMonitor()
         await s?.close()
         await c?.disconnect()
     }

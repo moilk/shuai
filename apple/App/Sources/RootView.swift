@@ -4,14 +4,13 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
-    @State private var visibility: NavigationSplitViewVisibility = .all
     #if DEBUG
     @State private var showTerminalDebug = ProcessInfo.processInfo.arguments.contains("-debugTerminal")
     #endif
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView(columnVisibility: $visibility) {
+        NavigationSplitView(columnVisibility: $model.columnVisibility) {
             HostListView()
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
         } detail: {
@@ -20,6 +19,11 @@ struct RootView: View {
         .navigationSplitViewStyle(.balanced)
         .sheet(item: $model.editor) { target in
             HostEditorView(target: target)
+        }
+        .sheet(isPresented: Binding(
+            get: { model.quickSwitcher != nil }, set: { if !$0 { model.closeQuickSwitcher(activated: false) } })
+        ) {
+            if let q = model.quickSwitcher { QuickSwitcherView(switcher: q) }
         }
         .sheet(isPresented: $model.showSettings) { SettingsView() }
         .sheet(isPresented: $model.showKeys) { NavigationStack { KeysView() } }
@@ -74,6 +78,15 @@ struct HostListView: View {
                         Button("Edit", systemImage: "pencil") { model.editor = .edit(host) }
                         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = host }
                     }
+                if let controller = model.sessions.existingController(for: host.id) {
+                    if controller.tmux.topology != nil {
+                        TmuxHostTree(host: host, controller: controller)
+                    } else if TmuxTree.showsLoadingPlaceholder(
+                        session: controller.state, tmuxEnabled: host.tmux.enabled && !controller.tmuxMissing, monitor: controller.tmux.state, hasTopology: false)
+                    {
+                        TmuxLoadingRow()
+                    }
+                }
             }
         }
         .overlay {
@@ -89,6 +102,8 @@ struct HostListView: View {
         .navigationTitle("shuai")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { model.openQuickSwitcher() } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
+                    .accessibilityIdentifier("quick-switcher-button")
                 Button { model.showKeys = true } label: { Label("Keys", systemImage: "key") }
                     .accessibilityIdentifier("keys-button")
                 Button { model.showSettings = true } label: { Label("Settings", systemImage: "gearshape") }

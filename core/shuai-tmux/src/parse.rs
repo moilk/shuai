@@ -118,6 +118,39 @@ impl Row<'_> {
     }
 }
 
+/// Split one `-F` output line on [`FIELD_SEP`].
+///
+/// tmux 3.2/3.3 and 3.6+ print the separator raw, but tmux 3.4/3.5 escape it as the
+/// four characters `\037`. Field values are always escaped by tmux (`\` is doubled and
+/// control characters become `\ooo`), so a raw `\x1f` never occurs inside a value and
+/// an *unescaped* `\037` (preceded by an even number of backslashes) can only be a
+/// separator. The one ambiguity left is a value containing a real 0x1f on tmux 3.4/3.5;
+/// that yields a wrong field count, which callers reject instead of misparsing.
+pub fn split_fields(line: &str) -> Vec<&str> {
+    if line.contains(FIELD_SEP) {
+        return line.split(FIELD_SEP).collect();
+    }
+    let bytes = line.as_bytes();
+    let mut out = Vec::new();
+    let (mut start, mut i) = (0, 0);
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            if bytes[i + 1..].starts_with(b"037") {
+                out.push(&line[start..i]);
+                i += 4;
+                start = i;
+                continue;
+            }
+            // an escape: skip the backslash and the escaped byte (e.g. `\\`, `\t`)
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    out.push(&line[start..]);
+    out
+}
+
 fn rows(s: &str, expected: usize) -> Result<Vec<Row<'_>>, ParseError> {
     let mut out = vec![];
     for (n, line) in s.split('\n').enumerate() {
@@ -125,7 +158,7 @@ fn rows(s: &str, expected: usize) -> Result<Vec<Row<'_>>, ParseError> {
         if line.is_empty() {
             continue;
         }
-        let f: Vec<&str> = line.split(FIELD_SEP).collect();
+        let f = split_fields(line);
         if f.len() != expected {
             return Err(ParseError::FieldCount {
                 line: n + 1,

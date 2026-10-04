@@ -346,6 +346,10 @@ fn new_window_and_friends() {
     );
     let w = Target::window(WindowId(3));
     assert_eq!(cmd::kill_window(&w).argv(), ["kill-window", "-t", "@3"]);
+    assert_eq!(
+        cmd::kill_pane(&Target::pane(PaneId(4))).argv(),
+        ["kill-pane", "-t", "%4"]
+    );
     assert_eq!(cmd::select_window(&w).argv(), ["select-window", "-t", "@3"]);
     assert_eq!(
         cmd::rename_window(&w, "a#b").argv(),

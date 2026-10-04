@@ -148,6 +148,131 @@ fn controller_attach_send_push() {
 }
 
 #[test]
+fn m4_builders() {
+    assert_eq!(
+        tmux_zoom_pane("%3".into()).unwrap().argv,
+        ["resize-pane", "-Z", "-t", "%3"]
+    );
+    assert!(tmux_zoom_pane("@3".into()).is_err());
+    assert_eq!(
+        tmux_kill_pane("%3".into()).unwrap().argv,
+        ["kill-pane", "-t", "%3"]
+    );
+    assert!(tmux_kill_pane("@3".into()).is_err());
+    assert_eq!(
+        tmux_next_window("dev".into()).argv,
+        ["next-window", "-t", "=dev:"]
+    );
+    assert_eq!(
+        tmux_previous_window("dev".into()).argv,
+        ["previous-window", "-t", "=dev:"]
+    );
+    assert_eq!(
+        tmux_last_window("dev".into()).argv,
+        ["last-window", "-t", "=dev:"]
+    );
+    let c = tmux_switch_client("/dev/ttys004".into(), "$2".into()).unwrap();
+    assert_eq!(c.argv, ["switch-client", "-c", "/dev/ttys004", "-t", "$2"]);
+    assert!(tmux_switch_client("/dev/x".into(), "main".into()).is_err());
+    assert_eq!(tmux_list_clients().argv[0], "list-clients");
+    assert_eq!(
+        tmux_display_message("#{client_pid}".into()).argv,
+        ["display-message", "-p", "--", "#{client_pid}"]
+    );
+    assert_eq!(
+        tmux_select_pane_direction("@1".into(), FfiPaneDirection::Left)
+            .unwrap()
+            .argv,
+        ["select-pane", "-L", "-t", "@1"]
+    );
+    assert_eq!(
+        tmux_select_pane_direction("@1".into(), FfiPaneDirection::Down)
+            .unwrap()
+            .argv,
+        ["select-pane", "-D", "-t", "@1"]
+    );
+}
+
+#[test]
+fn clients_parse_and_pick() {
+    let row = |tty: &str, pid: &str, ctl: &str, created: &str| {
+        [tty, pid, "$0", "main", ctl, created, "120", "40"].join(&US.to_string())
+    };
+    let text = format!(
+        "{}\n{}\n",
+        row("/dev/ttys002", "10", "0", "100"),
+        row("", "11", "1", "101")
+    );
+    let cs = parse_clients(text).unwrap();
+    assert_eq!(cs.len(), 2);
+    assert!(cs[1].control_mode);
+    assert_eq!(cs[0].session_id, "$0");
+    assert_eq!(
+        pick_pty_client(cs.clone(), "main".into(), Some(11), None),
+        Some("/dev/ttys002".to_string())
+    );
+    assert_eq!(
+        pick_pty_client(
+            cs.clone(),
+            "other".into(),
+            Some(11),
+            Some(FfiSize {
+                cols: 120,
+                rows: 40
+            })
+        ),
+        None
+    );
+    assert_eq!(
+        pick_pty_client_any_session(cs, Some(11), None),
+        Some("/dev/ttys002".to_string())
+    );
+    assert!(matches!(
+        parse_clients("a\u{1f}b".into()),
+        Err(FfiTmuxError::Parse { .. })
+    ));
+}
+
+#[test]
+fn capabilities_follow_the_version() {
+    let c = tmux_capabilities("tmux 3.4".into()).unwrap();
+    assert!(c.control_mode && c.no_output && c.subscriptions);
+    let c = tmux_capabilities("tmux 2.9a".into()).unwrap();
+    assert!(c.control_mode && !c.no_output && !c.subscriptions);
+    assert!(tmux_capabilities("wat".into()).is_err());
+}
+
+#[test]
+fn topology_diff_over_ffi() {
+    let a = parse_topology(format!("{}\n", pane_line("main", "@1", "%1"))).unwrap();
+    let b = parse_topology(format!(
+        "{}\n{}\n",
+        pane_line("main", "@1", "%1"),
+        pane_line("main", "@2", "%2")
+    ))
+    .unwrap();
+    let changes = diff_topology(a.clone(), b.clone()).unwrap();
+    assert!(
+        changes.iter().any(|c| matches!(c,
+            FfiTopologyChange::WindowAdded { window_id, .. } if window_id == "@2")),
+        "{changes:?}"
+    );
+    assert_eq!(diff_topology(a.clone(), a.clone()).unwrap(), vec![]);
+    let back = diff_topology(b, a).unwrap();
+    assert!(
+        back.iter().any(|c| matches!(c,
+            FfiTopologyChange::WindowRemoved { window_id, .. } if window_id == "@2")),
+        "{back:?}"
+    );
+    let mut bad = parse_topology(format!("{}\n", pane_line("main", "@1", "%1"))).unwrap();
+    bad.sessions[0].id = "nope".into();
+    assert!(matches!(
+        diff_topology(bad.clone(), bad),
+        Err(FfiTmuxError::InvalidId { .. })
+    ));
+}
+
+#[test]
 fn controller_rejects_unparseable_version() {
     assert!(TmuxController::new("m".into(), "wat".into()).is_err());
 }
