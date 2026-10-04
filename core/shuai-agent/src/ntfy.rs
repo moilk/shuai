@@ -148,6 +148,10 @@ const PAIR_WINDOW_MS: u64 = 60_000;
 /// Entries not touched for this long are forgotten.
 const GATE_TTL_MS: u64 = 3_600_000;
 
+/// Longest a hook waits for the gate lock; past it the gate fails open (a push is better than
+/// holding up Claude's PermissionRequest hook).
+const LOCK_WAIT: Duration = Duration::from_millis(250);
+
 fn lock_gate(state: &State) -> Option<std::fs::File> {
     state.ensure().ok()?;
     let f = private_open()
@@ -156,7 +160,7 @@ fn lock_gate(state: &State) -> Option<std::fs::File> {
         .write(true)
         .open(state.push_lock_path())
         .ok()?;
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + LOCK_WAIT;
     loop {
         match f.try_lock() {
             Ok(()) => return Some(f),
@@ -170,29 +174,37 @@ fn lock_gate(state: &State) -> Option<std::fs::File> {
 
 /// Dedupe and rate limit. Returns whether a push for `kind` in `session` may go out now, and
 /// records the decision. State lives in `push.json` (under `push.lock`); a broken gate fails open.
-fn admit(state: &State, session: &str, kind: Kind, now: u64) -> bool {
+fn admit(state: &State, session: &str, kind: Kind) -> bool {
     let Some(_lock) = lock_gate(state) else {
+        state.log("push gate busy: sending without dedupe");
         return true;
     };
+    // Read the clock only once the lock is ours, so a waiter never sees the previous holder's
+    // timestamp as "from the future".
+    let now = now_ms();
     let mut root: serde_json::Value = std::fs::read_to_string(state.push_gate_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .filter(serde_json::Value::is_object)
         .unwrap_or_else(|| serde_json::json!({}));
     let map = root.as_object_mut().expect("object");
+    // Forget stale entries and anything malformed (wrong shape, timestamps from the future).
     map.retain(|_, v| {
-        ["last", "req", "prompt"]
-            .iter()
-            .filter_map(|k| v.get(k).and_then(|n| n.as_u64()))
-            .max()
-            .is_some_and(|t| now.saturating_sub(t) < GATE_TTL_MS)
+        v.is_object()
+            && ["last", "req", "prompt"]
+                .iter()
+                .filter_map(|k| v.get(k).and_then(|n| n.as_u64()))
+                .max()
+                .is_some_and(|t| t <= now && now - t < GATE_TTL_MS)
     });
     let entry = map
         .entry(session.to_string())
         .or_insert_with(|| serde_json::json!({}));
     let get = |e: &serde_json::Value, k: &str| e.get(k).and_then(|n| n.as_u64());
-    let fresh = |t: Option<u64>| t.is_some_and(|t| now.saturating_sub(t) < PAIR_WINDOW_MS);
-    let e = entry.as_object_mut().expect("object");
+    let fresh = |t: Option<u64>| t.is_some_and(|t| t <= now && now - t < PAIR_WINDOW_MS);
+    let e = entry
+        .as_object_mut()
+        .expect("entries are objects after retain");
     let allowed = match kind {
         Kind::ApprovalRequest => {
             if fresh(get(&serde_json::Value::Object(e.clone()), "prompt")) {
@@ -215,7 +227,7 @@ fn admit(state: &State, session: &str, kind: Kind, now: u64) -> bool {
         _ => {
             let min = state.push_min_interval().as_millis() as u64;
             let last = get(&serde_json::Value::Object(e.clone()), "last");
-            if min > 0 && last.is_some_and(|l| now.saturating_sub(l) < min) {
+            if min > 0 && last.is_some_and(|l| l <= now && now - l < min) {
                 false
             } else {
                 e.insert("last".into(), now.into());
@@ -237,16 +249,20 @@ fn admit(state: &State, session: &str, kind: Kind, now: u64) -> bool {
     allowed
 }
 
-/// `session › index: window` of the pane, best effort (short timeout, never fails).
-fn tmux_label(pane: &str) -> Option<String> {
+/// `session › index` of the pane (plus `: window` when the user opted in), best effort (short
+/// timeout, never fails). The window name is off by default: tmux's automatic-rename sets it to
+/// the running command (`vim secrets.env`, `ssh prod-db`), which must not leave the server.
+fn tmux_label(pane: &str, window_names: bool) -> Option<String> {
+    if !is_pane_id(pane) {
+        return None;
+    }
+    let format = if window_names {
+        "#{session_name} › #{window_index}: #{window_name}"
+    } else {
+        "#{session_name} › #{window_index}"
+    };
     let mut child = Command::new("tmux")
-        .args([
-            "display-message",
-            "-p",
-            "-t",
-            pane,
-            "#{session_name} › #{window_index}: #{window_name}",
-        ])
+        .args(["display-message", "-p", "-t", pane, format])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -276,6 +292,24 @@ fn tmux_label(pane: &str) -> Option<String> {
     Some(label.chars().take(80).collect())
 }
 
+fn is_pane_id(s: &str) -> bool {
+    s.strip_prefix('%')
+        .is_some_and(|d| (1..=9).contains(&d.len()) && d.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Replace the topic and token of `cfg` in `msg`, whatever an error message decides to quote.
+pub fn redact(cfg: &Ntfy, msg: &str) -> String {
+    let mut out = msg.to_string();
+    for secret in [Some(cfg.topic.as_str()), cfg.token.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|s| !s.is_empty())
+    {
+        out = out.replace(secret, "<redacted>");
+    }
+    out
+}
+
 /// Push a status-only notification for "attention worthy" events when ntfy is configured and no
 /// app is watching. Failures are logged, never returned.
 pub fn maybe_push(state: &State, env: &Envelope) {
@@ -287,7 +321,7 @@ pub fn maybe_push(state: &State, env: &Envelope) {
     let Some((kind, session)) = classify(env) else {
         return;
     };
-    if !admit(state, &session, kind, now_ms()) {
+    if !admit(state, &session, kind) {
         return;
     }
     let host = cfg
@@ -296,7 +330,11 @@ pub fn maybe_push(state: &State, env: &Envelope) {
         .filter(|n| !n.is_empty())
         .unwrap_or_else(hostname);
     let host: String = host.chars().filter(|c| !c.is_control()).take(80).collect();
-    let body = match env.tmux.as_ref().and_then(|t| tmux_label(&t.pane)) {
+    let body = match env
+        .tmux
+        .as_ref()
+        .and_then(|t| tmux_label(&t.pane, ntfy.window_names))
+    {
         Some(label) => format!("{host} · {label}"),
         None => host,
     };
@@ -309,6 +347,9 @@ pub fn maybe_push(state: &State, env: &Envelope) {
         tags: Some(kind.tags()),
     };
     if let Err(e) = send(&ntfy, &m) {
-        state.log(&format!("ntfy push failed: {e}"));
+        state.log(&format!(
+            "ntfy push failed: {}",
+            redact(&ntfy, &e.to_string())
+        ));
     }
 }

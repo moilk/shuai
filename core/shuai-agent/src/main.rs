@@ -161,7 +161,7 @@ fn main() -> ExitCode {
             };
             match ntfy::send(&cfg, &m) {
                 Ok(()) => ExitCode::SUCCESS,
-                Err(e) => fail(&format!("notify: {e}")),
+                Err(e) => fail(&format!("notify: {}", ntfy::redact(&cfg, &e.to_string()))),
             }
         }
         Cmd::Doctor => {

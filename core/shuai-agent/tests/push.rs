@@ -197,7 +197,10 @@ fn body_has_host_and_tmux_session_and_window_index() {
     let args = std::fs::read_to_string(log).unwrap();
     assert!(args.contains("display-message -p -t %5"), "{args}");
     assert!(args.contains("#{session_name}"), "{args}");
-    assert!(!args.contains("window_name"), "window names are opt-in: {args}");
+    assert!(
+        !args.contains("window_name"),
+        "window names are opt-in: {args}"
+    );
 }
 
 #[test]
