@@ -172,23 +172,42 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(invalid.waitForExistence(timeout: 10))
     }
 
+    /// Scrolls the list inside the open sheet (not the whole app) until `target` is hittable; bounded.
+    @MainActor
+    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, maxSwipes: Int = 12) {
+        let bar = app.navigationBars["Settings"]
+        let sheetX = bar.frame.midX
+        let lists = app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex
+        let list = lists.first { $0.frame.minX <= sheetX && sheetX <= $0.frame.maxX && $0.frame.width < app.frame.width * 0.95 }
+            ?? lists.first { $0.frame.minX <= sheetX && sheetX <= $0.frame.maxX }
+        var swipes = 0
+        while !target.isHittable, swipes < maxSwipes {
+            _ = target.waitForExistence(timeout: 0.5)
+            if target.isHittable { break }
+            (list ?? app).swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        XCTAssertTrue(target.isHittable, "\(target) not reachable after \(swipes) swipes\n\(app.debugDescription)")
+    }
+
     @MainActor
     func testNotificationSettingsShowTopicAndTestButton() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
+        // top to bottom, so scrolling for the next target never passes an earlier one
+        scrollSheet(app, until: app.textFields["push-server-field"])
+        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
         let topic = app.staticTexts["push-topic"]
-        for _ in 0 ..< 5 where !topic.exists {
-            app.swipeUp()
-            _ = topic.waitForExistence(timeout: 1)
-        }
-        XCTAssertTrue(topic.exists, app.debugDescription)
+        scrollSheet(app, until: topic)
         // the row's label is "Topic, <topic>" (LabeledContent)
         let value = topic.label.components(separatedBy: ", ").last ?? ""
         XCTAssertNotNil(value.wholeMatch(of: /shuai-[a-z2-7]{26}/), topic.label)
-        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
+        scrollSheet(app, until: app.buttons["push-send-test"])
         XCTAssertTrue(app.buttons["push-send-test"].exists)
+        scrollSheet(app, until: app.buttons["push-open-ntfy"])
         XCTAssertTrue(app.buttons["push-open-ntfy"].exists)
     }
 
