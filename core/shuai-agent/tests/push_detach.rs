@@ -83,7 +83,10 @@ fn every_hook_and_codex_notify_detach() {
             vec!["hook", "Notification"],
             r#"{"session_id":"s","notification_type":"idle_prompt","message":"x"}"#,
         ),
-        (vec!["codex-notify", r#"{"type":"agent-turn-complete"}"#], ""),
+        (
+            vec!["codex-notify", r#"{"type":"agent-turn-complete"}"#],
+            "",
+        ),
     ] {
         let h = home();
         let m = mock_server_delayed(Duration::from_secs(3));
@@ -94,6 +97,9 @@ fn every_hook_and_codex_notify_detach() {
         let out = run_with_stdin(c, stdin);
         assert!(t0.elapsed() < Duration::from_millis(1500), "{args:?}");
         assert!(out.status.success());
-        assert!(m.rx.recv_timeout(Duration::from_secs(5)).is_ok(), "{args:?}");
+        assert!(
+            m.rx.recv_timeout(Duration::from_secs(5)).is_ok(),
+            "{args:?}"
+        );
     }
 }

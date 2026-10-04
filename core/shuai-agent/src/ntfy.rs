@@ -5,7 +5,9 @@
 //! below never read those fields of an event, and `tests/push.rs` asserts it end to end.
 
 use crate::state::{Ntfy, Result, State, hostname, now_ms, private_open};
+use serde::{Deserialize, Serialize};
 use shuai_proto::{AgentEvent, Envelope};
+use std::io::Read as _;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -310,8 +312,27 @@ pub fn redact(cfg: &Ntfy, msg: &str) -> String {
     out
 }
 
+/// Everything the detached `push-send` child needs. Goes over a pipe (stdin), never argv: argv
+/// is visible in `ps`, and this carries the topic and token.
+#[derive(Serialize, Deserialize)]
+struct Job {
+    server: String,
+    topic: String,
+    token: Option<String>,
+    window_names: bool,
+    /// Sanitised host label.
+    host: String,
+    pane: Option<String>,
+    title: String,
+    click: Option<String>,
+    priority: String,
+    tags: String,
+}
+
 /// Push a status-only notification for "attention worthy" events when ntfy is configured and no
-/// app is watching. Failures are logged, never returned.
+/// app is watching. The decision (dedupe, rate limit) is made here, synchronously and bounded;
+/// the slow part (tmux lookup, HTTP) runs in a detached child so a hook never waits for the
+/// network. Failures are logged (by the child), never returned.
 pub fn maybe_push(state: &State, env: &Envelope) {
     let cfg = state.config();
     let Some(ntfy) = cfg.ntfy.clone() else { return };
@@ -330,26 +351,90 @@ pub fn maybe_push(state: &State, env: &Envelope) {
         .filter(|n| !n.is_empty())
         .unwrap_or_else(hostname);
     let host: String = host.chars().filter(|c| !c.is_control()).take(80).collect();
-    let body = match env
-        .tmux
-        .as_ref()
-        .and_then(|t| tmux_label(&t.pane, ntfy.window_names))
+    let job = Job {
+        server: ntfy.server.clone(),
+        topic: ntfy.topic.clone(),
+        token: ntfy.token.clone(),
+        window_names: ntfy.window_names,
+        host,
+        pane: env.tmux.as_ref().map(|t| t.pane.clone()),
+        title: kind.title().into(),
+        click: click_url(state, env),
+        priority: kind.priority().into(),
+        tags: kind.tags().into(),
+    };
+    if let Err(e) = spawn_detached(&job) {
+        state.log(&format!(
+            "ntfy push not started: {}",
+            redact(&ntfy, &e.to_string())
+        ));
+    }
+}
+
+/// Start `shuai-agent push-send` with `job` on its stdin and return immediately. The child gets
+/// null stdout/stderr (so it never holds Claude's pipes open) and starts its own session.
+fn spawn_detached(job: &Job) -> Result<()> {
+    let exe = std::env::current_exe()?;
+    let mut child = Command::new(exe)
+        .arg("push-send")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mut stdin = child.stdin.take().expect("piped");
+    // A few hundred bytes: fits the pipe buffer, so this never blocks. An early-exiting child
+    // (EPIPE) is its own problem.
+    let _ = std::io::Write::write_all(&mut stdin, &serde_json::to_vec(job)?);
+    drop(stdin);
+    // Not waited for: the child is reparented when we exit (an unreaped zombie for the few
+    // milliseconds a hook lives is harmless).
+    std::mem::forget(child);
+    Ok(())
+}
+
+/// Entry of the hidden `push-send` subcommand: read a `Job` from stdin, then do the tmux lookup
+/// and the HTTP POST. Runs detached from the hook that spawned it.
+pub fn push_send(state: &State) {
+    // Own session: survives the hook's process group being signalled and has no controlling tty.
+    // Fails only if we already lead a group, which a freshly spawned child does not.
+    let _ = rustix::process::setsid();
+    let mut input = Vec::new();
+    if std::io::stdin()
+        .take(1 << 20)
+        .read_to_end(&mut input)
+        .is_err()
     {
-        Some(label) => format!("{host} · {label}"),
-        None => host,
+        return;
+    }
+    let Ok(job) = serde_json::from_slice::<Job>(&input) else {
+        state.log("push-send: bad job");
+        return;
     };
-    let click = click_url(state, env);
+    let cfg = Ntfy {
+        server: job.server,
+        topic: job.topic,
+        token: job.token,
+        window_names: job.window_names,
+    };
+    let body = match job
+        .pane
+        .as_deref()
+        .and_then(|p| tmux_label(p, cfg.window_names))
+    {
+        Some(label) => format!("{} · {label}", job.host),
+        None => job.host,
+    };
     let m = Message {
-        title: kind.title(),
+        title: &job.title,
         body: &body,
-        click: click.as_deref(),
-        priority: Some(kind.priority()),
-        tags: Some(kind.tags()),
+        click: job.click.as_deref(),
+        priority: Some(&job.priority),
+        tags: Some(&job.tags),
     };
-    if let Err(e) = send(&ntfy, &m) {
+    if let Err(e) = send(&cfg, &m) {
         state.log(&format!(
             "ntfy push failed: {}",
-            redact(&ntfy, &e.to_string())
+            redact(&cfg, &e.to_string())
         ));
     }
 }
