@@ -1,0 +1,299 @@
+use icongen::fidelity::{
+    Field, Mask, components, corner_points, corners_kept, evaluate, failures, hausdorff, holes,
+    iou, load_field_png, load_mask_png, min_stroke_width, rasterize, simplify_closed,
+    small_size_report, trace_contours, trace_toml,
+};
+use icongen::glyph::Glyph;
+
+fn blank(w: usize, h: usize) -> Mask {
+    Mask {
+        width: w,
+        height: h,
+        data: vec![false; w * h],
+    }
+}
+
+fn fill(m: &mut Mask, x0: usize, y0: usize, x1: usize, y1: usize) {
+    for y in y0..y1 {
+        for x in x0..x1 {
+            m.data[y * m.width + x] = true;
+        }
+    }
+}
+
+fn clear(m: &mut Mask, x0: usize, y0: usize, x1: usize, y1: usize) {
+    for y in y0..y1 {
+        for x in x0..x1 {
+            m.data[y * m.width + x] = false;
+        }
+    }
+}
+
+fn png(color: png::ColorType, w: u32, h: u32, data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(color);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut wr = enc.write_header().unwrap();
+        wr.write_image_data(data).unwrap();
+    }
+    out
+}
+
+#[test]
+fn iou_of_shifted_squares() {
+    let mut a = blank(30, 30);
+    let mut b = blank(30, 30);
+    fill(&mut a, 0, 0, 10, 10);
+    fill(&mut b, 5, 0, 15, 10);
+    assert!((iou(&a, &b) - 1.0 / 3.0).abs() < 1e-12);
+    assert_eq!(iou(&a, &a), 1.0);
+    assert_eq!(iou(&blank(4, 4), &blank(4, 4)), 1.0);
+}
+
+#[test]
+fn png_loader_handles_color_types_and_threshold() {
+    // Gray: 128 is ink, 127 is not.
+    let m = load_mask_png(&png(png::ColorType::Grayscale, 2, 1, &[128, 127])).unwrap();
+    assert_eq!(m.data, vec![true, false]);
+    // RGB: white ink, black background.
+    let m = load_mask_png(&png(png::ColorType::Rgb, 2, 1, &[255, 255, 255, 0, 0, 0])).unwrap();
+    assert_eq!((m.width, m.height), (2, 1));
+    assert_eq!(m.data, vec![true, false]);
+    // RGBA: a transparent white pixel is composited over black.
+    let m = load_mask_png(&png(
+        png::ColorType::Rgba,
+        2,
+        1,
+        &[255, 255, 255, 255, 255, 255, 255, 0],
+    ))
+    .unwrap();
+    assert_eq!(m.data, vec![true, false]);
+    // Gray + alpha.
+    let m = load_mask_png(&png(
+        png::ColorType::GrayscaleAlpha,
+        2,
+        1,
+        &[200, 255, 200, 0],
+    ))
+    .unwrap();
+    assert_eq!(m.data, vec![true, false]);
+    assert!(load_mask_png(b"not a png").is_err());
+    let f = load_field_png(&png(png::ColorType::Grayscale, 1, 1, &[200])).unwrap();
+    assert_eq!(f.data, vec![200.0]);
+}
+
+#[test]
+fn components_and_holes() {
+    let mut ring = blank(30, 30);
+    fill(&mut ring, 5, 5, 25, 25);
+    clear(&mut ring, 10, 10, 20, 20);
+    assert_eq!(components(&ring), 1);
+    assert_eq!(holes(&ring), 1);
+
+    let mut two = blank(30, 30);
+    fill(&mut two, 2, 2, 8, 8);
+    fill(&mut two, 15, 15, 20, 20);
+    assert_eq!(components(&two), 2);
+    assert_eq!(holes(&two), 0);
+
+    // Diagonal contact joins ink (8-connectivity).
+    let mut diag = blank(10, 10);
+    fill(&mut diag, 1, 1, 3, 3);
+    fill(&mut diag, 3, 3, 5, 5);
+    assert_eq!(components(&diag), 1);
+
+    // A notch open to the border is not a hole; a diagonal-only gap does not close a hole.
+    let mut c = blank(20, 20);
+    fill(&mut c, 2, 2, 18, 18);
+    clear(&mut c, 8, 2, 12, 10);
+    assert_eq!(holes(&c), 0);
+    let mut gap = blank(10, 10);
+    fill(&mut gap, 2, 2, 8, 8);
+    clear(&mut gap, 4, 4, 6, 6);
+    assert_eq!(holes(&gap), 1);
+}
+
+#[test]
+fn hausdorff_of_shifted_rects() {
+    let mut a = blank(50, 50);
+    let mut b = blank(50, 50);
+    fill(&mut a, 10, 10, 30, 30);
+    fill(&mut b, 13, 10, 33, 30);
+    assert!((hausdorff(&a, &b) - 3.0).abs() < 1e-9);
+    assert_eq!(hausdorff(&a, &a), 0.0);
+    assert!(hausdorff(&a, &blank(50, 50)).is_infinite());
+    assert_eq!(hausdorff(&blank(5, 5), &blank(5, 5)), 0.0);
+}
+
+const GLYPH: &str = r##"
+[s01]
+outline = [[10.0, 10.0, "c"], [30.0, 10.0, "c"], [30.0, 30.0, "c"], [10.0, 30.0, "c"]]
+holes = [[[16.0, 16.0, "c"], [24.0, 16.0, "c"], [24.0, 24.0, "c"], [16.0, 24.0, "c"]]]
+
+[[stroke]]
+id = "S02"
+points = [[34.0, 20.0, 4.0], [48.0, 20.0, 4.0]]
+"##;
+
+#[test]
+fn rasterize_glyph_in_source_pixels() {
+    let g = Glyph::from_toml(GLYPH).unwrap();
+    let m = rasterize(&g, 0.0, 60, 40, 1.0);
+    assert_eq!((m.width, m.height), (60, 40));
+    assert!(m.data[12 * 60 + 12]);
+    assert!(!m.data[20 * 60 + 20], "hole is empty");
+    assert!(!m.data[2 * 60 + 2]);
+    assert!(m.data[20 * 60 + 40], "stroke is inked");
+    assert_eq!(components(&m), 2);
+    assert_eq!(holes(&m), 1);
+    let big = rasterize(&g, 0.0, 60, 40, 2.0);
+    assert_eq!((big.width, big.height), (120, 80));
+    assert!(big.data[24 * 120 + 24]);
+}
+
+#[test]
+fn small_size_report_counts_pieces_holes_and_width() {
+    let g = Glyph::from_toml(GLYPH).unwrap();
+    let r = small_size_report(&g, 100);
+    assert_eq!(r.px, 100);
+    assert_eq!(r.pieces, 2);
+    assert_eq!(r.holes, 1);
+    // The 4-unit stroke is about 4 * 100/38 = 10 px wide at this size; the bar is the narrowest.
+    assert!(r.narrowest > 7.0 && r.narrowest < 12.0, "{}", r.narrowest);
+    let tiny = small_size_report(&g, 6);
+    assert!(tiny.narrowest < 2.0);
+}
+
+#[test]
+fn stroke_width_estimate() {
+    let mut m = blank(40, 20);
+    fill(&mut m, 5, 8, 35, 11);
+    assert!((min_stroke_width(&m) - 3.0).abs() < 0.5);
+    let mut m = blank(40, 20);
+    fill(&mut m, 5, 8, 35, 9);
+    assert!((min_stroke_width(&m) - 1.0).abs() < 0.5);
+    fill(&mut m, 5, 2, 25, 5);
+    assert!((min_stroke_width(&m) - 1.0).abs() < 0.5, "narrowest wins");
+    assert_eq!(min_stroke_width(&blank(5, 5)), 0.0);
+}
+
+fn field_of(m: &Mask) -> Field {
+    Field {
+        width: m.width,
+        height: m.height,
+        data: m
+            .data
+            .iter()
+            .map(|&b| if b { 255.0 } else { 0.0 })
+            .collect(),
+    }
+}
+
+fn area(c: &[(f64, f64)]) -> f64 {
+    let n = c.len();
+    (0..n)
+        .map(|i| c[i].0 * c[(i + 1) % n].1 - c[(i + 1) % n].0 * c[i].1)
+        .sum::<f64>()
+        / 2.0
+}
+
+#[test]
+fn marching_squares_traces_outer_and_holes() {
+    let mut ring = blank(30, 30);
+    fill(&mut ring, 5, 5, 25, 25);
+    clear(&mut ring, 10, 10, 20, 20);
+    let cs = trace_contours(&field_of(&ring), 127.5);
+    assert_eq!(cs.len(), 2);
+    let mut areas: Vec<f64> = cs.iter().map(|c| area(c)).collect();
+    areas.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    // Outer is positive, hole negative, in source-pixel coordinates (pixel edges at +/-0.5).
+    assert!((areas[0] - 400.0).abs() < 1.0, "{areas:?}");
+    assert!((areas[1] + 100.0).abs() < 1.0, "{areas:?}");
+    let all: Vec<_> = cs.iter().flatten().collect();
+    assert!(all.iter().all(|p| p.0 >= 4.5 && p.0 <= 25.5));
+}
+
+#[test]
+fn douglas_peucker_and_corners() {
+    let mut r = blank(30, 30);
+    fill(&mut r, 5, 5, 25, 15);
+    let cs = trace_contours(&field_of(&r), 127.5);
+    assert_eq!(cs.len(), 1);
+    let s = simplify_closed(&cs[0], 1.0);
+    assert_eq!(s.len(), 4, "{s:?}");
+    assert_eq!(corner_points(&s, 35.0).len(), 4);
+    // Collinear points vanish and a shallow bend is not a corner.
+    let flat: Vec<(f64, f64)> = vec![(0.0, 0.0), (5.0, 0.0), (10.0, 0.0), (10.0, 5.0), (0.0, 5.0)];
+    assert_eq!(simplify_closed(&flat, 0.1).len(), 4);
+    let bend = vec![
+        (0.0, 0.0),
+        (10.0, 0.0),
+        (20.0, 3.0),
+        (20.0, 20.0),
+        (0.0, 20.0),
+    ];
+    assert_eq!(corner_points(&bend, 35.0).len(), 3);
+}
+
+#[test]
+fn corners_kept_counts_sharp_vertices_within_tolerance() {
+    let g = Glyph::from_toml(GLYPH).unwrap();
+    let corners = [(10.0, 10.0), (30.0, 30.0), (12.0, 12.0)];
+    // Third corner is 2.8 px from the (10,10) vertex but is within 3 px.
+    assert!((corners_kept(&corners, &g, 0.0) - 1.0).abs() < 1e-12);
+    let far = [(10.0, 10.0), (100.0, 100.0)];
+    assert!((corners_kept(&far, &g, 0.0) - 0.5).abs() < 1e-12);
+    assert_eq!(corners_kept(&[], &g, 0.0), 1.0);
+    // Smooth-tagged vertices do not count.
+    let smooth = GLYPH.replace("\"c\"", "\"s\"");
+    let gs = Glyph::from_toml(&smooth).unwrap();
+    assert_eq!(corners_kept(&[(10.0, 10.0)], &gs, 0.0), 0.0);
+}
+
+/// Body with two holes plus four slanted side bars, in a 120x140 field.
+fn synthetic_source() -> Mask {
+    let mut m = blank(120, 140);
+    fill(&mut m, 45, 10, 75, 130);
+    clear(&mut m, 52, 25, 68, 40);
+    clear(&mut m, 52, 70, 68, 95);
+    fill(&mut m, 5, 30, 40, 38);
+    fill(&mut m, 5, 80, 40, 88);
+    fill(&mut m, 80, 30, 115, 38);
+    fill(&mut m, 80, 80, 115, 88);
+    m
+}
+
+#[test]
+fn trace_produces_a_parsable_close_glyph() {
+    let src = synthetic_source();
+    let toml = trace_toml(&field_of(&src)).unwrap();
+    let g = Glyph::from_toml(&toml).unwrap();
+    assert_eq!(g.holes.len(), 2);
+    assert_eq!(g.strokes.len(), 4);
+    let r = evaluate(&g, 0.0, &field_of(&src));
+    assert!(r.iou > 0.9, "iou {}", r.iou);
+    assert!(r.hausdorff <= 3.0, "hausdorff {}", r.hausdorff);
+    assert_eq!((r.pieces, r.holes), (5, 2));
+    assert!(r.corners_kept >= 0.8, "corners {}", r.corners_kept);
+    assert_eq!(trace_toml(&field_of(&src)).unwrap(), toml, "deterministic");
+}
+
+#[test]
+fn gates_pass_for_a_good_mark_and_fail_for_a_bad_one() {
+    let src = synthetic_source();
+    let good = Glyph::from_toml(&trace_toml(&field_of(&src)).unwrap()).unwrap();
+    let r = evaluate(&good, 0.0, &field_of(&src));
+    assert_eq!(
+        r.small.iter().map(|s| s.px).collect::<Vec<_>>(),
+        [120, 60, 40]
+    );
+    assert!(failures(&r).is_empty(), "{:?}", failures(&r));
+
+    let bad = Glyph::from_toml(GLYPH).unwrap();
+    let r = evaluate(&bad, 0.0, &field_of(&src));
+    let f = failures(&r);
+    assert!(f.iter().any(|m| m.contains("IoU")), "{f:?}");
+    assert!(f.iter().any(|m| m.contains("topology")), "{f:?}");
+}
