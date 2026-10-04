@@ -57,6 +57,10 @@ pub struct MarkCfg {
     /// Uniform outline offset in source pixels (0 = the master carving).
     #[serde(default)]
     pub weight: f64,
+    /// How far the S01 holes shrink, source pixels (default: `weight`). Lower keeps the counters
+    /// open on a heavier mark.
+    #[serde(default)]
+    pub hole_weight: Option<f64>,
     pub scale: f64,
     #[serde(default)]
     pub offset: [f64; 2],
@@ -84,6 +88,12 @@ impl MarkCfg {
             Some(s) if size <= s.max_px => self.weight + s.weight,
             _ => self.weight,
         }
+    }
+
+    /// Hole shrink for a render whose canvas is `size` pixels: `hole_weight` (default `weight`)
+    /// plus the small-size bonus.
+    pub fn hole_weight_at(&self, size: u32) -> f64 {
+        self.hole_weight.unwrap_or(self.weight) + (self.weight_at(size) - self.weight)
     }
 }
 
@@ -162,6 +172,11 @@ impl ThemeCfg {
             return Err(format!(
                 "mark.weight and small_size.weight must be within 0..={MAX_WEIGHT} source px"
             ));
+        }
+        if let Some(h) = t.mark.hole_weight
+            && !(0.0..=t.mark.weight).contains(&h)
+        {
+            return Err("mark.hole_weight must be within 0..=mark.weight".into());
         }
         if !matches!(t.container.kind.as_str(), "none" | "squircle") {
             return Err(format!("unknown container kind {:?}", t.container.kind));

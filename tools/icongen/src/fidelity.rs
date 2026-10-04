@@ -6,7 +6,7 @@
 //! scale 1 overlays the source mask directly.
 
 use crate::config::{MarkCfg, ThemeCfg};
-use crate::glyph::{Glyph, Pt, Tag, contour_path, polygon_area};
+use crate::glyph::{Glyph, Piece, Pt, Tag, contour_path, polygon_area};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -104,6 +104,72 @@ pub fn load_mask_png(bytes: &[u8]) -> Result<Mask, String> {
     Ok(Mask::from_field(&load_field_png(bytes)?, 127.0))
 }
 
+/// Catmull-Rom (bicubic, a = -0.5) kernel.
+fn cubic(t: f64) -> f64 {
+    let t = t.abs();
+    if t < 1.0 {
+        1.5 * t * t * t - 2.5 * t * t + 1.0
+    } else if t < 2.0 {
+        -0.5 * t * t * t + 2.5 * t * t - 4.0 * t + 2.0
+    } else {
+        0.0
+    }
+}
+
+/// Resamples one line of `n` samples (outside counts as 0) to `n * k` samples whose centres sit
+/// at `(i + 0.5) / k` in source-pixel coordinates.
+fn upsample_line(line: &[f64], k: usize) -> Vec<f64> {
+    let n = line.len() as isize;
+    (0..line.len() * k)
+        .map(|i| {
+            let u = (i as f64 + 0.5) / k as f64 - 0.5;
+            let base = u.floor() as isize;
+            (base - 1..=base + 2)
+                .filter(|j| (0..n).contains(j))
+                .map(|j| line[j as usize] * cubic(u - j as f64))
+                .sum()
+        })
+        .collect()
+}
+
+/// The field resampled `k` times finer with a bicubic (Catmull-Rom) kernel, clamped to 0..255:
+/// a smooth reconstruction of the anti-aliased source whose 50% iso-line is the true edge.
+pub fn upsample(f: &Field, k: usize) -> Field {
+    let (w, h) = (f.width, f.height);
+    let rows: Vec<Vec<f64>> = (0..h)
+        .map(|y| {
+            let line: Vec<f64> = f.data[y * w..(y + 1) * w]
+                .iter()
+                .map(|&v| f64::from(v))
+                .collect();
+            upsample_line(&line, k)
+        })
+        .collect();
+    let (ow, oh) = (w * k, h * k);
+    let mut data = vec![0.0f32; ow * oh];
+    for x in 0..ow {
+        let col: Vec<f64> = rows.iter().map(|r| r[x]).collect();
+        for (y, v) in upsample_line(&col, k).into_iter().enumerate() {
+            data[y * ow + x] = v.clamp(0.0, 255.0) as f32;
+        }
+    }
+    Field {
+        width: ow,
+        height: oh,
+        data,
+    }
+}
+
+/// Iso-level of the source that counts as its edge (50%).
+pub const ISO_LEVEL: f32 = 127.5;
+/// Supersampling factor of the reference mask the master is measured against.
+pub const MEASURE_SCALE: usize = 4;
+
+/// Reference mask: the source upsampled `k` times, ink above the 50% iso-level.
+pub fn reference_mask(f: &Field, k: usize) -> Mask {
+    Mask::from_field(&upsample(f, k), ISO_LEVEL)
+}
+
 // ---------------------------------------------------------------- rasterising
 
 fn render_mask(svg: &str, w: usize, h: usize) -> Result<Mask, String> {
@@ -119,9 +185,18 @@ fn render_mask(svg: &str, w: usize, h: usize) -> Result<Mask, String> {
     })
 }
 
-fn glyph_mask(glyph: &Glyph, weight: f64, (w, h): (usize, usize), map: &dyn Fn(Pt) -> Pt) -> Mask {
+fn glyph_mask(
+    glyph: &Glyph,
+    (weight, hole_weight): (f64, f64),
+    (w, h): (usize, usize),
+    map: &dyn Fn(Pt) -> Pt,
+) -> Mask {
+    pieces_mask(&glyph.pieces_with(weight, hole_weight), (w, h), map)
+}
+
+fn pieces_mask(pieces: &[Piece], (w, h): (usize, usize), map: &dyn Fn(Pt) -> Pt) -> Mask {
     let mut body = String::from("<g fill=\"#000\">");
-    for piece in glyph.pieces(weight) {
+    for piece in pieces {
         let d: String = piece
             .contours
             .iter()
@@ -152,16 +227,18 @@ pub fn rasterize(glyph: &Glyph, weight: f64, width: usize, height: usize, scale:
         (width as f64 * scale).ceil() as usize,
         (height as f64 * scale).ceil() as usize,
     );
-    glyph_mask(glyph, weight, size, &|p| (p.0 * scale, p.1 * scale))
+    glyph_mask(glyph, (weight, weight), size, &|p| {
+        (p.0 * scale, p.1 * scale)
+    })
 }
 
 /// Glyph fitted so its ink bounding box's longer side is `px` pixels.
 pub fn rasterize_fit(glyph: &Glyph, weight: f64, px: u32) -> Mask {
-    fit_mask(glyph, weight, f64::from(px))
+    fit_mask(glyph, (weight, weight), f64::from(px))
 }
 
-fn fit_mask(glyph: &Glyph, weight: f64, px: f64) -> Mask {
-    let (x0, y0, x1, y1) = glyph.bounds(weight);
+fn fit_mask(glyph: &Glyph, weight: (f64, f64), px: f64) -> Mask {
+    let (x0, y0, x1, y1) = glyph.bounds(weight.0);
     let s = px / (x1 - x0).max(y1 - y0).max(1e-9);
     let size = (
         ((x1 - x0) * s).ceil().max(1.0) as usize,
@@ -580,152 +657,263 @@ fn point_in_poly(p: Pt, poly: &[Pt]) -> bool {
     inside
 }
 
-fn tagged(poly: &[Pt]) -> String {
-    let corners = corner_points(poly, CORNER_TURN);
-    poly.iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let t = if corners.contains(&i) { "c" } else { "s" };
-            format!("[{:.2}, {:.2}, \"{t}\"]", p.0, p.1)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
+/// Douglas-Peucker on a closed polygon that always keeps the `anchors` (vertex indices). Returns
+/// the indices of the kept vertices in order.
+pub fn simplify_anchored(pts: &[Pt], eps: f64, anchors: &[usize]) -> Vec<usize> {
+    let n = pts.len();
+    if n < 4 {
+        return (0..n).collect();
+    }
+    let mut a: Vec<usize> = anchors.iter().copied().filter(|&i| i < n).collect();
+    if a.is_empty() {
+        a.push(0);
+    }
+    if a.len() == 1 {
+        let o = pts[a[0]];
+        let far = (0..n)
+            .max_by(|&i, &j| {
+                let di = (pts[i].0 - o.0).hypot(pts[i].1 - o.1);
+                let dj = (pts[j].0 - o.0).hypot(pts[j].1 - o.1);
+                di.total_cmp(&dj)
+            })
+            .unwrap_or(0);
+        a.push(far);
+    }
+    a.sort_unstable();
+    a.dedup();
+    let mut keep = vec![false; n];
+    for &i in &a {
+        keep[i] = true;
+    }
+    for k in 0..a.len() {
+        let (s, e) = (a[k], a[(k + 1) % a.len()]);
+        let len = (e + n - s) % n;
+        let len = if len == 0 { n } else { len };
+        let ring: Vec<Pt> = (0..=len).map(|j| pts[(s + j) % n]).collect();
+        let mut kr = vec![false; ring.len()];
+        dp_open(&ring, 0, len, eps, &mut kr);
+        for (j, &kept) in kr.iter().enumerate().take(len).skip(1) {
+            if kept {
+                keep[(s + j) % n] = true;
+            }
+        }
+    }
+    (0..n).filter(|&i| keep[i]).collect()
 }
 
-/// (right column, centroid y, centerline) of a candidate side stroke.
-type StrokeCand = (bool, f64, Vec<(f64, f64, f64)>);
+/// Smoothing along the traced contours, source px (see [`smooth_along`]). The source is a
+/// binary (aliased) raster, so its 50% iso-line is a pixel staircase; a Gaussian of 1 px along
+/// the contour removes steps of 1-2 px period (to under 1% of their size) while bulges and necks
+/// of 8 px or more keep at least 73% of theirs. Measured against the source at 4x, 0.75 leaves
+/// visible steps and 1.5 drops IoU below 0.975.
+pub const TRACE_SMOOTH: f64 = 1.0;
+/// Supersampling of the source field before tracing.
+pub const TRACE_SCALE: usize = 4;
+/// Douglas-Peucker tolerance of the smoothed outline, source px. It only drops vertices that sit
+/// on a straight run; 0.1 keeps IoU within 0.002 of the unsimplified contour, while 0.2 and up
+/// raise the Hausdorff distance.
+pub const TRACE_EPS: f64 = 0.1;
+/// A source corner tags the nearest traced vertex sharp when it is at most this far, source px.
+const CORNER_SNAP: f64 = 1.5;
+/// Smallest side-stroke area, source px squared (smaller pieces are specks).
+const MIN_STROKE_AREA: f64 = 20.0;
 
-/// Centerline `(x, y, width)` samples of a piece's pixels along their principal axis.
-fn centerline(pixels: &[Pt]) -> Vec<(f64, f64, f64)> {
-    let n = pixels.len() as f64;
-    let (cx, cy) = (
-        pixels.iter().map(|p| p.0).sum::<f64>() / n,
-        pixels.iter().map(|p| p.1).sum::<f64>() / n,
-    );
-    let (mut sxx, mut syy, mut sxy) = (0.0, 0.0, 0.0);
-    for p in pixels {
-        let (dx, dy) = (p.0 - cx, p.1 - cy);
-        sxx += dx * dx;
-        syy += dy * dy;
-        sxy += dx * dy;
+fn centroid(c: &[Pt]) -> Pt {
+    let n = c.len() as f64;
+    (
+        c.iter().map(|p| p.0).sum::<f64>() / n,
+        c.iter().map(|p| p.1).sum::<f64>() / n,
+    )
+}
+
+/// Smooths a closed contour along its arc length with a Gaussian of `sigma` source px, keeping
+/// the `anchors` (vertex indices) fixed. Each stretch between two anchors is smoothed as an open
+/// curve, extended past its ends by point reflection through the anchor, so a straight run
+/// through an anchor stays straight and the anchor is not rounded off. Without anchors the
+/// contour wraps around.
+pub fn smooth_along(pts: &[Pt], anchors: &[usize], sigma: f64) -> Vec<Pt> {
+    let n = pts.len();
+    if sigma <= 0.0 || n < 4 {
+        return pts.to_vec();
     }
-    let ang = 0.5 * (2.0 * sxy).atan2(sxx - syy);
-    let mut u = (ang.cos(), ang.sin());
-    if u.0 < -1e-9 || (u.0.abs() <= 1e-9 && u.1 < 0.0) {
-        u = (-u.0, -u.1);
+    let reach = 3.0 * sigma;
+    let dist = |a: Pt, b: Pt| (a.0 - b.0).hypot(a.1 - b.1);
+    let avg = |ext: &[(f64, Pt)], s0: f64| {
+        let (mut w, mut x, mut y) = (0.0, 0.0, 0.0);
+        for &(s, p) in ext {
+            let d = s - s0;
+            if d.abs() <= reach {
+                let k = (-d * d / (2.0 * sigma * sigma)).exp();
+                (w, x, y) = (w + k, x + k * p.0, y + k * p.1);
+            }
+        }
+        (x / w, y / w)
+    };
+    let mut out = pts.to_vec();
+    let mut a: Vec<usize> = anchors.iter().copied().filter(|&i| i < n).collect();
+    a.sort_unstable();
+    a.dedup();
+    if a.is_empty() {
+        // Closed loop: arc lengths with one copy of the loop on either side.
+        let mut arc = vec![0.0; n];
+        for i in 1..n {
+            arc[i] = arc[i - 1] + dist(pts[i - 1], pts[i]);
+        }
+        let total = arc[n - 1] + dist(pts[n - 1], pts[0]);
+        let arc_ref = &arc;
+        let ext: Vec<(f64, Pt)> = [-total, 0.0, total]
+            .iter()
+            .flat_map(|off| (0..n).map(move |i| (arc_ref[i] + off, pts[i])))
+            .collect();
+        for (o, s0) in out.iter_mut().zip(&arc) {
+            *o = avg(&ext, *s0);
+        }
+        return out;
     }
-    let v = (-u.1, u.0);
-    let proj: Vec<(f64, f64)> = pixels
-        .iter()
-        .map(|p| {
-            (
-                (p.0 - cx) * u.0 + (p.1 - cy) * u.1,
-                (p.0 - cx) * v.0 + (p.1 - cy) * v.1,
-            )
-        })
-        .collect();
-    let tmin = proj.iter().map(|p| p.0).fold(f64::MAX, f64::min);
-    let tmax = proj.iter().map(|p| p.0).fold(f64::MIN, f64::max);
-    const K: usize = 5;
-    let mut out = Vec::new();
-    for i in 0..K {
-        let f = i as f64 / (K - 1) as f64;
-        let (lo, hi) = (tmin + 1.0, (tmax - 1.0).max(tmin + 1.0));
-        let tc = lo + (hi - lo) * f;
-        let (mut smin, mut smax) = (f64::MAX, f64::MIN);
-        for p in proj.iter().filter(|p| (p.0 - tc).abs() <= 1.5) {
-            smin = smin.min(p.1);
-            smax = smax.max(p.1);
+    for k in 0..a.len() {
+        let (s, e) = (a[k], a[(k + 1) % a.len()]);
+        let len = match (e + n - s) % n {
+            0 => n,
+            l => l,
+        };
+        let seg: Vec<Pt> = (0..=len).map(|j| pts[(s + j) % n]).collect();
+        let mut arc = vec![0.0; seg.len()];
+        for j in 1..seg.len() {
+            arc[j] = arc[j - 1] + dist(seg[j - 1], seg[j]);
         }
-        if smin > smax {
-            continue;
+        let (p0, pm, sm) = (seg[0], seg[len], arc[len]);
+        let mut ext: Vec<(f64, Pt)> = Vec::new();
+        for j in (1..=len).rev() {
+            ext.push((-arc[j], (2.0 * p0.0 - seg[j].0, 2.0 * p0.1 - seg[j].1)));
         }
-        let along = (tmin - 0.5) + (tmax - tmin + 1.0) * f;
-        let across = (smin + smax) / 2.0;
-        out.push((
-            cx + u.0 * along + v.0 * across,
-            cy + u.1 * along + v.1 * across,
-            smax - smin + 1.0,
-        ));
+        ext.extend(arc.iter().copied().zip(seg.iter().copied()));
+        for j in (0..len).rev() {
+            ext.push((
+                2.0 * sm - arc[j],
+                (2.0 * pm.0 - seg[j].0, 2.0 * pm.1 - seg[j].1),
+            ));
+        }
+        for j in 1..len {
+            out[(s + j) % n] = avg(&ext, arc[j]);
+        }
     }
     out
 }
 
-/// Starting `mark.toml` text traced from `f`: the largest piece becomes S01 (outline + hole
-/// polygons, vertices tagged `c` above 35 degrees of turn), every other piece a centerline stroke
-/// ordered left column then right column, top to bottom.
-pub fn trace_toml(f: &Field) -> Result<String, String> {
-    let mask = Mask::from_field(f, 127.0);
-    let (lab, n) = label(mask.width, mask.height, &|i| mask.data[i], true);
-    if n == 0 {
-        return Err("source has no ink".into());
-    }
-    let mut comps: Vec<Vec<Pt>> = vec![Vec::new(); n as usize];
-    for (i, &l) in lab.iter().enumerate() {
-        if l > 0 {
-            comps[l as usize - 1]
-                .push(((i % mask.width) as f64 + 0.5, (i / mask.width) as f64 + 0.5));
+/// Tracing parameters, all in source px.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TraceParams {
+    /// Gaussian smoothing along each contour between its corners (see [`smooth_along`]).
+    pub smooth: f64,
+    /// Douglas-Peucker tolerance.
+    pub eps: f64,
+}
+
+/// The tracer defaults, chosen by measurement against the source.
+pub const TRACE: TraceParams = TraceParams {
+    smooth: TRACE_SMOOTH,
+    eps: TRACE_EPS,
+};
+
+/// The traced contours as TOML vertex lists, smoothed, simplified and tagged. Each source corner
+/// anchors the nearest vertex of whichever contour passes closest to it; that vertex is kept
+/// exactly and tagged `c`.
+fn tagged_contours(contours: &[&Vec<Pt>], p: &TraceParams, corners: &[Pt]) -> Vec<String> {
+    let mut anchors: Vec<Vec<usize>> = vec![Vec::new(); contours.len()];
+    for q in corners {
+        let best = contours
+            .iter()
+            .enumerate()
+            .flat_map(|(ci, c)| c.iter().enumerate().map(move |(vi, p)| (ci, vi, *p)))
+            .map(|(ci, vi, p)| (ci, vi, (p.0 - q.0).hypot(p.1 - q.1)))
+            .min_by(|a, b| a.2.total_cmp(&b.2));
+        if let Some((ci, vi, d)) = best
+            && d <= CORNER_SNAP
+        {
+            anchors[ci].push(vi);
         }
     }
-    let main = (0..comps.len())
-        .max_by_key(|&i| comps[i].len())
-        .unwrap_or(0);
-    let contours: Vec<Vec<Pt>> = trace_contours(f, 127.5)
+    contours
+        .iter()
+        .zip(&anchors)
+        .map(|(c, a)| {
+            let c = smooth_along(c, a, p.smooth);
+            let items: Vec<String> = simplify_anchored(&c, p.eps, a)
+                .into_iter()
+                .map(|i| {
+                    let t = if a.contains(&i) { "c" } else { "s" };
+                    format!("[{:.2}, {:.2}, \"{t}\"]", c[i].0, c[i].1)
+                })
+                .collect();
+            items
+                .chunks(4)
+                .map(|ch| format!("  {},\n", ch.join(", ")))
+                .collect()
+        })
+        .collect()
+}
+
+/// `mark.toml` text traced from `f` with the [`TRACE`] defaults (see [`trace_toml_with`]).
+pub fn trace_toml(f: &Field) -> Result<String, String> {
+    trace_toml_with(f, &TRACE)
+}
+
+/// `mark.toml` text traced from `f` at sub-pixel accuracy: the field is upsampled
+/// [`TRACE_SCALE`] times (bicubic) and contoured at its 50% iso-level; the
+/// source's corners are pinned, each contour is smoothed along its length (`p.smooth`) so the
+/// pixel staircase of an aliased source becomes the edge it samples, and simplified with
+/// Douglas-Peucker (`p.eps`). The largest piece becomes S01 (outline and holes, upper hole
+/// first), every other piece an outline stroke, upper row then lower row, left to right.
+pub fn trace_toml_with(f: &Field, p: &TraceParams) -> Result<String, String> {
+    let k = TRACE_SCALE as f64;
+    let field = upsample(f, TRACE_SCALE);
+    let contours: Vec<Vec<Pt>> = trace_contours(&field, ISO_LEVEL)
         .into_iter()
+        .map(|c| {
+            c.into_iter()
+                .map(|p| (p.0 / k, p.1 / k))
+                .collect::<Vec<Pt>>()
+        })
         .filter(|c| area(c).abs() >= MIN_CONTOUR_AREA)
         .collect();
-    let first = comps[main][0];
-    // The outer contour of the main piece: positive area, surrounding a pixel of that piece.
-    let outer = contours
+    let main = contours
         .iter()
-        .filter(|c| area(c) > 0.0 && point_in_poly(first, c))
+        .filter(|c| area(c) > 0.0)
         .max_by(|a, b| area(a).total_cmp(&area(b)))
-        .ok_or("no outer contour for the main piece")?;
+        .ok_or("source has no ink")?;
+    let top = |c: &[Pt]| c.iter().map(|p| p.1).fold(f64::MAX, f64::min);
     let mut holes: Vec<&Vec<Pt>> = contours
         .iter()
-        .filter(|c| area(c) < 0.0 && point_in_poly(c[0], outer))
+        .filter(|c| area(c) < 0.0 && point_in_poly(c[0], main))
         .collect();
-    holes.sort_by(|a, b| area(a).total_cmp(&area(b)));
+    holes.sort_by(|a, b| top(a).total_cmp(&top(b)));
+    let my = centroid(main).1;
+    let mut strokes: Vec<&Vec<Pt>> = contours
+        .iter()
+        .filter(|c| !std::ptr::eq(*c, main) && area(c) >= MIN_STROKE_AREA)
+        .collect();
+    strokes.sort_by(|a, b| {
+        let (ca, cb) = (centroid(a), centroid(b));
+        (ca.1 > my).cmp(&(cb.1 > my)).then(ca.0.total_cmp(&cb.0))
+    });
+    let all: Vec<&Vec<Pt>> = std::iter::once(main)
+        .chain(holes.iter().copied())
+        .chain(strokes.iter().copied())
+        .collect();
+    let text = tagged_contours(&all, p, &source_corners(f));
     let mut s = String::from(
-        "# Traced starting point (icongen trace); refine by hand against the source.\n# Coordinates are source pixels, y down. Vertex tag: \"c\" sharp, \"s\" smooth.\n\n[s01]\noutline = [\n",
+        "# Master glyph: the oracle-bone character \u{7387}, traced by `icongen trace` from\n# brand/source/oracle-rate.png: upsampled 4x (bicubic), contoured at the 50% iso-level, smoothed\n# along each contour between the carved corners (pixel staircase removed) and simplified.\n# Coordinates are source pixels (y down), so weight 0 overlays the source 1:1.\n# Vertex tag: \"c\" sharp (a carved corner, kept exactly), \"s\" smooth.\n\n[s01]\noutline = [\n",
     );
-    s.push_str(&format!(
-        "  {},\n]\nholes = [\n",
-        tagged(&simplify_closed(outer, SIMPLIFY_EPS))
-    ));
-    for h in holes {
-        s.push_str(&format!(
-            "  [{}],\n",
-            tagged(&simplify_closed(h, SIMPLIFY_EPS))
-        ));
+    s.push_str(&text[0]);
+    s.push_str("]\nholes = [\n");
+    for h in &text[1..=holes.len()] {
+        s.push_str(&format!("  [\n{h}  ],\n"));
     }
     s.push_str("]\n");
-    let (mx, _) = {
-        let c = &comps[main];
-        (c.iter().map(|p| p.0).sum::<f64>() / c.len() as f64, 0.0)
-    };
-    let mut strokes: Vec<StrokeCand> = (0..comps.len())
-        .filter(|&i| i != main && comps[i].len() >= 20)
-        .map(|i| {
-            let c = &comps[i];
-            let (x, y) = (
-                c.iter().map(|p| p.0).sum::<f64>() / c.len() as f64,
-                c.iter().map(|p| p.1).sum::<f64>() / c.len() as f64,
-            );
-            (x >= mx, y, centerline(c))
-        })
-        .filter(|(_, _, line)| line.len() >= 2)
-        .collect();
-    strokes.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
-    for (i, (_, _, line)) in strokes.iter().enumerate() {
-        let pts: Vec<String> = line
-            .iter()
-            .map(|p| format!("[{:.2}, {:.2}, {:.2}]", p.0, p.1, p.2))
-            .collect();
+    for (i, t) in text[1 + holes.len()..].iter().enumerate() {
         s.push_str(&format!(
-            "\n[[stroke]]\nid = \"S{:02}\"\npoints = [{}]\ncap_start = {{ cut = 0.0, asym = 0.0 }}\ncap_end = {{ cut = 0.0, asym = 0.0 }}\n",
-            i + 2,
-            pts.join(", ")
+            "\n[[stroke]]\nid = \"S{:02}\"\noutline = [\n{t}]\n",
+            i + 2
         ));
     }
     Ok(s)
@@ -759,10 +947,22 @@ pub fn small_size_report(glyph: &Glyph, px: u32) -> SmallSize {
     small_size(glyph, 0.0, px)
 }
 
+/// Master gates: IoU, Hausdorff (source px), area difference and per-piece IoU are measured
+/// against [`reference_mask`] at [`MEASURE_SCALE`].
+pub const GATE_IOU: f64 = 0.975;
+pub const GATE_HAUSDORFF: f64 = 1.0;
+pub const GATE_CORNERS: f64 = 0.9;
+pub const GATE_PIECE_IOU: f64 = 0.96;
+pub const GATE_AREA: f64 = 0.01;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Report {
     pub iou: f64,
     pub hausdorff: f64,
+    /// Ink area of the glyph relative to the source: `(glyph - source) / source`.
+    pub area_diff: f64,
+    /// IoU of each piece against the source piece it overlaps most, in drawing order.
+    pub piece_iou: Vec<(String, f64)>,
     pub corners_total: usize,
     pub corners_kept: f64,
     pub pieces: usize,
@@ -773,14 +973,48 @@ pub struct Report {
     pub small: Vec<SmallSize>,
 }
 
-/// Measures `glyph` (at stroke `weight`) against the source field.
+fn ink(m: &Mask) -> usize {
+    m.data.iter().filter(|&&b| b).count()
+}
+
+/// Measures `glyph` (at stroke `weight`) against the source field: the master is rendered at
+/// [`MEASURE_SCALE`] and compared with the source's 50% iso-level at the same scale.
 pub fn evaluate(glyph: &Glyph, weight: f64, source: &Field) -> Report {
-    let src = Mask::from_field(source, 127.0);
-    let g = rasterize(glyph, weight, src.width, src.height, 1.0);
+    let k = MEASURE_SCALE;
+    let src = reference_mask(source, k);
+    let g = rasterize(glyph, weight, source.width, source.height, k as f64);
     let corners = source_corners(source);
+    let (lab, n) = label(src.width, src.height, &|i| src.data[i], true);
+    let map = |p: Pt| (p.0 * k as f64, p.1 * k as f64);
+    let piece_iou = glyph
+        .pieces(weight)
+        .into_iter()
+        .map(|p| {
+            let m = pieces_mask(std::slice::from_ref(&p), (src.width, src.height), &map);
+            let mut overlap = vec![0usize; n as usize + 1];
+            for (&l, &on) in lab.iter().zip(&m.data) {
+                if on {
+                    overlap[l as usize] += 1;
+                }
+            }
+            let best = (1..overlap.len()).max_by_key(|&l| overlap[l]).unwrap_or(0);
+            let comp = Mask {
+                width: src.width,
+                height: src.height,
+                data: lab
+                    .iter()
+                    .map(|&l| l as usize == best && best > 0)
+                    .collect(),
+            };
+            (p.id, iou(&m, &comp))
+        })
+        .collect();
+    let src_ink = ink(&src).max(1) as f64;
     Report {
         iou: iou(&src, &g),
-        hausdorff: hausdorff(&src, &g),
+        hausdorff: hausdorff(&src, &g) / k as f64,
+        area_diff: (ink(&g) as f64 - src_ink) / src_ink,
+        piece_iou,
         corners_total: corners.len(),
         corners_kept: corners_kept(&corners, glyph, weight),
         pieces: components(&g),
@@ -801,14 +1035,32 @@ fn small_at(r: &Report, px: u32) -> Option<&SmallSize> {
 /// Human-readable gate failures; empty when every gate passes.
 pub fn failures(r: &Report) -> Vec<String> {
     let mut f = Vec::new();
-    if r.iou < 0.88 {
-        f.push(format!("IoU {:.3} < 0.88", r.iou));
+    if r.iou < GATE_IOU {
+        f.push(format!("IoU {:.4} < {GATE_IOU}", r.iou));
     }
-    if r.hausdorff > 3.0 {
-        f.push(format!("Hausdorff {:.2} px > 3", r.hausdorff));
+    if r.hausdorff > GATE_HAUSDORFF {
+        f.push(format!(
+            "Hausdorff {:.2} px > {GATE_HAUSDORFF}",
+            r.hausdorff
+        ));
     }
-    if r.corners_kept < 0.8 {
-        f.push(format!("corners kept {:.2} < 0.80", r.corners_kept));
+    if r.area_diff.abs() > GATE_AREA {
+        f.push(format!(
+            "area difference {:+.2}% beyond +-{}%",
+            r.area_diff * 100.0,
+            GATE_AREA * 100.0
+        ));
+    }
+    for (id, v) in &r.piece_iou {
+        if *v < GATE_PIECE_IOU {
+            f.push(format!("per-piece IoU {id} {v:.4} < {GATE_PIECE_IOU}"));
+        }
+    }
+    if r.corners_kept < GATE_CORNERS {
+        f.push(format!(
+            "corners kept {:.2} < {GATE_CORNERS:.2}",
+            r.corners_kept
+        ));
     }
     if (r.pieces, r.holes, r.model_holes, r.model_strokes) != (5, 2, 2, 4) {
         f.push(format!(
@@ -838,12 +1090,32 @@ pub fn format_report(r: &Report) -> String {
     let mut row =
         |name: &str, v: String, gate: &str| s.push_str(&format!("{name:<26}{v:<14}{gate}\n"));
     row("metric", "value".into(), "gate");
-    row("IoU", format!("{:.3}", r.iou), ">= 0.88");
-    row("Hausdorff (px)", format!("{:.2}", r.hausdorff), "<= 3");
+    row(
+        &format!("IoU ({MEASURE_SCALE}x)"),
+        format!("{:.4}", r.iou),
+        &format!(">= {GATE_IOU}"),
+    );
+    row(
+        "Hausdorff (source px)",
+        format!("{:.2}", r.hausdorff),
+        &format!("<= {GATE_HAUSDORFF}"),
+    );
+    row(
+        "area difference",
+        format!("{:+.2}%", r.area_diff * 100.0),
+        &format!("within +-{}%", GATE_AREA * 100.0),
+    );
+    for (id, v) in &r.piece_iou {
+        row(
+            &format!("IoU {id}"),
+            format!("{v:.4}"),
+            &format!(">= {GATE_PIECE_IOU}"),
+        );
+    }
     row(
         "corners kept",
         format!("{:.2} of {}", r.corners_kept, r.corners_total),
-        ">= 0.80",
+        &format!(">= {GATE_CORNERS:.2}"),
     );
     row(
         "pieces / holes",
@@ -875,6 +1147,9 @@ pub fn format_report(r: &Report) -> String {
 pub const THEME_SIZES: [u32; 4] = [1024, 120, 60, 40];
 /// Smallest area (source px squared) a hole keeps at a theme's weight.
 pub const MIN_HOLE_AREA: f64 = 12.0;
+/// Smallest share of its master area a hole keeps at a theme's weight, so the counters still read
+/// as the source's (a full-weight shrink leaves the lower hole about half its size).
+pub const MIN_HOLE_SHARE: f64 = 0.6;
 
 /// The mark as a theme draws it: its weight and scale, rendered at whole-icon sizes.
 #[derive(Debug, Clone, PartialEq)]
@@ -885,6 +1160,8 @@ pub struct ThemeCheck {
     pub sizes: Vec<SmallSize>,
     /// Areas of the S01 holes at the theme's weight, source px squared.
     pub hole_areas: Vec<f64>,
+    /// Each hole's area as a share of its area in the master.
+    pub hole_shares: Vec<f64>,
 }
 
 /// Renders the theme's mark (weight, small-size bonus, scale) at every [`THEME_SIZES`] icon size.
@@ -894,7 +1171,7 @@ pub fn check_theme(glyph: &Glyph, name: &str, mark: &MarkCfg) -> ThemeCheck {
     let sizes = THEME_SIZES
         .iter()
         .map(|&px| {
-            let w = mark.weight_at(px);
+            let w = (mark.weight_at(px), mark.hole_weight_at(px));
             let mark_px = mark.scale * f64::from(px);
             let m = fit_mask(glyph, w, mark_px);
             let ss = (640 / px).max(1);
@@ -907,20 +1184,28 @@ pub fn check_theme(glyph: &Glyph, name: &str, mark: &MarkCfg) -> ThemeCheck {
             }
         })
         .collect();
-    let hole_areas = glyph.pieces(mark.weight)[0].contours[1..]
+    let hole_weight = mark.hole_weight.unwrap_or(mark.weight);
+    let hole_areas: Vec<f64> = glyph.pieces_with(mark.weight, hole_weight)[0].contours[1..]
         .iter()
         .map(|h| polygon_area(h))
+        .collect();
+    let hole_shares = hole_areas
+        .iter()
+        .zip(&glyph.holes)
+        .map(|(a, h)| a / polygon_area(h).max(1e-9))
         .collect();
     ThemeCheck {
         name: name.into(),
         weight: mark.weight,
         sizes,
         hole_areas,
+        hole_shares,
     }
 }
 
 /// Themed gates: 5 pieces at every size, both holes at 1024 and 120 px, the narrowest piece at
-/// least 2 px at 40 px, and every hole at least [`MIN_HOLE_AREA`].
+/// least 2 px at 40 px, and every hole at least [`MIN_HOLE_AREA`] and [`MIN_HOLE_SHARE`] of its
+/// master area.
 pub fn theme_failures(c: &ThemeCheck) -> Vec<String> {
     let mut f = Vec::new();
     for s in &c.sizes {
@@ -949,6 +1234,12 @@ pub fn theme_failures(c: &ThemeCheck) -> Vec<String> {
             c.name, c.hole_areas
         ));
     }
+    if c.hole_shares.iter().any(|&a| a < MIN_HOLE_SHARE) {
+        f.push(format!(
+            "{}: hole shares {:?} of the master (want each >= {MIN_HOLE_SHARE})",
+            c.name, c.hole_shares
+        ));
+    }
     f
 }
 
@@ -958,7 +1249,12 @@ fn format_theme(c: &ThemeCheck) -> String {
         .iter()
         .map(|z| format!("{}px {}p {}h {:.2}w", z.px, z.pieces, z.holes, z.narrowest))
         .collect();
-    let areas: Vec<String> = c.hole_areas.iter().map(|a| format!("{a:.0}")).collect();
+    let areas: Vec<String> = c
+        .hole_areas
+        .iter()
+        .zip(&c.hole_shares)
+        .map(|(a, s)| format!("{a:.0} ({:.0}%)", s * 100.0))
+        .collect();
     format!(
         "theme {:<12}weight {:<5}{}  holes {}\n",
         c.name,

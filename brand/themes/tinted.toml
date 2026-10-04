@@ -18,8 +18,9 @@ keepout = 0.04
 
 [mark]
 fill = "#f2f2f2"
-weight = 2.25             # outline offset in source px, as matte
-scale = 0.72
+weight = 2.1              # outline offset in source px, as matte
+hole_weight = 1.0         # hole shrink in source px, as matte
+scale = 0.75
 offset = [0.0, 0.0]
 
 [gloss]

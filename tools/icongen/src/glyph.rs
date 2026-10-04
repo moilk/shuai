@@ -1,7 +1,8 @@
 //! Master glyph model (`brand/mark/mark.toml`) and its conversion to SVG path data.
 //!
-//! S01 is an outline polygon plus hole polygons (even-odd). S02..S05 are centerline strokes with
-//! per-point widths and chisel end caps. Vertices are tagged sharp (`c`) or smooth (`s`).
+//! S01 is an outline polygon plus hole polygons (even-odd). S02..S05 are outline polygons too;
+//! a stroke may instead be written as a centerline with per-point widths and chisel end caps,
+//! which is converted to its outline when parsed. Vertices are tagged sharp (`c`) or smooth (`s`).
 
 use crate::svg::fmt;
 use serde::Deserialize;
@@ -35,10 +36,8 @@ pub struct Cap {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stroke {
     pub id: String,
-    /// Centerline points `(x, y, width)`.
-    pub points: Vec<(f64, f64, f64)>,
-    pub cap_start: Cap,
-    pub cap_end: Cap,
+    /// Closed outline of the stroke at weight 0.
+    pub outline: Vec<Vertex>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,11 +91,16 @@ struct RawS01 {
 #[serde(deny_unknown_fields)]
 struct RawStroke {
     id: String,
-    points: Vec<(f64, f64, f64)>,
+    /// Outline polygon, as the S01 outline.
     #[serde(default)]
-    cap_start: Cap,
+    outline: Option<Vec<(f64, f64, String)>>,
+    /// Centerline `(x, y, width)` points (alternative to `outline`).
     #[serde(default)]
-    cap_end: Cap,
+    points: Option<Vec<(f64, f64, f64)>>,
+    #[serde(default)]
+    cap_start: Option<Cap>,
+    #[serde(default)]
+    cap_end: Option<Cap>,
 }
 
 fn contour(raw: &[(f64, f64, String)], what: &str) -> Result<Vec<Vertex>, String> {
@@ -128,18 +132,35 @@ impl Glyph {
             .collect::<Result<Vec<_>, _>>()?;
         let mut strokes = Vec::new();
         for r in raw.stroke {
-            if r.points.len() < 2 {
-                return Err(format!("{}: stroke needs at least 2 points", r.id));
-            }
-            if r.points.iter().any(|p| p.2 <= 0.0) {
-                return Err(format!("{}: widths must be positive", r.id));
-            }
-            strokes.push(Stroke {
-                id: r.id,
-                points: r.points,
-                cap_start: r.cap_start,
-                cap_end: r.cap_end,
-            });
+            let outline = match (&r.outline, &r.points) {
+                (Some(o), None) => {
+                    if r.cap_start.is_some() || r.cap_end.is_some() {
+                        return Err(format!("{}: caps only apply to centerline points", r.id));
+                    }
+                    contour(o, &r.id)?
+                }
+                (None, Some(points)) => {
+                    if points.len() < 2 {
+                        return Err(format!("{}: stroke needs at least 2 points", r.id));
+                    }
+                    if points.iter().any(|p| p.2 <= 0.0) {
+                        return Err(format!("{}: widths must be positive", r.id));
+                    }
+                    stroke_outline(
+                        points,
+                        r.cap_start.unwrap_or_default(),
+                        r.cap_end.unwrap_or_default(),
+                        0.0,
+                    )
+                }
+                _ => {
+                    return Err(format!(
+                        "{}: stroke needs exactly one of `outline` or `points`",
+                        r.id
+                    ));
+                }
+            };
+            strokes.push(Stroke { id: r.id, outline });
         }
         Ok(Glyph {
             outline,
@@ -152,6 +173,12 @@ impl Glyph {
     /// edge of every piece (S01 included) moves outward by `weight`, holes shrink by the same
     /// amount but never below [`MIN_HOLE_RADIUS`]. Weight 0 is the master geometry, unchanged.
     pub fn pieces(&self, weight: f64) -> Vec<Piece> {
+        self.pieces_with(weight, weight)
+    }
+
+    /// As [`Glyph::pieces`], with the holes shrunk by `hole_weight` instead of `weight` (still
+    /// never below [`MIN_HOLE_RADIUS`]), so a heavier mark keeps its counters open.
+    pub fn pieces_with(&self, weight: f64, hole_weight: f64) -> Vec<Piece> {
         let grow = |c: &[Vertex]| {
             if weight == 0.0 {
                 c.to_vec()
@@ -160,7 +187,7 @@ impl Glyph {
             }
         };
         let shrink = |h: &[Vertex]| {
-            let d = weight.min((inscribed_radius(h) - MIN_HOLE_RADIUS).max(0.0));
+            let d = hole_weight.min((inscribed_radius(h) - MIN_HOLE_RADIUS).max(0.0));
             if d <= 0.0 {
                 h.to_vec()
             } else {
@@ -177,12 +204,7 @@ impl Glyph {
         for s in &self.strokes {
             out.push(Piece {
                 id: s.id.clone(),
-                contours: vec![grow(&stroke_outline(
-                    &s.points,
-                    s.cap_start,
-                    s.cap_end,
-                    0.0,
-                ))],
+                contours: vec![grow(&s.outline)],
                 even_odd: false,
             });
         }
@@ -526,7 +548,9 @@ pub fn stroke_outline(
 }
 
 /// Edges of a closed polygon. A sharp vertex has no Bezier handle, so no curve ever bends across
-/// it; an edge between two sharp vertices is a straight line.
+/// it; an edge between two sharp vertices is a straight line. Smooth vertices get Catmull-Rom
+/// tangents with handles a third of the edge length, so curves through dense vertices never
+/// overshoot into loops.
 pub fn segments(poly: &[Vertex]) -> Vec<Seg> {
     let n = poly.len();
     let p = |i: usize| (poly[i % n].x, poly[i % n].y);
@@ -542,15 +566,20 @@ pub fn segments(poly: &[Vertex]) -> Vec<Seg> {
                     c2: None,
                 };
             }
+            // Catmull-Rom tangent direction, but each handle is a third of its own edge: on
+            // unevenly spaced vertices a long neighbour cannot push a short edge into a loop.
+            let h = (b.0 - a.0).hypot(b.1 - a.1) / 3.0;
             let c1 = if ta == Tag::Sharp {
                 a
             } else {
-                (a.0 + (b.0 - prev.0) / 6.0, a.1 + (b.1 - prev.1) / 6.0)
+                let t = norm((b.0 - prev.0, b.1 - prev.1));
+                (a.0 + t.0 * h, a.1 + t.1 * h)
             };
             let c2 = if tb == Tag::Sharp {
                 b
             } else {
-                (b.0 - (next.0 - a.0) / 6.0, b.1 - (next.1 - a.1) / 6.0)
+                let t = norm((next.0 - a.0, next.1 - a.1));
+                (b.0 - t.0 * h, b.1 - t.1 * h)
             };
             Seg {
                 a,

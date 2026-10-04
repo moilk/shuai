@@ -21,11 +21,14 @@ keepout = 0.04            # fraction of the canvas kept clear around the mark
 
 [mark]
 fill = "#f7f5f2"          # F01
-# Uniform outline offset in source px: every piece (S01 included) grows by this on each side,
-# holes shrink by it but stay open; sharp corners stay mitred. 0 = the source carving. 2.25 gives
-# the designer's heavier mark and keeps the narrowest piece >= 2 px on a 40 px icon.
-weight = 2.25
-scale = 0.72              # share of the canvas the mark's longest side covers (<= 0.75: 1x margin)
+# Uniform outline offset in source px: every piece (S01 included) grows by this on each side;
+# sharp corners stay mitred. 0 = the source carving. 2.1 keeps the narrowest piece >= 2 px on a
+# 40 px icon at scale 0.75 (2.03 px); 2.0 falls just short, so this is the lightest safe weight.
+weight = 2.1
+# How far the holes shrink (default: weight). 1.0 keeps the lower counter at about 3/4 of its
+# source area, where the full weight would halve it; the upper one is held open regardless.
+hole_weight = 1.0
+scale = 0.75              # share of the canvas the mark's longest side covers (<= 0.75: 1x margin)
 # small_size = { max_px = 64, weight = 0.5 }   # optional extra weight for direct renders <= max_px
 offset = [0.0, 0.0]       # fraction of the canvas
 

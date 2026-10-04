@@ -100,7 +100,7 @@ fn base_fragment(theme: &ThemeCfg, size: u32) -> String {
 fn mark_fragment(theme: &ThemeCfg, glyph: &Glyph, pl: &Placement, size: u32) -> String {
     let map = |p: Pt| pl.map(p);
     let mut out = format!("<g id=\"mark\" fill=\"{}\">", theme.mark.fill);
-    for piece in glyph.pieces(theme.mark.weight_at(size)) {
+    for piece in glyph.pieces_with(theme.mark.weight_at(size), theme.mark.hole_weight_at(size)) {
         let d: String = piece
             .contours
             .iter()
