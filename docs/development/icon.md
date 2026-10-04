@@ -32,7 +32,13 @@ directory `tools/icongen`; pass `--brand DIR` otherwise.
 | `apple/App/Resources/Assets.xcassets/AppIcon.appiconset/` | `AppIcon-{light,dark,tinted}.png` (copies of the rendered icons) and `Contents.json` |
 
 `icon.toml` `appiconset` is relative to the repository root (the brand directory's parent), must be
-a plain relative path, and defaults to the path above.
+a plain relative path, and defaults to the path above. The generator resolves it as
+`../<appiconset>` relative to the brand directory, so a custom `--brand DIR` writes the catalog
+next to `DIR`, at `DIR/../<appiconset>`.
+
+`check` compares SVG and JSON numerically (numbers within 1e-3 user units, all other text
+exactly) and PNGs within +-2 per channel, so float formatting differences between platforms do not
+fail it; any structural change does.
 
 ## Configuration
 
@@ -55,7 +61,11 @@ A theme (`brand/themes/matte.toml`) has these tables; unknown keys are rejected:
   kept clear around the mark). The texture is deterministic from `seed`.
 - `[mark]`: `fill`, `scale` (mark size as a share of the canvas), `offset`, `weight`, `hole_weight`,
   optional `small_size = { max_px, weight }`.
-- `[gloss]`: `enabled`. `[container]`: `kind = "none" | "squircle"` (squircle clips and outlines).
+- `[gloss]`: `enabled`. `[container]`: `kind = "none" | "squircle"` (squircle clips and outlines
+  with a border of 2/1024 of the canvas).
+
+Numbers are validated: all finite, `grain` 0..=1, `keepout` 0..=0.5, `opacity` 0..=1, `cracks` at
+most 200, `motifs` at most 64, `offset` within -0.5..=0.5.
 
 ### Weight and hole_weight
 
@@ -110,6 +120,15 @@ name, edit `[background]` and `[texture]` (keep `[mark]` unchanged to keep fidel
 appearance at it in `icon.toml` (or use it only for exports), then `generate`, `check`, `fidelity`.
 Theme names are lowercase letters, digits and `-`. `mono-dark` and `mono-light` are export-only
 themes used for `out/exports/`.
+
+## Known limitations
+
+- Hole gates are not evaluated at the `small_size` bonus sizes (60 and 40 px). No shipped theme
+  uses `small_size`; enable the gates before shipping one that does.
+- Texture margins (`EDGE`, 20 px) are absolute pixels, so small-size texture renders are not
+  scaled copies of the 1024 render. Only the 1024 px texture is shipped.
+- A stroke given as a centerline (`points`) gets no self-intersection loop removal at bends
+  sharper than about 60 degrees. The shipped master uses the `outline` format.
 
 ## Liquid Glass and iOS 26
 

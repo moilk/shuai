@@ -23,7 +23,8 @@ Working directory `tools/icongen/` (its own Cargo workspace, cached separately),
 
 1. `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
 2. `cargo run --release -- check`: committed `brand/out/**` and the AppIcon catalog match a fresh
-   `generate`.
+   `generate` (SVG and JSON compared numerically within 1e-3, other text exactly, PNG within +-2 per
+   channel, so cross-platform float formatting does not fail the job).
 3. `cargo run --release -- fidelity`: the vector mark still meets the fidelity gates.
 
 See [App icon](icon.md).

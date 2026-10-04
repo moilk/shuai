@@ -29,8 +29,8 @@ everything from plain-text configuration under `brand/`:
 - `icongen generate` renders layered SVG (base, texture, mark, gloss, container, composite) with
   fixed-precision numbers, rasterises with resvg to opaque 8-bit sRGB RGB PNGs, and writes the
   asset catalog and exports. Outputs are committed.
-- `icongen check` regenerates in memory and compares (SVG and JSON byte-exact, PNG within +-2 per
-  channel); `icongen fidelity` enforces numeric fidelity gates. Both run in CI (`icon` job).
+- `icongen check` regenerates in memory and compares (SVG and JSON numerically: numbers within 1e-3
+  user units, all other text exactly; PNG within +-2 per channel); `icongen fidelity` enforces numeric fidelity gates. Both run in CI (`icon` job).
 - The app consumes the committed `AppIcon.appiconset` (iOS 18 single-size with dark and tinted
   appearances). `scripts/check-app-icon.sh` verifies the compiled `Assets.car` has all three.
 
