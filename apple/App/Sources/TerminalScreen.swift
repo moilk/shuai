@@ -31,28 +31,9 @@ private struct TerminalSessionView: View {
         VStack {
             AgentBannerView()
             NoticeStackView()
-            if let error = controller.tmuxActions.lastError {
-                NoticeView(text: error) { controller.tmuxActions.lastError = nil }
-                    .task(id: error) {
-                        try? await Task.sleep(for: .seconds(5))
-                        controller.tmuxActions.lastError = nil
-                    }
-            }
-            if let notice = controller.notice {
-                NoticeView(text: notice) { controller.dismissNotice() }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            if let banner = controller.banner {
-                InAppBanner(
-                    content: BannerContent.make(title: banner.title, body: banner.body, hostName: host.name),
-                    token: "\(banner.title)\n\(banner.body)", dismiss: { controller.dismissBanner() })
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
             Spacer()
         }
     .padding()
-    .animation(.snappy, value: controller.banner)
-    .animation(.snappy, value: controller.notice)
     .animation(.snappy, value: model.agentHub.banners.banners)
     }
 
@@ -324,25 +305,6 @@ private struct StatusBadge: View {
         case .warning: .orange
         case .error: .red
         }
-    }
-}
-
-/// Non-blocking info banner (the terminal stays usable underneath).
-struct NoticeView: View {
-    let text: String
-    let dismiss: () -> Void
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "info.circle.fill")
-            Text(verbatim: text).font(.subheadline)
-            Spacer()
-            Button(action: dismiss) { Image(systemName: "xmark") }
-        }
-        .padding(12)
-        .frame(maxWidth: 520)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("session-notice")
     }
 }
 

@@ -16,11 +16,15 @@ public final class SessionRegistry {
     @ObservationIgnored private let makeEngine: @MainActor (HostProfile) -> any TerminalEngine
     /// Agent monitors of every host (nil: no AI integration, e.g. most tests).
     @ObservationIgnored public let agentHub: AgentHub?
+    /// Where controllers post session, tmux and terminal notices (nil: none shown, e.g. most tests).
+    @ObservationIgnored private let notices: (any NoticePosting)?
 
     public init(
         factory: ConnectionFactory, keys: KeyStore, passwords: PasswordStore, knownHosts: KnownHostsStore,
-        hosts: HostStore, makeEngine: @escaping @MainActor (HostProfile) -> any TerminalEngine, agentHub: AgentHub? = nil
+        hosts: HostStore, makeEngine: @escaping @MainActor (HostProfile) -> any TerminalEngine, agentHub: AgentHub? = nil,
+        notices: (any NoticePosting)? = nil
     ) {
+        self.notices = notices
         self.agentHub = agentHub
         self.factory = factory
         self.keys = keys
@@ -42,7 +46,8 @@ public final class SessionRegistry {
         }
         let engine = makeEngine(host)
         let controller = SessionController(
-            profile: host, engine: engine, factory: factory, keys: keys, passwords: passwords, knownHosts: knownHosts)
+            profile: host, engine: engine, factory: factory, keys: keys, passwords: passwords, knownHosts: knownHosts,
+            notices: notices)
         let id = host.id
         controller.onConnected = { [weak hosts] in try? hosts?.markConnected(id: id) }
         if let hub = agentHub {

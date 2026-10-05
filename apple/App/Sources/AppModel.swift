@@ -112,7 +112,7 @@ final class AppModel {
                     theme: settings.theme.terminalTheme)
                 box.engines[host.id] = engine
                 return engine
-            }, agentHub: hub)
+            }, agentHub: hub, notices: notices)
         engineBox = box
         selection = hosts.hosts.first?.id
         notices.setFocus(selection.map { .host($0) })

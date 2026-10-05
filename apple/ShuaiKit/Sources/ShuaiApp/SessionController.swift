@@ -23,12 +23,9 @@ public final class SessionController {
     public private(set) var pendingPrompt: SessionPrompt?
     /// Terminal title (OSC 0/2); see `windowTitle`.
     public private(set) var title = ""
-    /// Latest OSC 9/777 notification, shown as an in-app banner.
-    public private(set) var banner: TerminalNotification?
     /// OSC 52 / unsafe paste awaiting the user's decision.
     public var pendingClipboard: ClipboardRequest?
-    /// Non-blocking info banner (e.g. tmux missing on the host); cleared by `dismissNotice()` or the next fresh `connect()`.
-    public private(set) var notice: String?
+    /// Text of the sticky notice posted when tmux is missing on the host.
     public static let tmuxMissingNotice = "tmux not found on host \u{2014} using plain shell (sessions won't persist)"
     /// A tmux that fails to start prints at most a short error; anything longer is a real session.
     static let tmuxProbeBytes = 1024
@@ -59,6 +56,7 @@ public final class SessionController {
     @ObservationIgnored private let sleep: @Sendable (UInt64) async throws -> Void
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let redrawNudgeDelay: Duration
+    @ObservationIgnored private let notices: (any NoticePosting)?
 
     // Live transport
     private enum Command: Sendable {
@@ -112,6 +110,7 @@ public final class SessionController {
         keys: KeyStore,
         passwords: PasswordStore,
         knownHosts: KnownHostsStore,
+        notices: (any NoticePosting)? = nil,
         makePolicy: @escaping @Sendable () -> ReconnectPolicy = { ReconnectPolicy(maxAttempts: nil, jitter: true) },
         sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(for: .milliseconds($0)) },
         now: @escaping @Sendable () -> Date = { Date() },
@@ -127,12 +126,13 @@ public final class SessionController {
         self.sleep = sleep
         self.now = now
         self.redrawNudgeDelay = redrawNudgeDelay
+        self.notices = notices
         let monitor = TmuxMonitor(sessionName: profile.tmux.sessionName, ptySize: { [engine] in
             let g = engine.gridSize
             return g.isValid ? (UInt32(g.cols), UInt32(g.rows)) : (80, 24)
         })
         tmux = monitor
-        tmuxActions = TmuxActions(monitor: monitor)
+        tmuxActions = TmuxActions(monitor: monitor, hostID: profile.id, notices: notices)
         wireEngine()
     }
 
@@ -158,12 +158,20 @@ public final class SessionController {
             }
         }
         engine.onTitleChange = { [weak self] t in MainActor.assumeIsolated { self?.title = t } }
-        engine.onNotification = { [weak self] n in MainActor.assumeIsolated { self?.banner = n } }
+        engine.onNotification = { [weak self] n in MainActor.assumeIsolated { self?.postTerminalNotification(n) } }
         engine.onClipboardRequest = { [weak self] r in MainActor.assumeIsolated { self?.pendingClipboard = r } }
     }
 
-    public func dismissBanner() { banner = nil }
-    public func dismissNotice() { notice = nil }
+    private var tmuxMissingKey: String { "tmux-missing:\(profile.id.uuidString)" }
+
+    /// OSC 9/777 from the remote: untrusted, so `Notice` sanitizes and caps it. One key per host,
+    /// so a flood coalesces into a single notice.
+    private func postTerminalNotification(_ n: TerminalNotification) {
+        let content = BannerContent.make(title: n.title, body: n.body, hostName: profile.name)
+        notices?.post(Notice(
+            severity: .attention, source: .terminal, scope: .host(profile.id), title: content.title,
+            text: content.message, symbol: content.symbol, key: "osc:\(profile.id.uuidString)"))
+    }
 
     /// Types text into the remote (debug scripting, tests).
     public func sendInput(_ text: String) { enqueue(.write(Data(text.utf8))) }
@@ -188,7 +196,7 @@ public final class SessionController {
         generation += 1
         let gen = generation
         tmuxUnavailable = false
-        notice = nil
+        notices?.retract(key: tmuxMissingKey)
         passwordCancelled = false
         state = .connecting
         do {
@@ -520,7 +528,9 @@ public final class SessionController {
     private func fallBackToPlainShell(gen: Int) async {
         guard gen == generation, let conn = connection else { return }
         tmuxUnavailable = true
-        notice = Self.tmuxMissingNotice
+        notices?.post(Notice(
+            severity: .warning, source: .session, scope: .host(profile.id), text: Self.tmuxMissingNotice,
+            symbol: "exclamationmark.triangle", key: tmuxMissingKey, lifetime: .sticky))
         inputDuringSwitch = []
         defer { inputDuringSwitch = nil }
         await stopTmuxMonitor()

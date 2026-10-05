@@ -2,7 +2,7 @@ import ShuaiApp
 import ShuaiCore
 import SwiftUI
 
-/// One in-app banner: used for agent transitions and for OSC 9/777 terminal notifications.
+/// One in-app banner for an agent transition.
 /// Auto-hides after 4 s; tapping runs `onTap`.
 struct InAppBanner: View {
     let content: BannerContent

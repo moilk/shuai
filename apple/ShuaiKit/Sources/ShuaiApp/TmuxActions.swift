@@ -16,12 +16,19 @@ public final class TmuxActions {
     }
 
     public private(set) var pendingConfirmation: Confirmation?
-    /// Message of the last failed `run { }` action (the UI shows and clears it).
-    public var lastError: String?
 
     @ObservationIgnored private let monitor: TmuxMonitor
+    @ObservationIgnored private let hostID: UUID?
+    @ObservationIgnored private let notices: (any NoticePosting)?
 
-    public init(monitor: TmuxMonitor) { self.monitor = monitor }
+    /// - Parameters:
+    ///   - hostID: scopes and keys the error notices of `run { }`.
+    ///   - notices: where failed `run { }` actions are reported; nil drops them.
+    public init(monitor: TmuxMonitor, hostID: UUID? = nil, notices: (any NoticePosting)? = nil) {
+        self.monitor = monitor
+        self.hostID = hostID
+        self.notices = notices
+    }
 
     // MARK: - Derived state
 
@@ -196,9 +203,16 @@ public final class TmuxActions {
         }
     }
 
-    /// Fire-and-forget wrapper for UI callbacks: failures land in `lastError`.
+    /// Fire-and-forget wrapper for UI callbacks: failures are posted as an error notice.
     public func run(_ body: @MainActor () async throws -> Void) async {
-        do { try await body() } catch { lastError = Self.describe(error) }
+        do { try await body() } catch { postError(Self.describe(error)) }
+    }
+
+    private func postError(_ text: String) {
+        let suffix = hostID?.uuidString ?? "local"
+        notices?.post(Notice(
+            severity: .error, source: .tmux, scope: hostID.map { .host($0) } ?? .app, text: text,
+            symbol: "exclamationmark.octagon", key: "tmux-error:\(suffix)"))
     }
 
     static func describe(_ error: Error) -> String {
