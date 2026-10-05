@@ -21,7 +21,7 @@ jobs:
       icon: ${{ steps.filter.outputs.icon }}
       apple: ${{ steps.filter.outputs.apple }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -52,7 +52,7 @@ jobs:
       run:
         working-directory: core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -72,7 +72,7 @@ jobs:
       run:
         working-directory: tools/icongen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -92,7 +92,7 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
@@ -111,7 +111,7 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Boot the simulator now so the cold boot overlaps the Rust, xcframework and swift test steps.
       - name: Boot iPad simulator
         run: |
@@ -135,7 +135,7 @@ jobs:
       # cache skips the zig cross-build when core/ did not change.
       - name: Restore bundled shuai-agent binaries
         id: agent
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apple/App/Resources/agent
           key: agent-${{ hashFiles('core/**/*.rs', 'core/**/Cargo.toml', 'core/Cargo.lock', 'scripts/build-agent.sh') }}
@@ -179,7 +179,7 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
