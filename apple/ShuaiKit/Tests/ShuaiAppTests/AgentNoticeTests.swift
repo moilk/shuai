@@ -94,6 +94,15 @@ struct AgentNoticeTests {
         #expect(Set(keys).count == 2)
     }
 
+    @Test func agentNoticeKeysCannotCollideAcrossHostAndSession() {
+        func key(host: String, session: String) -> String {
+            let k = FfiSessionKey(host: host, sessionId: session)
+            let b = banners([.stateChanged(key: k, from: .working(tool: nil), to: .done)])
+            return AgentNotices.make(b, resolve: resolve)[0].key
+        }
+        #expect(key(host: "a|b", session: "c") != key(host: "a", session: "b|c"))
+    }
+
     // MARK: with a real center and queue
 
     @MainActor
@@ -107,7 +116,8 @@ struct AgentNoticeTests {
             let clock = clock
             center = NoticeCenter(
                 now: { clock.now }, sleep: { try await clock.sleep($0) },
-                onDismiss: { AgentNotices.dismissed($0, in: queue) })
+                onDismiss: { AgentNotices.dismissed($0, in: queue) },
+                onExpire: { AgentNotices.dismissed($0, in: queue) })
         }
 
         func live(_ changes: [FfiTrackerChange]) {
@@ -124,6 +134,27 @@ struct AgentNoticeTests {
         #expect(rig.queue.banners.isEmpty)
         AgentNotices.sync(queue: rig.queue, center: rig.center, resolve: resolve)
         #expect(rig.center.queue.count == 0)
+    }
+
+    @Test func expiringAnAgentNoticeDismissesItsQueueBanner() async throws {
+        let rig = Rig()
+        rig.live([.stateChanged(key: sk("a"), from: .working(tool: nil), to: .done)])
+        #expect(await waitUntil { rig.clock.sleeping == 1 })
+        rig.clock.advance(60_000)
+        #expect(await waitUntil { rig.center.queue.count == 0 })
+        #expect(rig.queue.banners.isEmpty)
+    }
+
+    @Test func agentNoticeTextFollowsTheSession() throws {
+        let rig = Rig()
+        rig.live([.stateChanged(key: sk("a"), from: .working(tool: nil), to: .done)])
+        let before = try #require(rig.center.queue.visible.first)
+        #expect(before.text == "all green")
+        let queue = rig.queue
+        AgentNotices.sync(queue: queue, center: rig.center) { b in ("dev", session(b.key.sessionId, message: "now red")) }
+        let after = try #require(rig.center.queue.visible.first)
+        #expect(after.id == before.id)
+        #expect(after.text == "now red")
     }
 
     @Test func expiredAgentNoticeDoesNotReappearOnNextLiveChange() async throws {

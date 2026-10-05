@@ -35,11 +35,35 @@ struct NoticeSanitizeTests {
     }
 
     @Test func controlCharsAndNewlinesCollapsed() {
-        #expect(Notice.sanitize("a\u{1B}[31mb\u{07}\u{0}c", limit: 100) == "a[31mbc")
+        #expect(Notice.sanitize("a\u{1B}[31mb\u{07}\u{0}c", limit: 100) == "abc")
         #expect(Notice.sanitize("a\n\nb\tc\r\nd", limit: 100) == "a b c d")
         #expect(Notice.sanitize("x\u{85}y\u{9B}z", limit: 100) == "xyz")
         #expect(Notice.sanitize("   a    b   ", limit: 100) == "a b")
         #expect(Notice.sanitize("\n\t ", limit: 100) == "")
+    }
+
+    @Test func ansiSequencesAreRemovedAsAWhole() {
+        #expect(Notice.sanitize("\u{1B}[1;31mred\u{1B}[0m ok", limit: 100) == "red ok")
+        #expect(Notice.sanitize("a\u{1B}[2Kb\u{1B}[10;20Hc", limit: 100) == "abc")
+        #expect(Notice.sanitize("\u{1B}]0;window title\u{07}x", limit: 100) == "x")
+        #expect(Notice.sanitize("\u{1B}]8;;https://example.invalid\u{1B}\\link", limit: 100) == "link")
+    }
+
+    @Test func aLoneEscapeIsStillDropped() {
+        #expect(Notice.sanitize("a\u{1B}b", limit: 100) == "ab")
+        #expect(Notice.sanitize("end\u{1B}", limit: 100) == "end")
+    }
+
+    @Test func unterminatedSequencesDoNotSwallowBeyondTheBudget() {
+        // limit 10 reads at most 80 scalars; a terminator further away is not searched for.
+        let csi = "\u{1B}[" + String(repeating: "1", count: 1000) + "mtail"
+        let a = Notice.sanitize(csi, limit: 10)
+        #expect(a.count == 10)
+        #expect(a.hasPrefix("[111"))
+        let osc = "\u{1B}]" + String(repeating: "z", count: 1000) + "\u{07}tail"
+        let b = Notice.sanitize(osc, limit: 10)
+        #expect(b.count == 10)
+        #expect(b.hasPrefix("]zzz"))
     }
 
     @Test func accessibilityIdentifierPerSourceMatchesLegacyIds() {
@@ -408,6 +432,53 @@ struct NoticeReviewTests {
         #expect(q.visible.isEmpty)
         q.reconcile(source: .agent, with: [a], now: 6000)
         #expect(q.visible.isEmpty)
+    }
+
+    @Test func expireReturnsTheExpiredNotices() {
+        var q = NoticeQueue()
+        let a = notice("a", key: "a"), b = notice("b", lifetime: .sticky)
+        q.post(a, now: 0)
+        q.post(b, now: 0)
+        #expect(q.expire(now: 5000).map(\.id) == [a.id])
+        #expect(q.expire(now: 6000).isEmpty)
+    }
+
+    @Test func expiredIdStaysSettledWhileItsBannerIsStillReported() {
+        var q = NoticeQueue()
+        let a = notice("a", source: .agent, key: "a")
+        q.reconcile(source: .agent, with: [a], now: 0)
+        q.expire(now: 5000)
+        for i in 0..<200 {
+            let other = notice("o\(i)", source: .agent, key: "o\(i)")
+            q.post(other, now: 6000)
+            _ = q.dismiss(id: other.id, now: 6000)
+            q.reconcile(source: .agent, with: [a], now: 6000)
+        }
+        #expect(q.count == 0)
+    }
+
+    @Test func reconcileUpdatesContentOfAHeldNoticeAndKeepsItsTimer() {
+        var q = NoticeQueue()
+        let a = notice("first", severity: .attention, source: .agent, key: "a")
+        q.reconcile(source: .agent, with: [a], now: 0)
+        let deadline = q.nextDeadline
+        let changed = Notice(id: a.id, severity: .error, source: .agent, title: "T", text: "second", symbol: "bell", key: "a")
+        q.reconcile(source: .agent, with: [changed], now: 1000)
+        #expect(q.count == 1)
+        #expect(q.visible.first?.id == a.id)
+        #expect(q.visible.first?.text == "second")
+        #expect(q.visible.first?.title == "T")
+        #expect(q.visible.first?.severity == .error)
+        #expect(q.nextDeadline == deadline)
+    }
+
+    @Test func reconcileDoesNotTouchNoticesOfOtherSources() {
+        var q = NoticeQueue()
+        let t = notice("term", source: .terminal, key: "t")
+        q.post(t, now: 0)
+        let impostor = Notice(id: t.id, severity: .error, source: .agent, text: "x", symbol: "bell", key: "t")
+        q.reconcile(source: .agent, with: [impostor], now: 1)
+        #expect(q.allNotices.first(where: { $0.id == t.id })?.text == "term")
     }
 
     @Test func reconcileBypassesKeyDedupe() {

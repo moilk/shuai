@@ -51,7 +51,7 @@ struct ConnectionPresentationTests {
         let p = make(.hostKeyPrompt(challenge))
         #expect(p.placement == .card)
         #expect(p.title == "Verify alpha's host key")
-        #expect(p.actions.isEmpty)
+        #expect(p.actions == [.cancelConnect])
         #expect(p.accessibilityIdentifier == "connecting-card")
     }
 
@@ -111,7 +111,7 @@ struct ConnectionPresentationTests {
     @Test func failedMessageSanitizedAndCapped() {
         let dirty = "bad\u{1B}[31m\u{202E}thing\u{2066}\n\n  here\t\u{85}ok  "
         let p = make(.failed(SessionError(kind: .other, message: dirty)))
-        #expect(p.detail == "bad[31mthing here ok")
+        #expect(p.detail == "badthing here ok")
         let long = String(repeating: "a", count: 1000)
         let q = make(.failed(SessionError(kind: .other, message: long)))
         #expect(q.detail == String(repeating: "a", count: 299) + "…")
