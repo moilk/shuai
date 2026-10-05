@@ -18,8 +18,9 @@
 | [Architecture](design/architecture.md) | Components, Rust crates, Swift targets, FFI rules, data flows |
 | [Agent protocol](design/agent-protocol.md) | Hooks, event format, `shuai-agent` CLI, state directory, config |
 | [tmux integration](design/tmux-integration.md) | Control-mode side channel, client targeting, version compatibility |
+| [Interaction](design/interaction.md) | Notices: ordering, limits, dedupe, durations, scopes |
 | [Security model](design/security-model.md) | Threats, mitigations, release guards |
-| [Architecture decisions](adr/README.md) | ADRs 0000-0007 |
+| [Architecture decisions](adr/README.md) | ADRs 0000-0008 |
 
 ## Developing
 
