@@ -70,14 +70,12 @@ impl TmuxCommand {
         out
     }
     /// Like [`to_shell`](Self::to_shell), but for a long-running command on a no-PTY exec channel
-    /// that must not outlive its SSH session (the `tmux -C` side channel).
+    /// that must end with its SSH session (the `tmux -C` side channel).
     ///
-    /// Without a PTY there is no SIGHUP when the connection drops, and a tmux control client whose
-    /// stdout reader is gone (EPIPE on its first write after sshd closed the pipe) ignores both
-    /// stdin EOF and the destruction of its session: it lives forever (reproduced on tmux 3.6).
-    /// The wrapper keeps reading tmux's stdout through a relay that falls back to discarding once
-    /// the real stdout is gone, so tmux never sees EPIPE and exits on stdin EOF as designed. The
-    /// exit status of tmux is preserved. POSIX `sh` only, no single quotes in the script.
+    /// Without a PTY there is no SIGHUP, and a control client whose stdout reader is gone ignores
+    /// stdin EOF. The wrapper keeps reading tmux's stdout through a relay that falls back to
+    /// discarding once the real stdout is gone, so tmux never sees EPIPE and stdin EOF always ends
+    /// it. The exit status of tmux is preserved. POSIX `sh` only, no single quotes in the script.
     pub fn to_supervised_shell(&self) -> String {
         let mut out = format!("sh -c {} sh", shell_quote(SUPERVISOR_SCRIPT));
         for a in &self.args {
