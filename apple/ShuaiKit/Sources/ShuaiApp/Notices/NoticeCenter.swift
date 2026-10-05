@@ -14,6 +14,8 @@ public protocol NoticePosting: AnyObject {
 public final class NoticeCenter: NoticePosting {
     public private(set) var queue = NoticeQueue()
 
+    private static let maxSleepMs: UInt64 = 86_400_000
+
     @ObservationIgnored private let now: @Sendable () -> UInt64
     @ObservationIgnored private let sleep: @Sendable (UInt64) async throws -> Void
     @ObservationIgnored private let onDismiss: ((Notice) -> Void)?
@@ -80,7 +82,8 @@ public final class NoticeCenter: NoticePosting {
         guard let deadline = queue.nextDeadline else { return }
         let gen = generation
         let current = now()
-        let delay = deadline > current ? deadline - current : 0
+        // Clamped; `fire` re-arms for the remainder when it wakes before the deadline.
+        let delay = min(Self.maxSleepMs, deadline > current ? deadline - current : 0)
         let sleep = sleep
         timer = Task { [weak self] in
             do { try await sleep(delay) } catch { return }

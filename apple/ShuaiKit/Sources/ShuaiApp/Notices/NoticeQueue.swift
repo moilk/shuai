@@ -6,7 +6,7 @@ import Foundation
 public struct NoticeQueue: Sendable {
     public static let capacity = 20
     public static let maxVisible = 3
-    static let dismissedMemory = 64
+    static let settledMemory = 64
 
     private struct Entry: Sendable {
         var notice: Notice
@@ -20,7 +20,8 @@ public struct NoticeQueue: Sendable {
     private var nextSeq: UInt64 = 0
     private var focus: Notice.Scope?
     private var pendingPermissionCards = 0
-    private var dismissed: [UUID] = []
+    /// Ids that were dismissed or expired; `reconcile` never adds them again. Bounded.
+    private var settled: [UUID] = []
 
     public init() {}
 
@@ -43,6 +44,8 @@ public struct NoticeQueue: Sendable {
     /// Every held notice, oldest first.
     public var allNotices: [Notice] { entries.map(\.notice) }
 
+    var settledCount: Int { settled.count }
+
     private var maxVisibleNow: Int { pendingPermissionCards > 0 ? 1 : Self.maxVisible }
 
     private var eligible: [Entry] {
@@ -57,8 +60,11 @@ public struct NoticeQueue: Sendable {
 
     // MARK: - mutations
 
+    /// Posts a notice. A notice whose sanitized text is empty is ignored. One with the same key
+    /// and scope as a held notice replaces it (different content) or bumps its count (identical).
     public mutating func post(_ notice: Notice, now: UInt64) {
-        if let i = entries.firstIndex(where: { $0.notice.key == notice.key }) {
+        guard !notice.text.isEmpty else { return }
+        if let i = entries.firstIndex(where: { $0.notice.key == notice.key && $0.notice.scope == notice.scope }) {
             var e = entries[i]
             if Self.sameContent(e.notice, notice) {
                 e.notice.count += 1
@@ -69,14 +75,7 @@ public struct NoticeQueue: Sendable {
             e.deadline = nil
             entries[i] = e
         } else {
-            entries.append(Entry(notice: notice, seq: nextSeq, visibleSince: nil, deadline: nil))
-            nextSeq += 1
-            if entries.count > Self.capacity,
-               let drop = entries.indices.min(by: {
-                   (entries[$0].notice.severity, entries[$0].seq) < (entries[$1].notice.severity, entries[$1].seq)
-               }) {
-                entries.remove(at: drop)
-            }
+            insert(notice)
         }
         arm(now)
     }
@@ -91,8 +90,7 @@ public struct NoticeQueue: Sendable {
     public mutating func dismiss(id: UUID, now: UInt64) -> Notice? {
         guard let i = entries.firstIndex(where: { $0.notice.id == id }) else { return nil }
         let removed = entries.remove(at: i).notice
-        dismissed.append(id)
-        if dismissed.count > Self.dismissedMemory { dismissed.removeFirst(dismissed.count - Self.dismissedMemory) }
+        settle(id)
         arm(now)
         return removed
     }
@@ -113,24 +111,53 @@ public struct NoticeQueue: Sendable {
         arm(now)
     }
 
-    /// Makes the notices of `source` equal `notices`: adds unknown ones, retracts those no longer
-    /// present, and never re-adds an id the user dismissed.
+    /// Makes the notices of `source` equal `notices`, matched by id: adds unknown ones, retracts
+    /// those no longer present, and never adds an id that was dismissed or has expired. Keys
+    /// within one list are the caller's responsibility; key dedupe does not apply here.
     public mutating func reconcile(source: Notice.Source, with notices: [Notice], now: UInt64) {
+        #if DEBUG
+        assert(Set(notices.map { "\($0.scope)|\($0.key)" }).count == notices.count,
+               "reconcile list contains duplicate keys")
+        #endif
         let incoming = Set(notices.map(\.id))
         entries.removeAll { $0.notice.source == source && !incoming.contains($0.notice.id) }
-        for n in notices where !dismissed.contains(n.id) && !entries.contains(where: { $0.notice.id == n.id }) {
-            post(n, now: now)
+        for n in notices
+        where !n.text.isEmpty && !settled.contains(n.id) && !entries.contains(where: { $0.notice.id == n.id }) {
+            insert(n)
         }
         arm(now)
     }
 
     /// Removes auto notices whose deadline has passed.
     public mutating func expire(now: UInt64) {
-        entries.removeAll { ($0.deadline ?? .max) <= now }
+        for e in entries where e.deadline.map({ $0 <= now }) ?? false { settle(e.notice.id) }
+        entries.removeAll { $0.deadline.map { $0 <= now } ?? false }
         arm(now)
     }
 
     // MARK: - internals
+
+    private mutating func settle(_ id: UUID) {
+        settled.append(id)
+        if settled.count > Self.settledMemory { settled.removeFirst(settled.count - Self.settledMemory) }
+    }
+
+    /// Appends a new entry; when the queue is full the lowest-ranked notice (non-sticky first,
+    /// then lowest severity, then oldest) is dropped, which is the new one if it ranks lower.
+    private mutating func insert(_ notice: Notice) {
+        if entries.count >= Self.capacity,
+           let v = entries.indices.min(by: { rank(entries[$0]) < rank(entries[$1]) }) {
+            let incoming = (notice.lifetime == .sticky ? 1 : 0, notice.severity.rawValue, UInt64.max)
+            if rank(entries[v]) > incoming { return }
+            entries.remove(at: v)
+        }
+        entries.append(Entry(notice: notice, seq: nextSeq, visibleSince: nil, deadline: nil))
+        nextSeq += 1
+    }
+
+    private func rank(_ e: Entry) -> (Int, Int, UInt64) {
+        (e.notice.lifetime == .sticky ? 1 : 0, e.notice.severity.rawValue, e.seq)
+    }
 
     /// Starts the timer of every visible notice that has none yet.
     private mutating func arm(_ now: UInt64) {
@@ -139,7 +166,10 @@ public struct NoticeQueue: Sendable {
             guard let i = entries.firstIndex(where: { $0.notice.id == id }),
                   entries[i].visibleSince == nil else { continue }
             entries[i].visibleSince = now
-            entries[i].deadline = entries[i].notice.duration.map { now &+ $0 }
+            entries[i].deadline = entries[i].notice.duration.map {
+                let (sum, overflow) = now.addingReportingOverflow($0)
+                return overflow ? UInt64.max : sum
+            }
         }
     }
 

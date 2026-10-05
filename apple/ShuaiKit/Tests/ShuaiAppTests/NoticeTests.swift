@@ -336,7 +336,7 @@ struct NoticeReviewTests {
         let s = "a" + String(repeating: "\u{0301}", count: 10_000)
         let out = Notice.sanitize(s, limit: 300)
         #expect(out.unicodeScalars.count <= 8)
-        #expect(out.hasPrefix("a"))
+        #expect(out.unicodeScalars.first == "a")
     }
 
     @Test func hugeInputIsHandledAndCapped() {

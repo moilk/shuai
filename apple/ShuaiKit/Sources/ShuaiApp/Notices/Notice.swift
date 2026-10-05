@@ -105,26 +105,74 @@ public struct Notice: Identifiable, Equatable, Sendable {
         }
     }
 
-    /// Makes untrusted text safe for display: drops control characters and bidi
-    /// overrides/isolates, turns newlines and tabs into spaces, collapses whitespace, trims, and
-    /// caps at `limit` characters (ellipsis included).
+    /// Makes untrusted text safe for display: drops control, format (bidi, zero-width, tag) and
+    /// blank-filler characters, turns newlines and tabs into spaces, collapses whitespace, trims,
+    /// bounds combining marks (at most 4 scalars per cluster), and caps at `limit` characters
+    /// (ellipsis included). One pass that stops reading input once the cap is exceeded.
     public static func sanitize(_ s: String, limit: Int) -> String {
-        var scalars = String.UnicodeScalarView()
+        guard limit > 0 else { return "" }
+        let budget = limit * 8
+        var out = String.UnicodeScalarView()
+        var emitted = 0
+        var sinceCheck = 0
+        var clusterScalars = 0
+        var pendingSpace = false
+        var truncated = false
+
         for u in s.unicodeScalars {
-            switch u.value {
-            case 0x09, 0x0A, 0x0D:
-                scalars.append(" ")
-            case 0x00...0x1F, 0x7F...0x9F, 0x202A...0x202E, 0x2066...0x2069:
+            let v = u.value
+            if (v < 0x20 || (0x7F...0x9F).contains(v)) && v != 0x09 && v != 0x0A && v != 0x0D { continue }
+            if u.properties.isWhitespace {
+                pendingSpace = !out.isEmpty
                 continue
-            default:
-                scalars.append(u)
+            }
+            if isInvisible(u) { continue }
+            let isMark = isCombiningMark(u)
+            if isMark && clusterScalars >= maxClusterScalars { continue }
+            if pendingSpace {
+                out.append(" ")
+                emitted += 1
+                pendingSpace = false
+                clusterScalars = 0
+            }
+            out.append(u)
+            emitted += 1
+            clusterScalars = isMark ? clusterScalars + 1 : 1
+            sinceCheck += 1
+            if emitted > budget { truncated = true; break }
+            if sinceCheck >= limit {
+                sinceCheck = 0
+                if String(out).count > limit { truncated = true; break }
             }
         }
-        let collapsed = String(scalars)
-            .split(whereSeparator: { $0.isWhitespace })
-            .joined(separator: " ")
-        guard limit > 0 else { return "" }
-        guard collapsed.count > limit else { return collapsed }
-        return String(collapsed.prefix(limit - 1)) + "…"
+
+        let chars = Array(String(out))
+        guard truncated || chars.count > limit else { return String(chars) }
+        var kept = chars.prefix(min(chars.count, limit - 1))
+        while let last = kept.last, last.isWhitespace { kept.removeLast() }
+        return String(kept) + "…"
+    }
+
+    private static let maxClusterScalars = 4
+
+    /// Control, format (bidi, zero-width, tags, ...) and blank-filler scalars. ZWNJ and ZWJ stay
+    /// because emoji sequences and several scripts need them.
+    private static func isInvisible(_ u: Unicode.Scalar) -> Bool {
+        switch u.value {
+        case 0x200C, 0x200D: return false
+        case 0xAD, 0x61C, 0x115F, 0x1160, 0x180E, 0x3164, 0xFFA0, 0xE0000...0xE007F: return true
+        default: break
+        }
+        switch u.properties.generalCategory {
+        case .control, .format: return true
+        default: return false
+        }
+    }
+
+    private static func isCombiningMark(_ u: Unicode.Scalar) -> Bool {
+        switch u.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark: return true
+        default: return false
+        }
     }
 }
