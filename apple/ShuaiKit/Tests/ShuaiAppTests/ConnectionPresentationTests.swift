@@ -114,9 +114,20 @@ struct ConnectionPresentationTests {
         #expect(p.detail == "bad[31mthing here ok")
         let long = String(repeating: "a", count: 1000)
         let q = make(.failed(SessionError(kind: .other, message: long)))
-        #expect(q.detail == String(repeating: "a", count: 300) + "…")
+        #expect(q.detail == String(repeating: "a", count: 299) + "…")
         let exact = String(repeating: "b", count: 300)
         #expect(make(.failed(SessionError(kind: .other, message: exact))).detail == exact)
+    }
+
+    @Test func failedMessageDropsZeroWidthAndBidiAndStaysWithinLimit() {
+        let split = "pass\u{200B}word\u{202E} re\u{2066}jected"
+        let p = make(.failed(SessionError(kind: .other, message: split)))
+        #expect(p.detail == "password rejected")
+        let long = String(repeating: "x\u{200B}", count: 1000)
+        let q = make(.failed(SessionError(kind: .other, message: long)))
+        #expect(q.detail?.count == 300)
+        #expect(q.detail?.hasSuffix("…") == true)
+        #expect(q.detail?.unicodeScalars.contains { $0.value == 0x200B } == false)
     }
 
     @Test func disconnectedWithExitStatusIsStrip() {
