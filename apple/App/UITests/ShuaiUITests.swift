@@ -349,6 +349,8 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["retry-now"].exists)
         XCTAssertTrue(app.buttons["cancel-reconnect"].exists)
         XCTAssertTrue(app.buttons["retry-now"].isHittable)
+        XCTAssertGreaterThanOrEqual(app.buttons["retry-now"].frame.height, 44, "tap target height")
+        XCTAssertGreaterThanOrEqual(app.buttons["cancel-reconnect"].frame.height, 44, "tap target height")
         XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable, "no scrim over the terminal")
     }
 
@@ -365,5 +367,23 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["disconnected-card"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["reconnect-session"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable)
+    }
+
+    /// Permission cards own the trailing column; the strip's actions stay beside them, tappable.
+    @MainActor
+    func testStripActionsStayTappableNextToPermissionCards() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-debugAgentFixture", "-debugConnectionState", "reconnecting"]
+        app.launch()
+        let stack = app.descendants(matching: .any)["permission-stack"]
+        XCTAssertTrue(stack.waitForExistence(timeout: 15), "permission cards pending")
+        let retry = app.buttons["retry-now"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 10), "strip shown with the agent fixture")
+        XCTAssertTrue(retry.isHittable)
+        let cards = app.descendants(matching: .any)["permission-card"].firstMatch
+        XCTAssertTrue(cards.exists)
+        XCTAssertLessThanOrEqual(app.buttons["cancel-reconnect"].frame.maxX, cards.frame.minX, "no overlap with the cards")
+        XCTAssertLessThanOrEqual(retry.frame.maxX, cards.frame.minX)
     }
 }
