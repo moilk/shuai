@@ -329,4 +329,41 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(first.label.contains("shell"), "waiting window first, got: \(first.label)")
         XCTAssertTrue(first.label.contains("Needs permission"), "row shows the agent state: \(first.label)")
     }
+
+    // MARK: connection states (fixed presentation, no server)
+
+    @MainActor
+    private func launchWithConnectionState(_ state: String) -> XCUIApplication {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-debugTmuxFixture", "-debugConnectionState", state]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    func testReconnectingIsAStripThatLeavesTheTerminalUsable() throws {
+        let app = launchWithConnectionState("reconnecting")
+        let strip = app.descendants(matching: .any)["reconnect-overlay"]
+        XCTAssertTrue(strip.waitForExistence(timeout: 10), "reconnect strip: \(app.debugDescription)")
+        XCTAssertTrue(app.buttons["retry-now"].exists)
+        XCTAssertTrue(app.buttons["cancel-reconnect"].exists)
+        XCTAssertTrue(strip.isHittable)
+        XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable, "no scrim over the terminal")
+    }
+
+    @MainActor
+    func testFailedShowsTheErrorCardWithRetry() throws {
+        let app = launchWithConnectionState("failed")
+        XCTAssertTrue(app.descendants(matching: .any)["connection-error"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["retry-connect"].exists)
+    }
+
+    @MainActor
+    func testDisconnectedIsAStripWithReconnect() throws {
+        let app = launchWithConnectionState("disconnected")
+        XCTAssertTrue(app.descendants(matching: .any)["disconnected-card"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["reconnect-session"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable)
+    }
 }
