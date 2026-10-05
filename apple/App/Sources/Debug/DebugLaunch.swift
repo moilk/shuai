@@ -10,6 +10,9 @@ import ShuaiTerminal
 ///   imported from that path on the Mac (the simulator can read host paths), a host profile is
 ///   created (or reused by name) and selected, which connects it.
 /// - `-debugAutoAcceptHostKey`: answers the TOFU prompt with "trust" (scripted runs only).
+/// - `-debugConnectionState <reconnecting|failed|disconnected>`: shows that connection state in the
+///   views without a server (a fixed `ConnectionPresentation`; the session controller is untouched
+///   and does not connect).
 /// - `-debugSendAfterConnect <text>`: types `text` + Enter shortly after the session attaches.
 enum DebugLaunch {
     private static let args = ProcessInfo.processInfo.arguments
@@ -26,6 +29,19 @@ enum DebugLaunch {
     static var agentFixture: Bool { args.contains("-debugAgentFixture") }
     static var autoAccept: Bool { args.contains("-debugAutoAcceptHostKey") }
     static var sendAfterConnect: String? { value(of: "-debugSendAfterConnect") }
+    static var connectionState: String? { value(of: "-debugConnectionState") }
+
+    /// The presentation shown instead of the controller's, or nil without `-debugConnectionState`.
+    static func connectionPresentation(hostName: String, target: String) -> ConnectionPresentation? {
+        let state: SessionState
+        switch connectionState {
+        case "reconnecting": state = .reconnecting(attempt: 2, nextRetryAt: Date().addingTimeInterval(3600))
+        case "failed": state = .failed(SessionError(kind: .network, message: "Connection refused"))
+        case "disconnected": state = .disconnected(exitStatus: 0)
+        default: return nil
+        }
+        return ConnectionPresentation.make(state, hostName: hostName, target: target)
+    }
 
     private struct HostFile: Decodable {
         var name: String

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Release guard: the DEBUG-only launch arguments (-debugAutoAcceptHostKey, -debugHostFile,
-# -debugSendAfterConnect, -debugTerminal, -uiTesting) must be compiled out of Release builds.
+# -debugSendAfterConnect, -debugConnectionState, -debugTerminal, -uiTesting) must be compiled out of Release builds.
 # -debugAutoAcceptHostKey in particular would silently disable TOFU host key verification.
 #
 # Builds the app in Release for the iOS simulator and runs `strings` over the executable (and
@@ -35,7 +35,7 @@ while IFS= read -r bin; do
   text="$(strings -a "$bin")"
   # (Short literals such as "-uiTesting" are stored inline by Swift and invisible to `strings`;
   # they are compiled out with #if DEBUG all the same.)
-  for needle in debugAutoAcceptHostKey debugHostFile debugSendAfterConnect debugTerminal debugByteTap debugDelayReplies DebugLaunch; do
+  for needle in debugAutoAcceptHostKey debugHostFile debugSendAfterConnect debugConnectionState debugTerminal debugByteTap debugDelayReplies DebugLaunch; do
     if grep -q "$needle" <<<"$text"; then
       echo "check-no-debug-launch: FAIL: $bin contains '$needle'" >&2
       bad=1

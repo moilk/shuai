@@ -172,8 +172,9 @@ struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle().fill(color).frame(width: 10, height: 10)
-                .accessibilityLabel(label)
+            Image(systemName: status.symbol)
+                .foregroundStyle(status.tint)
+                .accessibilityLabel(status.label)
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.name).font(.headline)
                 Text(host.displayTarget).font(.caption).foregroundStyle(.secondary)
@@ -210,26 +211,6 @@ struct HostRow: View {
         case .installed: .secondary
         case .outdated: .orange
         default: .secondary
-        }
-    }
-
-    private var color: Color {
-        switch status {
-        case .off: .gray.opacity(0.5)
-        case .busy: .yellow
-        case .connected: .green
-        case .warning: .orange
-        case .error: .red
-        }
-    }
-
-    private var label: String {
-        switch status {
-        case .off: "Not connected"
-        case .busy: "Connecting"
-        case .connected: "Connected"
-        case .warning: "Reconnecting"
-        case .error: "Connection failed"
         }
     }
 }

@@ -348,7 +348,7 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(strip.waitForExistence(timeout: 10), "reconnect strip: \(app.debugDescription)")
         XCTAssertTrue(app.buttons["retry-now"].exists)
         XCTAssertTrue(app.buttons["cancel-reconnect"].exists)
-        XCTAssertTrue(strip.isHittable)
+        XCTAssertTrue(app.buttons["retry-now"].isHittable)
         XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable, "no scrim over the terminal")
     }
 

@@ -28,7 +28,8 @@ private struct TerminalSessionView: View {
     }
 
     private var topStack: some View {
-        VStack {
+        VStack(spacing: 8) {
+            connectionStrip
             NoticeStackView()
             Spacer()
         }
@@ -76,7 +77,7 @@ private struct TerminalSessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                StatusBadge(state: controller.state)
+                StatusIndicator(presentation: presentation)
                 if controller.state == .connected {
                     Button { Task { await controller.disconnect() } } label: { Label("Disconnect", systemImage: "xmark.circle") }
                         .accessibilityIdentifier("disconnect-button")
@@ -89,6 +90,7 @@ private struct TerminalSessionView: View {
         .task(id: host.id) {
             #if DEBUG
             if DebugLaunch.agentFixture { await DebugLaunch.seedFixtureTerminal(engine); return }
+            if DebugLaunch.connectionState != nil { return }
             #endif
             if controller.state == .idle { await controller.connect() }
         }
@@ -150,25 +152,44 @@ private struct TerminalSessionView: View {
         #endif
     }
 
+    private var presentation: ConnectionPresentation {
+        #if DEBUG
+        if let fixed = DebugLaunch.connectionPresentation(hostName: host.name, target: host.displayTarget) { return fixed }
+        #endif
+        return ConnectionPresentation.make(controller.state, hostName: host.name, target: host.displayTarget)
+    }
+
     @ViewBuilder private var connectionOverlay: some View {
-        switch controller.state {
-        case .connecting, .authenticating, .hostKeyPrompt:
-            ProgressCard(title: "Connecting to \(host.name)…", detail: host.displayTarget)
-        case .reconnecting(let attempt, let retryAt):
-            ReconnectOverlay(
-                attempt: attempt, retryAt: retryAt,
-                retryNow: { controller.retryNow() },
-                cancel: { Task { await controller.cancelReconnect() } })
-        case .failed(let error):
-            ConnectionErrorView(
-                error: error, host: host,
-                retry: { Task { await controller.reconnect() } },
-                edit: { model.editor = .edit(host) },
-                openKeys: { model.showKeys = true })
-        case .disconnected(let status):
-            DisconnectedView(status: status) { Task { await controller.reconnect() } }
-        case .idle, .connected:
-            EmptyView()
+        let p = presentation
+        if p.placement == .card {
+            ConnectionCard(presentation: p, perform: perform)
+        }
+    }
+
+    /// Non-blocking states sit under the window tab strip and above the notices.
+    @ViewBuilder private var connectionStrip: some View {
+        let p = presentation
+        if p.placement == .strip, !suppressesConnectionUI {
+            ConnectionStrip(presentation: p, perform: perform)
+        }
+    }
+
+    private var suppressesConnectionUI: Bool {
+        #if DEBUG
+        DebugLaunch.agentFixture
+        #else
+        false
+        #endif
+    }
+
+    private func perform(_ action: ConnectionPresentation.Action) {
+        switch action {
+        case .retryNow: controller.retryNow()
+        case .cancelReconnect: Task { await controller.cancelReconnect() }
+        case .cancelConnect: Task { await controller.disconnect() }
+        case .retry, .reconnect: Task { await controller.reconnect() }
+        case .editHost: model.editor = .edit(host)
+        case .openKeys: model.showKeys = true
         }
     }
 }
@@ -187,122 +208,6 @@ private struct PromptItem: Identifiable {
 private extension UIColor {
     convenience init(hex rgb: TerminalRGB) {
         self.init(red: CGFloat(rgb.r) / 255, green: CGFloat(rgb.g) / 255, blue: CGFloat(rgb.b) / 255, alpha: 1)
-    }
-}
-
-// MARK: - Overlays
-
-private struct ProgressCard: View {
-    let title: String
-    let detail: String
-    var body: some View {
-        VStack(spacing: 10) {
-            ProgressView()
-            Text(title).font(.headline)
-            Text(detail).font(.footnote).foregroundStyle(.secondary)
-        }
-        .padding(24)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityIdentifier("connecting-card")
-    }
-}
-
-struct ReconnectOverlay: View {
-    let attempt: Int
-    let retryAt: Date?
-    let retryNow: () -> Void
-    let cancel: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.45).ignoresSafeArea()
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Reconnecting…").font(.title3.bold())
-                Group {
-                    if let retryAt {
-                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                            let s = max(0, Int(retryAt.timeIntervalSince(ctx.date).rounded(.up)))
-                            Text("Attempt \(attempt) · retrying in \(s)s")
-                        }
-                    } else {
-                        Text("Attempt \(attempt)")
-                    }
-                }
-                .font(.subheadline).foregroundStyle(.secondary)
-                HStack {
-                    Button("Retry now", action: retryNow).buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("retry-now")
-                    Button("Cancel", role: .cancel, action: cancel).buttonStyle(.bordered)
-                        .accessibilityIdentifier("cancel-reconnect")
-                }
-            }
-            .padding(24)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("reconnect-overlay")
-    }
-}
-
-struct ConnectionErrorView: View {
-    let error: SessionError
-    let host: HostProfile
-    let retry: () -> Void
-    let edit: () -> Void
-    let openKeys: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.55).ignoresSafeArea()
-            ContentUnavailableView {
-                Label("Can't connect to \(host.name)", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-            } description: {
-                Text(error.message)
-            } actions: {
-                Button("Retry", action: retry).buttonStyle(.borderedProminent).accessibilityIdentifier("retry-connect")
-                switch error.kind {
-                case .authFailed: Button("Edit host", action: edit)
-                case .keyMissing: Button("Open keys", action: openKeys)
-                default: EmptyView()
-                }
-            }
-            .frame(maxWidth: 480)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-        }
-        .accessibilityIdentifier("connection-error")
-    }
-}
-
-private struct DisconnectedView: View {
-    let status: Int?
-    let reconnect: () -> Void
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Text(status.map { "Session ended (exit status \($0))" } ?? "Disconnected").font(.headline)
-            Button("Reconnect", action: reconnect).buttonStyle(.borderedProminent)
-        }
-        .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityIdentifier("disconnected-card")
-    }
-}
-
-private struct StatusBadge: View {
-    let state: SessionState
-    var body: some View {
-        Circle().fill(color).frame(width: 10, height: 10).accessibilityHidden(true)
-    }
-    private var color: Color {
-        switch state.status {
-        case .off: .gray
-        case .busy: .yellow
-        case .connected: .green
-        case .warning: .orange
-        case .error: .red
-        }
     }
 }
 
