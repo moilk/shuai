@@ -62,7 +62,9 @@ Real-SSH Swift tests, simulator engine tests, live E2E: `docs/development/testin
    A mid-tier model may do the first pass; changes touching the security rules or FFI/stream
    handling get a second pass on the strongest model.
 4. PR: Conventional Commits (feat/fix/test/docs/chore/ci/refactor), branch from `main`, CI green.
-5. Docs describe the final state; update them in the same PR when behaviour or commands change.
+5. Docs, code comments and PR descriptions describe the final state: how it works now and why, not
+   the bug history or intermediate steps (that belongs in the commit message). Keep PR descriptions
+   short. Update docs in the same PR when behaviour or commands change.
 
 Subagents: no real test-server data (hosts, users, paths) in prompts or commits; report a permission
 block, never work around it.
