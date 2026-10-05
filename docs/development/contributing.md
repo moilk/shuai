@@ -48,6 +48,7 @@ first, and the [ADRs](../adr/) for decisions that are already settled.
 - [ ] Swift compiles with the CI Xcode (see [CI](ci.md)).
 - [ ] No machine-specific paths, host names or personal data in code, fixtures or docs.
 - [ ] Docs and CLAUDE.md files updated if conventions or commands changed.
+- [ ] Docs, comments and PR text describe the current design, not the fix history.
 
 ## AI agents
 
