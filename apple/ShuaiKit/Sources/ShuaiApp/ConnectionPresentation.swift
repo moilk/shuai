@@ -109,7 +109,7 @@ public struct ConnectionPresentation: Equatable, Sendable {
             p.placement = .card
             p.dimsTerminal = true
             p.title = "Can't connect to \(hostName)"
-            p.detail = sanitize(error.message)
+            p.detail = Notice.sanitize(error.message, limit: Self.maxDetailLength)
             p.actions = [.retry]
             if error.kind == .authFailed { p.actions.append(.editHost) }
             if error.kind == .keyMissing { p.actions.append(.openKeys) }
@@ -123,6 +123,8 @@ public struct ConnectionPresentation: Equatable, Sendable {
         }
         return p
     }
+
+    private static let maxDetailLength = 300
 
     /// Whole seconds until `until`, rounded up, never negative.
     public static func countdownSeconds(until: Date, now: Date) -> Int {
@@ -138,30 +140,5 @@ public struct ConnectionPresentation: Equatable, Sendable {
         }
         parts.append("typing paused")
         return parts.joined(separator: " · ")
-    }
-
-    private static let maxDetailLength = 300
-
-    /// Strips control and bidi-override characters, collapses whitespace and caps the length.
-    private static func sanitize(_ raw: String) -> String {
-        var out = String.UnicodeScalarView()
-        var pendingSpace = false
-        for u in raw.unicodeScalars {
-            let v = u.value
-            let isSpace = u.properties.isWhitespace
-            let isControl = v < 0x20 || (0x7F...0x9F).contains(v)
-            let isBidi = (0x202A...0x202E).contains(v) || (0x2066...0x2069).contains(v)
-            if isSpace {
-                pendingSpace = true
-                continue
-            }
-            if isControl || isBidi { continue }
-            if pendingSpace && !out.isEmpty { out.append(" ") }
-            pendingSpace = false
-            out.append(u)
-        }
-        let text = String(out)
-        guard text.count > maxDetailLength else { return text }
-        return String(text.prefix(maxDetailLength)) + "…"
     }
 }
