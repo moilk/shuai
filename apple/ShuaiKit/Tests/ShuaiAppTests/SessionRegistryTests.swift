@@ -29,6 +29,37 @@ import ShuaiTerminal
         #expect(sink.posted.last?.scope == .host(p.id))
     }
 
+    @Test func removingAHostRetractsItsNoticesAndSilencesTheController() async {
+        let sink = RecordingNoticeSink()
+        let engine = FakeEngine()
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")),
+            hosts: HostStore(fileURL: scratchURL("hosts.json")), makeEngine: { _ in engine }, notices: sink)
+        let p = profile()
+        _ = registry.controller(for: p)
+        await registry.remove(id: p.id)
+        let id = p.id.uuidString
+        #expect(["tmux-missing:\(id)", "osc:\(id)", "tmux-error:\(id)"].allSatisfy(sink.retractedKeys.contains))
+        let before = sink.events.count
+        engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        #expect(sink.events.count == before)
+    }
+
+    @Test func replacingAControllerRetractsTheOldOnesNotices() {
+        let sink = RecordingNoticeSink()
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")),
+            hosts: HostStore(fileURL: scratchURL("hosts.json")), makeEngine: { _ in FakeEngine() }, notices: sink)
+        var p = profile()
+        let old = registry.controller(for: p)
+        p.name = "renamed"
+        let new = registry.controller(for: p)
+        #expect(old !== new)
+        #expect(sink.retractedKeys.contains("tmux-missing:\(p.id.uuidString)"))
+    }
+
     private func profile(_ name: String = "dev") -> HostProfile {
         HostProfile(name: name, host: "h", username: "u", auth: .password)
     }

@@ -6,6 +6,23 @@ import Testing
 struct NoticeFactoryTests {
     let hid = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
 
+    @Test func terminalNoticeIsAttributedToTheHost() {
+        let n = Notice.terminal(title: "prod: needs approval", body: "go", hostName: "dev", hostID: hid)
+        #expect(n?.title == "dev \u{00B7} Terminal")
+        #expect(n?.text == "prod: needs approval: go")
+        #expect(n?.severity == .info)
+        #expect(n?.source == .terminal)
+        #expect(n?.scope == .host(hid))
+        #expect(n?.key == "osc:\(hid.uuidString)")
+        #expect(n?.accessibilityIdentifier == "notification-banner")
+    }
+
+    @Test func terminalNoticeUsesWhicheverPartIsNotEmptyAfterSanitizing() {
+        #expect(Notice.terminal(title: "only", body: "", hostName: "h", hostID: hid)?.text == "only")
+        #expect(Notice.terminal(title: "\u{200B}\u{202E}", body: "body", hostName: "h", hostID: hid)?.text == "body")
+        #expect(Notice.terminal(title: "\u{200B}", body: " \n", hostName: "h", hostID: hid) == nil)
+    }
+
     @Test func deepLinkNoticeIsWarningWithStableKey() {
         let a = Notice.deepLink(.notice("one"))
         let b = Notice.deepLink(.notice("two"))

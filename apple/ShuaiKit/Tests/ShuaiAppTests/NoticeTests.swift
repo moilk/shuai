@@ -132,6 +132,19 @@ struct NoticeQueueTests {
         #expect(q.nextDeadline == 7000)
     }
 
+    @Test func identicalRepostWithinOneSecondKeepsDeadline() {
+        var q = NoticeQueue()
+        q.post(notice("same", key: "k"), now: 0)
+        #expect(q.nextDeadline == 5000)
+        q.post(notice("same", key: "k"), now: 400)
+        q.post(notice("same", key: "k"), now: 900)
+        #expect(q.visible[0].count == 3)
+        #expect(q.nextDeadline == 5000)
+        // A repost a second after the previous one restarts the timer.
+        q.post(notice("same", key: "k"), now: 1900)
+        #expect(q.nextDeadline == 6900)
+    }
+
     @Test func scopeHidesOtherHosts() {
         let a = UUID(), b = UUID()
         var q = NoticeQueue()
@@ -282,6 +295,19 @@ struct NoticeCenterTests {
         #expect(await waitUntil { clock.sleeping == 0 })
         #expect(center.queue.visible.isEmpty)
         #expect(dismissed.ids == [n.id])
+    }
+
+    @Test func rearmIsSkippedWhenDeadlineUnchanged() async {
+        let clock = FakeClock()
+        let center = make(clock)
+        center.post(notice("same", key: "k"))
+        #expect(await waitUntil { clock.sleeping == 1 })
+        for _ in 0..<20 { center.post(notice("same", key: "k")) }
+        center.setFocus(nil)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(clock.requested == [5000])
+        #expect(clock.sleeping == 1)
+        #expect(center.queue.visible.first?.count == 21)
     }
 
     @Test func focusChangeArmsHiddenNotice() async {

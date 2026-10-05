@@ -35,7 +35,7 @@ import Testing
         conn.execStreamSetup.with { $0 = { exec, _ in server.install(on: exec) } }
         let monitor = TmuxMonitor(sessionName: "main", debounce: .milliseconds(10))
         await monitor.start(on: conn)
-        return (server, monitor, TmuxActions(monitor: monitor, hostID: hostID, notices: notices))
+        return (server, monitor, TmuxActions(monitor: monitor, notices: notices.map { NoticeRoute(hostID: hostID, poster: $0) }))
     }
 
     func sent(_ server: FakeControlServer) -> [String] {
@@ -257,6 +257,23 @@ import Testing
         await monitor.stop()
     }
 
+    @Test func tmuxErrorTextHasHomePathsCollapsed() async {
+        let sink = RecordingNoticeSink()
+        let (_, monitor, actions) = await rig(notices: sink)
+        await actions.run { throw TmuxError.commandFailed("no such file /home/someone/proj") }
+        #expect(sink.posted.last?.text == "no such file ~")
+        await monitor.stop()
+    }
+
+    @Test func retiredActionsPostNothing() async {
+        let sink = RecordingNoticeSink()
+        let (_, monitor, actions) = await rig(withClient: false, notices: sink)
+        actions.retire()
+        await actions.run { try await actions.switchSession("$1") }
+        #expect(sink.posted.isEmpty)
+        await monitor.stop()
+    }
+
     @Test func tmuxErrorKeysAreNamespacedPerHost() async {
         let sink = RecordingNoticeSink()
         let a = UUID(), b = UUID()
@@ -273,7 +290,7 @@ import Testing
     @Test func successfulRunPostsNothing() async {
         let sink = RecordingNoticeSink()
         let (_, monitor, actions) = await rig(notices: sink)
-        await actions.run { try await actions.perform(.nextAttention) }
+        await actions.run { try await actions.selectWindow("@5") }
         #expect(sink.posted.isEmpty)
         await monitor.stop()
     }

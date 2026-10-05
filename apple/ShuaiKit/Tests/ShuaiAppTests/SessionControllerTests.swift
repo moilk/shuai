@@ -750,25 +750,59 @@ private struct Harness {
 
     // MARK: notices
 
-    @Test func oscNotificationPostsHostScopedAttentionNotice() async {
+    @Test func oscNotificationPostsHostScopedTerminalNotice() async {
         let h = Harness()
         await h.controller.connect()
         h.engine.onNotification?(TerminalNotification(title: "Claude", body: "done"))
         let n = h.sink.posted.last
-        #expect(n?.severity == .attention)
         #expect(n?.source == .terminal)
         #expect(n?.scope == .host(h.profile.id))
         #expect(n?.key == "osc:\(h.profile.id.uuidString)")
-        #expect(n?.title == "Claude")
-        #expect(n?.text == "done")
         #expect(n?.symbol == "bell")
+        #expect(n?.accessibilityIdentifier == "notification-banner")
     }
 
-    @Test func oscNotificationWithoutTitleUsesTheHostName() async {
+    @Test func oscNoticeIsAttributedToHostNotRemoteTitle() async {
         let h = Harness()
         await h.controller.connect()
-        h.engine.onNotification?(TerminalNotification(title: "", body: "ping"))
-        #expect(h.sink.posted.last?.title == "dev")
+        h.engine.onNotification?(TerminalNotification(title: "prod: needs approval", body: "go"))
+        let n = h.sink.posted.last
+        #expect(n?.title == "dev \u{00B7} Terminal")
+        #expect(n?.text == "prod: needs approval: go")
+    }
+
+    @Test func oscTitleOnlyUsesTitleAsText() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "build finished", body: ""))
+        #expect(h.sink.posted.last?.text == "build finished")
+    }
+
+    @Test func oscInvisibleOnlyTitleStillShowsHost() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "\u{200B}\u{202E}", body: "ping"))
+        #expect(h.sink.posted.last?.title == "dev \u{00B7} Terminal")
+        #expect(h.sink.posted.last?.text == "ping")
+    }
+
+    @Test func oscNoticeIsInfoSeverity() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        #expect(h.sink.posted.last?.severity == .info)
+    }
+
+    @Test func oscFloodWithVaryingTextReplacesInPlace() async {
+        let clock = FakeClock()
+        let center = NoticeCenter(now: { clock.now }, sleep: { try await clock.sleep($0) })
+        let h = Harness(notices: center)
+        center.setFocus(.host(h.profile.id))
+        await h.controller.connect()
+        for i in 0..<30 { h.engine.onNotification?(TerminalNotification(title: "n", body: "\(i)")) }
+        #expect(center.queue.count == 1)
+        #expect(center.queue.visible.first?.text == "n: 29")
+        #expect(center.queue.visible.first?.count == 1)
     }
 
     @Test func oscFloodCoalescesUnderOneKey() async {
@@ -790,7 +824,7 @@ private struct Harness {
         let n = h.sink.posted.last
         #expect(n != nil)
         #expect((n?.text.count ?? Int.max) <= Notice.textLimit)
-        #expect((n?.title?.count ?? Int.max) <= Notice.titleLimit)
+        #expect(n?.title == "dev \u{00B7} Terminal")
         #expect(n?.text.unicodeScalars.contains { $0.value == 0x202E || $0.value == 0x07 || $0.value == 0x0A } == false)
     }
 
@@ -812,11 +846,13 @@ private struct Harness {
         let h = Harness()
         await h.controller.connect()
         failTmux(h.factory.last!)
-        #expect(await waitUntil { !h.sink.active.isEmpty })
+        let key = "tmux-missing:\(h.profile.id.uuidString)"
+        #expect(await waitUntil { h.sink.active.contains { $0.key == key } })
         await h.controller.disconnect()
-        #expect(!h.sink.active.isEmpty) // survives the disconnect
+        #expect(h.sink.active.contains { $0.key == key }) // survives the disconnect
         await h.controller.connect()
-        #expect(h.sink.retractedKeys.contains("tmux-missing:\(h.profile.id.uuidString)"))
+        #expect(h.sink.retractedKeys.contains(key))
+        #expect(!h.sink.active.contains { $0.key == key })
     }
 
     @Test func tmuxMissingNoticesOfTwoHostsCoexist() async {
@@ -830,7 +866,20 @@ private struct Harness {
         #expect(await waitUntil { center.queue.count == 2 })
         await b.controller.disconnect()
         await b.controller.connect()
-        #expect(center.queue.count == 1) // b's retract leaves a's notice alone
+        #expect(center.queue.allNotices.map(\.key) == ["tmux-missing:\(a.profile.id.uuidString)"])
+    }
+
+    @Test func retiredControllerRetractsItsKeysAndPostsNothingMore() async {
+        let h = Harness()
+        await h.controller.connect()
+        failTmux(h.factory.last!)
+        #expect(await waitUntil { !h.sink.active.isEmpty })
+        h.controller.retire()
+        #expect(h.sink.active.isEmpty)
+        let before = h.sink.events.count
+        h.engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        await h.controller.tmuxActions.run { throw TmuxError.notRunning }
+        #expect(h.sink.events.count == before)
     }
 
     // MARK: teardown
