@@ -10,7 +10,8 @@ severity (info, success, attention, warning, error), a source (app, deep link, s
 terminal, agent), a scope (app-wide or one host), optional title, text, SF Symbol, optional action
 (jump to an agent session, retry connect), a dedupe key and a lifetime.
 
-- **Text**: untrusted. Control, format (bidi overrides and isolates, zero-width, tag) and
+- **Text**: untrusted. Complete ANSI escape sequences (CSI and OSC, found within the scan budget)
+  are removed whole, so a colour code leaves no residue; a lone ESC is dropped. Control, format (bidi overrides and isolates, zero-width, tag) and
   blank-filler characters are removed (ZWJ and ZWNJ stay), newlines and tabs become spaces,
   whitespace is collapsed, at most 4 scalars are kept per grapheme cluster, the title is capped at
   80 characters and the text at 300 (an ellipsis marks truncation). Sanitizing is a single pass
@@ -20,7 +21,8 @@ terminal, agent), a scope (app-wide or one host), optional title, text, SF Symbo
   is focused. Other hosts' notices wait and do not count as hidden.
 - **Ordering**: severity descending, then newest first.
 - **Max visible**: 3; 1 while pending permission cards are reported to the queue. The queue
-  exposes the overflow as `hiddenCount`. Views place permission cards above the notice stack.
+  exposes the overflow as `hiddenCount`. Permission cards are drawn on top of the notice stack in
+  its own column (see Placement and layering).
 - **Dedupe**: on (key, scope), a notice posted with an existing key and different content replaces
   it in place (keeping its id) and restarts its timer. Identical content increments the notice's
   `count` and restarts the timer. Retracting by key removes it.
@@ -36,8 +38,10 @@ terminal, agent), a scope (app-wide or one host), optional title, text, SF Symbo
   then lowest severity, then oldest.
 - **Reconcile**: a source that mirrors external state (agent banners) hands the center its
   current list; notices are matched by id and bypass key dedupe, new ones are added, ones no
-  longer present are retracted, and ids that were dismissed or have expired are not posted again
-  (a bounded memory of 64 ids). Keys within one list must be unique.
+  longer present are retracted, held ones take the new content in place (same id, same timer),
+  and ids that were dismissed or have expired are not posted again (a bounded memory of 64 ids; an
+  id the source still reports is refreshed in that memory, so it cannot roll out while reported).
+  Keys within one list must be unique.
 - **Accessibility identifiers**: app, deep link, session and tmux notices use `session-notice`,
   terminal notices `notification-banner`, agent notices `agent-banner`.
 
@@ -50,12 +54,12 @@ Each session posts through the `NoticePosting` it is given; none keeps notice st
 | Terminal OSC 9/777 | info, titled `<host> · Terminal`; the remote's title and body only form the text | host | `osc:<host>` |
 | tmux missing on the host | sticky warning, retracted on the next fresh connect | host | `tmux-missing:<host>` |
 | Failed tmux action | error with the tmux message (home paths collapsed) | host | `tmux-error:<host>` |
-| Agent needs input / done / failed | attention / success / error, titled `<host>: ...` like the banner it mirrors; tap jumps to the session; permission requests stay cards | app | `agent:<host>\|<session>` |
+| Agent needs input / done / failed | attention / success / error, titled `<host>: ...` like the banner it mirrors; tap jumps to the session; permission requests stay cards | app | `agent:<host length>:<host>\|<session>` |
 
 Agent notices mirror `AttentionBannerQueue` (one banner per session, none for the session being
 viewed, removed when the session ends or the request is cleared) through reconcile on every live
-change, with the banner id as the notice id. Dismissing a notice dismisses its banner; an expired
-notice stays gone while its banner remains queued.
+change, with the banner id as the notice id. Dismissing or expiring a notice dismisses its banner,
+so it does not come back.
 
 Keys are per host, so two hosts never replace each other and a flood of identical OSC messages
 from one host collapses into one notice with a count.
@@ -77,7 +81,7 @@ disconnected keep the last output readable, so they are a strip, not a card.
 | idle, connected | none | | | | |
 | connecting | card, progress | Connecting to {host}… | target | Cancel | `connecting-card` |
 | authenticating | card, progress | Signing in to {host}… | target | Cancel | `connecting-card` |
-| host key prompt | card | Verify {host}'s host key | | | `connecting-card` |
+| host key prompt | card | Verify {host}'s host key | | Cancel | `connecting-card` |
 | reconnecting | strip, progress | Reconnecting to {host} | Attempt N · retrying in Ns · typing paused | Retry now, Cancel | `reconnect-overlay` |
 | failed | card, dims terminal | Can't connect to {host} | sanitized error message | Retry; plus Edit host (auth failed) or Open keys (key missing) | `connection-error` |
 | disconnected | strip | Disconnected | Session ended (exit status N), when known | Reconnect | `disconnected-card` |
@@ -85,26 +89,31 @@ disconnected keep the last output readable, so they are a strip, not a card.
 - The countdown is derived from the retry deadline at render time (rounded up, never below zero) and
   is omitted when no retry is scheduled.
 - The failed message comes from the server or the transport, so it is untrusted: control and bidi
-  override characters are removed, whitespace is collapsed and the text is capped at 300 characters.
+  override characters and ANSI escape sequences are removed, whitespace is collapsed and the text is
+  capped at 300 characters (ellipsis included).
 - Action identifiers: `retry-now`, `cancel-reconnect`, `cancel-connect`, `retry-connect`,
   `reconnect-session`, `edit-host`, `open-keys`.
 
-### Placement and stack order
+### Placement and layering
 
 Cards sit centred over the terminal; the scrim (30 % black) appears only for the failed card, so
 the other cards leave the terminal visible. The strip is a compact bar without a scrim and keeps the
 terminal readable and scrollable. Its countdown ticks once a second, and only while a retry is
-scheduled. From the top of the terminal area:
+scheduled.
 
-1. window tab strip (when tmux topology is shown)
-2. connection strip (reconnecting, disconnected)
-3. notices
-4. permission cards, always on top
+Vertical order from the top of the terminal area: window tab strip (when tmux topology is shown),
+connection strip (reconnecting, disconnected), notices.
+
+Layering is separate: permission cards are drawn on top of the strip and the notices, in a trailing
+column of up to 380 pt. While cards are pending, the strip and the notices reserve that column plus
+a 10 pt gap, so their buttons stay tappable. When fewer than 280 pt would remain for them
+(`NoticeLayout`), they take the full width at the bottom of the terminal area instead.
 
 The window toolbar shows the status indicator (symbol, spoken as "{host}: {status label}",
-identifier `connection-status`); the host list row uses the same symbol and label. Action buttons
-have at least 44 pt hit targets, and text from the server or host profile is rendered verbatim.
-Cancel while connecting disconnects; Cancel while reconnecting ends the reconnect loop.
+identifier `connection-status`); the host list row uses the same symbol and label. Connection action
+buttons are at least 44 pt tall, the minimum is part of the button label so the whole height is
+tappable, and text from the server or host profile is rendered verbatim. Cancel while connecting (or
+at the host key prompt) disconnects; Cancel while reconnecting ends the reconnect loop.
 
 ### Status indicator
 
