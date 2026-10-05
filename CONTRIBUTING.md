@@ -7,3 +7,5 @@ test-first commits, Conventional Commits, local checks and the review checklist)
 In short: branch from `main`, commit the failing test before the implementation, keep one logical
 change per PR, update docs in the same PR, and use fixture data only in screenshots and tests.
 Report vulnerabilities privately, see [SECURITY.md](SECURITY.md).
+
+Participation is governed by the [Code of conduct](CODE_OF_CONDUCT.md).
