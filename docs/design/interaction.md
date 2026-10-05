@@ -44,9 +44,14 @@ Each session posts through the `NoticePosting` it is given; none keeps notice st
 
 | Source | Notice | Scope | Key |
 |---|---|---|---|
-| Terminal OSC 9/777 | attention, title and body from the remote (sanitized and capped) | host | `osc:<host>` |
+| Terminal OSC 9/777 | info, titled `<host> · Terminal`; the remote's title and body only form the text | host | `osc:<host>` |
 | tmux missing on the host | sticky warning, retracted on the next fresh connect | host | `tmux-missing:<host>` |
-| Failed tmux action | error with the tmux message | host | `tmux-error:<host>` |
+| Failed tmux action | error with the tmux message (home paths collapsed) | host | `tmux-error:<host>` |
 
 Keys are per host, so two hosts never replace each other and a flood of identical OSC messages
 from one host collapses into one notice with a count.
+
+The remote never chooses the notice title, so a terminal notice cannot pass for an agent notice,
+and it ranks below real attention. A controller that is removed or replaced retracts its keys and
+posts nothing afterwards. An identical repost less than a second after the previous one only
+raises the count; it does not restart the timer.
