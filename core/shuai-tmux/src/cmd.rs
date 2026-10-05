@@ -16,6 +16,11 @@ pub const WINDOW_FORMAT: &str = "#{session_id}\u{1f}#{window_id}\u{1f}#{window_i
 /// Format for `list-panes -a -F` (carries the whole tree).
 pub const PANE_FORMAT: &str = "#{session_id}\u{1f}#{session_name}\u{1f}#{session_attached}\u{1f}#{window_id}\u{1f}#{window_index}\u{1f}#{window_name}\u{1f}#{window_active}\u{1f}#{window_flags}\u{1f}#{pane_id}\u{1f}#{pane_index}\u{1f}#{pane_active}\u{1f}#{pane_current_command}\u{1f}#{pane_current_path}\u{1f}#{pane_pid}\u{1f}#{pane_tty}\u{1f}#{pane_title}\u{1f}#{pane_width}\u{1f}#{pane_height}";
 
+/// Runs `tmux "$@"` with its stdout relayed (see [`TmuxCommand::to_supervised_shell`]). fd 3 is
+/// the real stdout, fd 4 carries tmux's exit status out of the command substitution; neither is
+/// inherited by tmux (which could fork a server) nor by the relay.
+const SUPERVISOR_SCRIPT: &str = "exec 3>&1; s=$({ { tmux \"$@\" 3>&- 4>&-; echo $? >&4; } | { cat 4>&- || cat >/dev/null 4>&-; } >&3; } 4>&1); exit ${s:-1}";
+
 /// A tmux command: name plus arguments, unquoted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TmuxCommand {
@@ -58,6 +63,21 @@ impl TmuxCommand {
     /// Full shell command line starting with `tmux` (for an SSH exec channel).
     pub fn to_shell(&self) -> String {
         let mut out = String::from("tmux");
+        for a in &self.args {
+            out.push(' ');
+            out.push_str(&shell_quote(a));
+        }
+        out
+    }
+    /// Like [`to_shell`](Self::to_shell), but for a long-running command on a no-PTY exec channel
+    /// that must end with its SSH session (the `tmux -C` side channel).
+    ///
+    /// Without a PTY there is no SIGHUP, and a control client whose stdout reader is gone ignores
+    /// stdin EOF. The wrapper keeps reading tmux's stdout through a relay that falls back to
+    /// discarding once the real stdout is gone, so tmux never sees EPIPE and stdin EOF always ends
+    /// it. The exit status of tmux is preserved. POSIX `sh` only, no single quotes in the script.
+    pub fn to_supervised_shell(&self) -> String {
+        let mut out = format!("sh -c {} sh", shell_quote(SUPERVISOR_SCRIPT));
         for a in &self.args {
             out.push(' ');
             out.push_str(&shell_quote(a));

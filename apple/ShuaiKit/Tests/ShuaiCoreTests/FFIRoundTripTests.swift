@@ -53,6 +53,7 @@ import Testing
     @Test func controller() throws {
         let c = try TmuxController(session: "main", versionOutput: "tmux 3.4")
         #expect(c.attachCommand().shell.hasPrefix("tmux -C attach-session"))
+        #expect(c.attachShell().hasPrefix("sh -c '"))
         let sent = c.send(command: tmuxListPanesAll())
         #expect(sent.line.hasPrefix("list-panes"))
         #expect(c.push(data: Data("%window-add @5\n".utf8)) == [.needsRefresh])

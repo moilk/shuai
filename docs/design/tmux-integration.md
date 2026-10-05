@@ -31,6 +31,8 @@ flowchart LR
 2. **Control client**: `tmux -C attach -t =<name>:` on an exec channel. Its first stdin line is
    `refresh-client -f no-output`, so tmux sends notifications but no pane output. The channel is
    drained continuously like every other stream.
+   The command is a supervised `sh -c` line (`TmuxController::attach_shell`) that keeps draining
+   tmux's stdout, so stdin EOF always ends the client; the app sends EOF before closing the channel.
 
 `TmuxMonitor` (one per `SessionController`, started after each attach, stopped on teardown):
 

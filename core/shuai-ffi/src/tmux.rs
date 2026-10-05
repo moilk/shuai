@@ -720,6 +720,12 @@ impl TmuxController {
         self.inner.lock().unwrap().attach_command().into()
     }
 
+    /// Shell line to exec for the side channel: `attach_command` wrapped so that the client
+    /// cannot outlive its SSH channel. Prefer this over `attach_command().shell`.
+    pub fn attach_shell(&self) -> String {
+        self.inner.lock().unwrap().attach_shell()
+    }
+
     /// Lines (without `\n`) to write to stdin once the channel is up.
     pub fn on_connected(&self) -> Vec<String> {
         self.inner.lock().unwrap().on_connected()
