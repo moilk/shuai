@@ -121,9 +121,12 @@ public struct NoticeQueue: Sendable {
         arm(now)
     }
 
-    /// Makes the notices of `source` equal `notices`, matched by id: adds unknown ones, retracts
-    /// those no longer present, and never adds an id that was dismissed or has expired. Keys
-    /// within one list are the caller's responsibility; key dedupe does not apply here.
+    /// Makes the notices of `source` equal `notices`, matched by id: adds unknown ones, updates the
+    /// content of held ones in place (same id, same timer), retracts those no longer present, and
+    /// never adds an id that was dismissed or has expired. An id that is still reported while
+    /// settled is moved to the newest end of the memory, so it is never forgotten while its source
+    /// still lists it. Keys within one list are the caller's responsibility; key dedupe does not
+    /// apply here.
     public mutating func reconcile(source: Notice.Source, with notices: [Notice], now: UInt64) {
         #if DEBUG
         assert(Set(notices.map { "\($0.scope)|\($0.key)" }).count == notices.count,
@@ -131,23 +134,34 @@ public struct NoticeQueue: Sendable {
         #endif
         let incoming = Set(notices.map(\.id))
         entries.removeAll { $0.notice.source == source && !incoming.contains($0.notice.id) }
-        for n in notices
-        where !n.text.isEmpty && !settled.contains(n.id) && !entries.contains(where: { $0.notice.id == n.id }) {
-            insert(n)
+        for n in notices where !n.text.isEmpty {
+            if settled.contains(n.id) {
+                settle(n.id)
+            } else if let i = entries.firstIndex(where: { $0.notice.id == n.id }) {
+                if entries[i].notice.source == source, !Self.sameContent(entries[i].notice, n) {
+                    entries[i].notice = Self.reidentified(n, as: n.id)
+                }
+            } else {
+                insert(n)
+            }
         }
         arm(now)
     }
 
-    /// Removes auto notices whose deadline has passed.
-    public mutating func expire(now: UInt64) {
-        for e in entries where e.deadline.map({ $0 <= now }) ?? false { settle(e.notice.id) }
+    /// Removes auto notices whose deadline has passed and returns them.
+    @discardableResult
+    public mutating func expire(now: UInt64) -> [Notice] {
+        let expired = entries.filter { $0.deadline.map { $0 <= now } ?? false }.map(\.notice)
+        for n in expired { settle(n.id) }
         entries.removeAll { $0.deadline.map { $0 <= now } ?? false }
         arm(now)
+        return expired
     }
 
     // MARK: - internals
 
     private mutating func settle(_ id: UUID) {
+        settled.removeAll { $0 == id }
         settled.append(id)
         if settled.count > Self.settledMemory { settled.removeFirst(settled.count - Self.settledMemory) }
     }

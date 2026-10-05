@@ -95,6 +95,7 @@ public struct ConnectionPresentation: Equatable, Sendable {
         case .hostKeyPrompt:
             p.placement = .card
             p.title = "Verify \(hostName)'s host key"
+            p.actions = [.cancelConnect]
             p.accessibilityIdentifier = "connecting-card"
         case .reconnecting(let attempt, let nextRetryAt):
             p.placement = .strip

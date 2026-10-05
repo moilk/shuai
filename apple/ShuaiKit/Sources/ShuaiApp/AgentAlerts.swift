@@ -1,8 +1,7 @@
 import Foundation
 import ShuaiCore
 
-/// What an in-app banner shows. One shape for agent transitions and OSC 9/777 terminal
-/// notifications, so both render with the same view.
+/// What an agent attention banner shows: title, message and symbol per banner kind.
 public struct BannerContent: Equatable, Sendable {
     public var title: String
     public var message: String
@@ -23,11 +22,6 @@ public struct BannerContent: Equatable, Sendable {
         case .permission(_, let tool, let preview):
             return BannerContent(title: "\(hostName): needs approval", message: "\(tool): \(preview)", symbol: PaneBadge.needsPermission.symbol)
         }
-    }
-
-    /// An OSC 9/777 notification from the terminal.
-    public static func make(title: String, body: String, hostName: String) -> BannerContent {
-        BannerContent(title: title.isEmpty ? hostName : title, message: body, symbol: "bell")
     }
 }
 

@@ -105,7 +105,7 @@ public struct Notice: Identifiable, Equatable, Sendable {
         }
     }
 
-    /// Makes untrusted text safe for display: drops control, format (bidi, zero-width, tag) and
+    /// Makes untrusted text safe for display: removes complete ANSI CSI and OSC sequences, drops control, format (bidi, zero-width, tag) and
     /// blank-filler characters, turns newlines and tabs into spaces, collapses whitespace, trims,
     /// bounds combining marks (at most 4 scalars per cluster), and caps at `limit` characters
     /// (ellipsis included). One pass that stops reading input once the cap is exceeded.
@@ -119,7 +119,15 @@ public struct Notice: Identifiable, Equatable, Sendable {
         var pendingSpace = false
         var truncated = false
 
-        for u in s.unicodeScalars {
+        let scalars = s.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            let u = scalars[index]
+            index = scalars.index(after: index)
+            if u.value == 0x1B {
+                index = endOfEscapeSequence(in: scalars, after: index, budget: budget)
+                continue
+            }
             let v = u.value
             if (v < 0x20 || (0x7F...0x9F).contains(v)) && v != 0x09 && v != 0x0A && v != 0x0D { continue }
             if u.properties.isWhitespace {
@@ -154,6 +162,32 @@ public struct Notice: Identifiable, Equatable, Sendable {
     }
 
     private static let maxClusterScalars = 4
+
+    /// Where reading resumes after an ESC at `index - 1`: past a complete CSI (`[` parameters,
+    /// final byte 0x40...0x7E) or OSC (`]` ... BEL or ST) sequence, otherwise right after the ESC
+    /// itself. A sequence whose end is not found within `budget` scalars is not swallowed.
+    private static func endOfEscapeSequence(
+        in scalars: String.UnicodeScalarView, after index: String.UnicodeScalarView.Index, budget: Int
+    ) -> String.UnicodeScalarView.Index {
+        guard index < scalars.endIndex else { return index }
+        let kind = scalars[index]
+        guard kind == "[" || kind == "]" else { return index }
+        var i = scalars.index(after: index)
+        var scanned = 0
+        while i < scalars.endIndex, scanned < budget {
+            let v = scalars[i].value
+            i = scalars.index(after: i)
+            scanned += 1
+            if kind == "[" {
+                if (0x40...0x7E).contains(v) { return i }
+                if !(0x20...0x3F).contains(v) { return index }
+            } else {
+                if v == 0x07 || v == 0x9C { return i }
+                if v == 0x1B, i < scalars.endIndex, scalars[i] == "\\" { return scalars.index(after: i) }
+            }
+        }
+        return index
+    }
 
     /// Control, format (bidi, zero-width, tags, ...) and blank-filler scalars. ZWNJ and ZWJ stay
     /// because emoji sequences and several scripts need them.

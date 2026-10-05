@@ -7,7 +7,7 @@ import ShuaiCore
 public enum AgentNotices {
     /// Notices for the banners that are not permission requests (those are cards). The notice id is
     /// the banner id, so repeated calls with the same banners reconcile to no change; the key is
-    /// unique per session.
+    /// unique per session (the host is length-prefixed, so no host/session pair can collide).
     public static func make(
         _ banners: [AttentionBanner],
         resolve: (AttentionBanner) -> (hostName: String, session: FfiAgentSession?)
@@ -29,7 +29,7 @@ public enum AgentNotices {
                 title: hasMessage ? content.title : nil,
                 text: hasMessage ? content.message : content.title,
                 symbol: content.symbol, action: .jumpToAgent(banner.key),
-                key: "agent:\(banner.key.host)|\(banner.key.sessionId)", lifetime: .auto)
+                key: "agent:\(banner.key.host.count):\(banner.key.host)|\(banner.key.sessionId)", lifetime: .auto)
         }
     }
 

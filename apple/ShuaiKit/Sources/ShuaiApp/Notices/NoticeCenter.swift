@@ -19,6 +19,7 @@ public final class NoticeCenter: NoticePosting {
     @ObservationIgnored private let now: @Sendable () -> UInt64
     @ObservationIgnored private let sleep: @Sendable (UInt64) async throws -> Void
     @ObservationIgnored private let onDismiss: ((Notice) -> Void)?
+    @ObservationIgnored private let onExpire: ((Notice) -> Void)?
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     /// Deadline the running timer sleeps towards; lets `rearm` keep it when nothing changed.
@@ -28,14 +29,17 @@ public final class NoticeCenter: NoticePosting {
     ///   - now: monotonic clock in milliseconds.
     ///   - sleep: sleeps for the given milliseconds, throwing on cancellation.
     ///   - onDismiss: called when the user dismisses a notice (not on expiry or retraction).
+    ///   - onExpire: called for each notice that expires on its own.
     public init(
         now: @escaping @Sendable () -> UInt64,
         sleep: @escaping @Sendable (UInt64) async throws -> Void,
-        onDismiss: ((Notice) -> Void)? = nil
+        onDismiss: ((Notice) -> Void)? = nil,
+        onExpire: ((Notice) -> Void)? = nil
     ) {
         self.now = now
         self.sleep = sleep
         self.onDismiss = onDismiss
+        self.onExpire = onExpire
     }
 
     deinit { timer?.cancel() }
@@ -101,7 +105,7 @@ public final class NoticeCenter: NoticePosting {
         guard gen == generation else { return }
         timer = nil
         armedDeadline = nil
-        queue.expire(now: now())
+        for n in queue.expire(now: now()) { onExpire?(n) }
         rearm()
     }
 }

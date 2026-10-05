@@ -105,7 +105,8 @@ final class AppModel {
             // One clock for both: system uptime and `SuspendingClock` both stop while the device sleeps.
             now: { UInt64(ProcessInfo.processInfo.systemUptime * 1000) },
             sleep: { ms in try await Task.sleep(for: .milliseconds(ms), clock: .suspending) },
-            onDismiss: { AgentNotices.dismissed($0, in: banners) })
+            onDismiss: { AgentNotices.dismissed($0, in: banners) },
+            onExpire: { AgentNotices.dismissed($0, in: banners) })
         notifier = ephemeral ? nil : LocalNotifier()
         sessions = SessionRegistry(
             factory: LiveConnectionFactory(), keys: keyStore, passwords: passwords, knownHosts: known, hosts: hosts,
