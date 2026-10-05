@@ -22,9 +22,13 @@ private struct ConnectionActionButtons: View {
 
     var body: some View {
         ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
-            let button = Button(action.title) { perform(action) }
-                .accessibilityIdentifier(action.accessibilityIdentifier)
-                .frame(minHeight: 44)
+            // The 44 pt minimum lives in the label, so the whole height is tappable.
+            let button = Button { perform(action) } label: {
+                Text(action.title)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier(action.accessibilityIdentifier)
             if index == 0 {
                 button.buttonStyle(.borderedProminent)
             } else {
@@ -96,7 +100,6 @@ struct ConnectionStrip: View {
             }
             Spacer(minLength: 8)
             ConnectionActionButtons(actions: presentation.actions, perform: perform)
-                .controlSize(.small)
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))

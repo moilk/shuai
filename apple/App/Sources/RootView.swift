@@ -201,7 +201,7 @@ struct HostRow: View {
     private var agentSymbol: String {
         switch agent {
         case .installed: "sparkles"
-        case .outdated: "arrow.triangle.2.circlepath"
+        case .outdated: "arrow.up.circle"
         default: "sparkles.slash"
         }
     }

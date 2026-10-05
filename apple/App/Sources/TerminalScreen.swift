@@ -22,18 +22,34 @@ private struct TerminalSessionView: View {
     let controller: SessionController
     let engine: GhosttyEngine
     let host: HostProfile
+    @State private var areaWidth: CGFloat = 1000
 
     private var useFloatingBar: Bool {
         model.keyboard.placement(preferFloating: model.settings.accessoryBar == .floating) == .floating
     }
 
+    /// Connection strip, then notices. Permission cards are drawn on top in the trailing column,
+    /// so the stack leaves that column free; when the area is too narrow for both, the stack moves
+    /// to the bottom instead (`NoticeLayout`).
     private var topStack: some View {
-        VStack(spacing: 8) {
+        let cards = !model.agentHub.pendingPermissions.isEmpty
+        let placement = NoticeLayout.placement(width: areaWidth, cardsPending: cards)
+        return VStack(spacing: 8) {
+            if placement == .bottom { Spacer() }
             connectionStrip
             NoticeStackView()
-            Spacer()
+            if placement == .top { Spacer() }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.trailing, NoticeLayout.reservedTrailing(width: areaWidth, cardsPending: cards))
         .padding()
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { areaWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, w in areaWidth = w }
+            }
+            .allowsHitTesting(false))
     }
 
     var body: some View {
@@ -146,7 +162,7 @@ private struct TerminalSessionView: View {
 
     @ViewBuilder private var overlay: some View {
         #if DEBUG
-        if DebugLaunch.agentFixture { EmptyView() } else { connectionOverlay }
+        if DebugLaunch.agentFixture && DebugLaunch.connectionState == nil { EmptyView() } else { connectionOverlay }
         #else
         connectionOverlay
         #endif
@@ -176,7 +192,7 @@ private struct TerminalSessionView: View {
 
     private var suppressesConnectionUI: Bool {
         #if DEBUG
-        DebugLaunch.agentFixture
+        DebugLaunch.agentFixture && DebugLaunch.connectionState == nil
         #else
         false
         #endif

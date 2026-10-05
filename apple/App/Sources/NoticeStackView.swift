@@ -7,26 +7,8 @@ import SwiftUI
 /// is selected), which is why it can forward the pending permission card count itself.
 struct NoticeStackView: View {
     @Environment(AppModel.self) private var model
-    @State private var availableWidth: CGFloat = 0
-
-    /// While permission cards are pending they own the trailing column (`PermissionCardStack`).
-    private var reservedTrailing: CGFloat {
-        model.agentHub.pendingPermissions.isEmpty ? 0 : min(380, availableWidth) + 10
-    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: 0)
-                .background(GeometryReader { geo in
-                    Color.clear
-                        .onAppear { availableWidth = geo.size.width }
-                        .onChange(of: geo.size.width) { _, w in availableWidth = w }
-                })
-            stack.padding(.trailing, reservedTrailing)
-        }
-    }
-
-    private var stack: some View {
         let queue = model.notices.queue
         return VStack(spacing: 8) {
             ForEach(queue.visible) { notice in
