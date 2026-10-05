@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import ShuaiPlatform
+@testable import ShuaiPlatform
 @testable import ShuaiApp
 
 private func make(_ s: SessionState) -> ConnectionPresentation {
