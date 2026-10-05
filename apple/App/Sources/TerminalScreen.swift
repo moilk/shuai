@@ -30,13 +30,7 @@ private struct TerminalSessionView: View {
     private var topStack: some View {
         VStack {
             AgentBannerView()
-            if let message = model.transientNotice {
-                NoticeView(text: message) { model.transientNotice = nil }
-                    .task(id: message) {
-                        try? await Task.sleep(for: .seconds(NoticeView.transientSeconds))
-                        model.transientNotice = nil
-                    }
-            }
+            NoticeStackView()
             if let error = controller.tmuxActions.lastError {
                 NoticeView(text: error) { controller.tmuxActions.lastError = nil }
                     .task(id: error) {
@@ -74,8 +68,9 @@ private struct TerminalSessionView: View {
             .accessibilityIdentifier("terminal-view")
 
             overlay
-            PermissionCardStack()
             topStack
+            // Last, so a permission card is never covered by a notice.
+            PermissionCardStack()
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             if model.columnVisibility == .detailOnly, controller.tmux.topology != nil {
@@ -334,14 +329,12 @@ private struct StatusBadge: View {
 
 /// Non-blocking info banner (the terminal stays usable underneath).
 struct NoticeView: View {
-    /// How long an app-level notice (deep-link failures, sync results) stays; long enough to read, and for slow CI to observe.
-    static let transientSeconds = 8
     let text: String
     let dismiss: () -> Void
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle.fill")
-            Text(text).font(.subheadline)
+            Text(verbatim: text).font(.subheadline)
             Spacer()
             Button(action: dismiss) { Image(systemName: "xmark") }
         }

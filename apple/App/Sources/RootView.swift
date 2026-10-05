@@ -34,12 +34,8 @@ struct RootView: View {
         .overlay(alignment: .bottom) { NotificationOptInBanner() }
         .overlay(alignment: .top) {
             // Without a selected host there is no terminal screen to show notices (e.g. a link to an unknown host).
-            if let message = model.transientNotice, model.selection.flatMap({ model.hosts.host(id: $0) }) == nil {
-                NoticeView(text: message) { model.transientNotice = nil }
-                    .task(id: message) {
-                        try? await Task.sleep(for: .seconds(NoticeView.transientSeconds))
-                        model.transientNotice = nil
-                    }
+            if model.selection.flatMap({ model.hosts.host(id: $0) }) == nil {
+                NoticeStackView().padding()
             }
         }
         .sheet(isPresented: $model.showSettings) { SettingsView() }

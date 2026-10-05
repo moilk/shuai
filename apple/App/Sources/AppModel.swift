@@ -37,7 +37,9 @@ final class AppModel {
     let sessions: SessionRegistry
     let keyboard = HardwareKeyboardMonitor()
 
-    var selection: UUID?
+    var selection: UUID? {
+        didSet { notices.setFocus(selection.map { .host($0) }) }
+    }
     var editor: HostEditorTarget?
     var showSettings = false
     var showKeys = false
@@ -52,8 +54,10 @@ final class AppModel {
     var badges: any PaneBadgeProvider { agentHub }
     var agentInstall: AgentInstallRequest?
     var showNotificationExplainer = false
-    /// A short message for the main screen (e.g. nothing needs attention).
-    var transientNotice: String?
+    /// Every transient message the app shows; views only render `notices.queue`.
+    let notices = NoticeCenter(
+        now: { UInt64(ProcessInfo.processInfo.systemUptime * 1000) },
+        sleep: { ms in try await Task.sleep(for: .milliseconds(ms)) })
     var appActive = true
     @ObservationIgnored private var lastAttentionKey: FfiSessionKey?
     @ObservationIgnored private let notifier: LocalNotifier?
@@ -110,6 +114,7 @@ final class AppModel {
             }, agentHub: hub)
         engineBox = box
         selection = hosts.hosts.first?.id
+        notices.setFocus(selection.map { .host($0) })
         viewing.check = { [weak self] key in MainActor.assumeIsolated { self?.isViewing(key) ?? false } }
         hub.onLiveChanges = { [weak self] id, changes in self?.handleLive(profileID: id, changes: changes) }
         // Local-notification taps take the same path as `shuai://` links (and ntfy pushes).
@@ -218,7 +223,7 @@ final class AppModel {
     }
 
     private func apply(_ outcome: DeepLinkOutcome) {
-        if case .notice(let message) = outcome { transientNotice = message }
+        if let notice = Notice.deepLink(outcome) { notices.post(notice) }
     }
 
     func jump(to target: AttentionTarget) async {
@@ -229,7 +234,7 @@ final class AppModel {
     /// ⌘⇧A: the next agent session that wants you.
     func jumpNextAttention() {
         guard let t = agentHub.nextNeedingAttention(after: lastAttentionKey) else {
-            transientNotice = "No agent needs your attention."
+            notices.post(.noAttention)
             return
         }
         lastAttentionKey = t.key
@@ -294,10 +299,9 @@ final class AppModel {
     func syncNotificationSettings(host: HostProfile) {
         guard let remote = sessions.existingController(for: host.id)?.agentRemote else { return }
         Task {
-            switch await pushSync.syncNow(host: host, remote: remote) {
-            case .synced: transientNotice = "Notification settings synced to \(host.name)."
-            case .upToDate: break
-            case .failed(let m): transientNotice = "Could not sync to \(host.name): \(m)"
+            let result = await pushSync.syncNow(host: host, remote: remote)
+            if let notice = Notice.pushSync(result, hostName: host.name, hostID: host.id, redacting: syncSecrets) {
+                notices.post(notice)
             }
         }
     }
@@ -318,17 +322,25 @@ final class AppModel {
             return (host, remote)
         }
         guard !targets.isEmpty else {
-            transientNotice = "No connected host has the AI integration. Settings sync when one connects."
+            notices.post(.noSyncTargets)
             return
         }
         Task {
-            var failures: [String] = []
+            var failed = false
             for (host, remote) in targets {
-                if case .failed(let m) = await pushSync.syncNow(host: host, remote: remote) { failures.append("\(host.name): \(m)") }
+                let result = await pushSync.syncNow(host: host, remote: remote)
+                guard case .failed = result else { continue }
+                failed = true
+                if let notice = Notice.pushSync(result, hostName: host.name, hostID: host.id, redacting: syncSecrets) {
+                    notices.post(notice)
+                }
             }
-            transientNotice = failures.isEmpty ? "Notification settings synced." : "Could not sync: " + failures.joined(separator: "; ")
+            if !failed { notices.post(.pushSyncedAll) }
         }
     }
+
+    /// Values that must never appear in a notice.
+    private var syncSecrets: [String] { [pushSettings.topic, pushSettings.token] }
 
     func closeAgentInstall() {
         let req = agentInstall
@@ -362,6 +374,7 @@ final class AppModel {
             try? passwords.deletePassword(for: host.id)
             pushSync.forget(host: host.id)
             try? hosts.delete(id: host.id)
+            notices.removeAll(scope: .host(host.id))
             if selection == host.id { selection = hosts.hosts.first?.id }
         }
     }
