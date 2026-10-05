@@ -123,7 +123,7 @@ jobs:
       # cache skips the zig cross-build when core/ did not change.
       - name: Restore bundled shuai-agent binaries
         id: agent
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apple/App/Resources/agent
           key: agent-${{ hashFiles('core/**/*.rs', 'core/**/Cargo.toml', 'core/Cargo.lock', 'scripts/build-agent.sh') }}
