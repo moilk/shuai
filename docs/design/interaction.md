@@ -47,6 +47,12 @@ Each session posts through the `NoticePosting` it is given; none keeps notice st
 | Terminal OSC 9/777 | info, titled `<host> · Terminal`; the remote's title and body only form the text | host | `osc:<host>` |
 | tmux missing on the host | sticky warning, retracted on the next fresh connect | host | `tmux-missing:<host>` |
 | Failed tmux action | error with the tmux message (home paths collapsed) | host | `tmux-error:<host>` |
+| Agent needs input / done / failed | attention / success / error, titled `<host>: ...` like the banner it mirrors; tap jumps to the session; permission requests stay cards | app | `agent:<host>\|<session>` |
+
+Agent notices mirror `AttentionBannerQueue` (one banner per session, none for the session being
+viewed, removed when the session ends or the request is cleared) through reconcile on every live
+change, with the banner id as the notice id. Dismissing a notice dismisses its banner; an expired
+notice stays gone while its banner remains queued.
 
 Keys are per host, so two hosts never replace each other and a flood of identical OSC messages
 from one host collapses into one notice with a count.
