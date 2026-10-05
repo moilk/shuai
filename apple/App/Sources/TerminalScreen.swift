@@ -29,12 +29,10 @@ private struct TerminalSessionView: View {
 
     private var topStack: some View {
         VStack {
-            AgentBannerView()
             NoticeStackView()
             Spacer()
         }
-    .padding()
-    .animation(.snappy, value: model.agentHub.banners.banners)
+        .padding()
     }
 
     var body: some View {

@@ -55,10 +55,7 @@ final class AppModel {
     var agentInstall: AgentInstallRequest?
     var showNotificationExplainer = false
     /// Every transient message the app shows; views only render `notices.queue`.
-    let notices = NoticeCenter(
-        // One clock for both: system uptime and `SuspendingClock` both stop while the device sleeps.
-        now: { UInt64(ProcessInfo.processInfo.systemUptime * 1000) },
-        sleep: { ms in try await Task.sleep(for: .milliseconds(ms), clock: .suspending) })
+    let notices: NoticeCenter
     var appActive = true
     @ObservationIgnored private var lastAttentionKey: FfiSessionKey?
     @ObservationIgnored private let notifier: LocalNotifier?
@@ -103,6 +100,12 @@ final class AppModel {
         let viewingBox = viewing
         let hub = AgentHub(banners: AttentionBannerQueue(isSuppressed: { key in viewingBox.check(key) }))
         agentHub = hub
+        let banners = hub.banners
+        notices = NoticeCenter(
+            // One clock for both: system uptime and `SuspendingClock` both stop while the device sleeps.
+            now: { UInt64(ProcessInfo.processInfo.systemUptime * 1000) },
+            sleep: { ms in try await Task.sleep(for: .milliseconds(ms), clock: .suspending) },
+            onDismiss: { AgentNotices.dismissed($0, in: banners) })
         notifier = ephemeral ? nil : LocalNotifier()
         sessions = SessionRegistry(
             factory: LiveConnectionFactory(), keys: keyStore, passwords: passwords, knownHosts: known, hosts: hosts,
@@ -253,6 +256,11 @@ final class AppModel {
     }
 
     private func handleLive(profileID: UUID, changes: [FfiTrackerChange]) {
+        AgentNotices.sync(queue: agentHub.banners, center: notices) { [agentHub, hosts] banner in
+            let target = agentHub.target(for: banner.key)
+            let name = target.flatMap { hosts.host(id: $0.profileID)?.name } ?? banner.key.host
+            return (name, target?.session)
+        }
         let hostName = hosts.host(id: profileID)?.name ?? "host"
         for change in changes {
             let session = agentHub.target(for: change.sessionKey)?.session
