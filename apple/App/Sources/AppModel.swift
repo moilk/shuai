@@ -56,8 +56,9 @@ final class AppModel {
     var showNotificationExplainer = false
     /// Every transient message the app shows; views only render `notices.queue`.
     let notices = NoticeCenter(
+        // One clock for both: system uptime and `SuspendingClock` both stop while the device sleeps.
         now: { UInt64(ProcessInfo.processInfo.systemUptime * 1000) },
-        sleep: { ms in try await Task.sleep(for: .milliseconds(ms)) })
+        sleep: { ms in try await Task.sleep(for: .milliseconds(ms), clock: .suspending) })
     var appActive = true
     @ObservationIgnored private var lastAttentionKey: FfiSessionKey?
     @ObservationIgnored private let notifier: LocalNotifier?
@@ -302,6 +303,8 @@ final class AppModel {
             let result = await pushSync.syncNow(host: host, remote: remote)
             if let notice = Notice.pushSync(result, hostName: host.name, hostID: host.id, redacting: syncSecrets) {
                 notices.post(notice)
+            } else {
+                notices.retract(key: Notice.pushSyncKey(hostID: host.id))
             }
         }
     }
@@ -322,20 +325,15 @@ final class AppModel {
             return (host, remote)
         }
         guard !targets.isEmpty else {
-            notices.post(.noSyncTargets)
+            notices.apply(Notice.pushSyncSummary([], redacting: []))
             return
         }
         Task {
-            var failed = false
+            var results: [(hostID: UUID, hostName: String, outcome: PushSyncOutcome)] = []
             for (host, remote) in targets {
-                let result = await pushSync.syncNow(host: host, remote: remote)
-                guard case .failed = result else { continue }
-                failed = true
-                if let notice = Notice.pushSync(result, hostName: host.name, hostID: host.id, redacting: syncSecrets) {
-                    notices.post(notice)
-                }
+                results.append((host.id, host.name, await pushSync.syncNow(host: host, remote: remote)))
             }
-            if !failed { notices.post(.pushSyncedAll) }
+            notices.apply(Notice.pushSyncSummary(results, redacting: syncSecrets))
         }
     }
 
@@ -375,6 +373,7 @@ final class AppModel {
             pushSync.forget(host: host.id)
             try? hosts.delete(id: host.id)
             notices.removeAll(scope: .host(host.id))
+            notices.retract(key: Notice.pushSyncKey(hostID: host.id))
             if selection == host.id { selection = hosts.hosts.first?.id }
         }
     }

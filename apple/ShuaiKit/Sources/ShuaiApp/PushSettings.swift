@@ -147,8 +147,6 @@ public final class PushSettings {
 
     /// Error text from the network stack can quote the request URL (the topic) or headers.
     private func redacted(_ text: String) -> String {
-        var out = text
-        for secret in [topic, token] where !secret.isEmpty { out = out.replacingOccurrences(of: secret, with: "…") }
-        return out
+        Notice.redact(text, secrets: [topic, token], limit: Notice.textLimit)
     }
 }

@@ -82,7 +82,10 @@ struct PermissionCardStack: View {
                     .padding(10)
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(width: min(380, geo.size.width), height: min(max(geo.size.height * 0.55, 340), geo.size.height * 0.95), alignment: .top)
+                // Sized to the cards (scrolls past 95% of the height) so the blank area stays tappable.
+                .frame(width: min(380, geo.size.width))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxHeight: geo.size.height * 0.95, alignment: .top)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             .allowsHitTesting(true)
