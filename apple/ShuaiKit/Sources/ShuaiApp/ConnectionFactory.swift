@@ -16,6 +16,8 @@ public protocol RemoteExec: Sendable {
     /// Output events; finishes after `.closed`.
     var events: AsyncStream<ExecEvent> { get }
     func writeStdin(_ data: Data) async throws
+    /// Sends EOF on stdin (the channel stays open for output).
+    func closeStdin() async
     func close() async
 }
 
@@ -96,6 +98,7 @@ final class LiveExec: RemoteExec {
     }
 
     func writeStdin(_ data: Data) async throws { try await session.writeStdin(data) }
+    func closeStdin() async { try? await session.eof() }
     func close() async { try? await session.close() }
 }
 

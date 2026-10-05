@@ -109,6 +109,7 @@ final class LocalExec: RemoteExec, @unchecked Sendable {
     }
 
     func writeStdin(_ data: Data) async throws { try stdin.fileHandleForWriting.write(contentsOf: data) }
+    func closeStdin() async { try? stdin.fileHandleForWriting.close() }
     func close() async {
         try? stdin.fileHandleForWriting.close()
         if process.isRunning { process.terminate() }

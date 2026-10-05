@@ -17,7 +17,7 @@ public enum TmuxError: Error, Equatable, Sendable {
 /// Native view of one host's tmux server, kept in sync with a side channel.
 ///
 /// Control mode: a second SSH channel on the same connection runs `tmux -C attach -t =SESSION:`
-/// via `execStream` (no PTY needed). The first stdin line suppresses `%output` (`refresh-client
+/// (supervised `sh -c` line, see `attachShell`) via `execStream` (no PTY needed). The first stdin line suppresses `%output` (`refresh-client
 /// -f no-output`); the channel is drained continuously (stdout goes through the FFI
 /// `TmuxController`, which turns the notification stream into a few events). Structural
 /// notifications are debounced into one `list-panes -a -F ...` (sent over the same channel);
@@ -214,7 +214,7 @@ public final class TmuxMonitor {
 
     private func openChannel(_ connection: RemoteConnection) async throws -> Channel {
         let controller = try TmuxController(session: sessionName, versionOutput: versionOutput)
-        let exec = try await connection.execStream(controller.attachCommand().shell)
+        let exec = try await connection.execStream(controller.attachShell())
         channelCounter += 1
         let (lines, continuation) = AsyncStream<String>.makeStream()
         let ch = Channel(id: channelCounter, exec: exec, controller: controller, stdin: continuation)
@@ -244,6 +244,8 @@ public final class TmuxMonitor {
         ch.reader?.cancel()
         ch.writer?.cancel()
         failPending(ch, TmuxError.channelClosed)
+        // EOF first: on a no-PTY exec channel it is what makes the supervised tmux client exit.
+        await ch.exec.closeStdin()
         await ch.exec.close()
     }
 
@@ -263,7 +265,7 @@ public final class TmuxMonitor {
         refreshTask?.cancel(); refreshTask = nil
         refreshing = false
         state = .ended(reason)
-        Task { await ch.exec.close() }
+        Task { await ch.exec.closeStdin(); await ch.exec.close() }
     }
 
     private func handle(_ events: [FfiControllerEvent], on ch: Channel) {
