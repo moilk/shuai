@@ -21,8 +21,8 @@ jobs:
       icon: ${{ steps.filter.outputs.icon }}
       apple: ${{ steps.filter.outputs.apple }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -52,7 +52,7 @@ jobs:
       run:
         working-directory: core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -72,7 +72,7 @@ jobs:
       run:
         working-directory: tools/icongen
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -92,7 +92,7 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
@@ -111,7 +111,19 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # Boot the simulator now so the cold boot overlaps the Rust, xcframework and swift test steps.
+      - name: Boot iPad simulator
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          c=[x for rt,v in sorted(d.items()) if "iOS" in rt for x in v if "iPad" in x["name"]]
+          print(c[-1]["udid"] if c else "")')
+          if [ -z "$UDID" ]; then echo "no iPad simulator available"; exit 1; fi
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || echo "simulator already booted"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
@@ -123,7 +135,7 @@ jobs:
       # cache skips the zig cross-build when core/ did not change.
       - name: Restore bundled shuai-agent binaries
         id: agent
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apple/App/Resources/agent
           key: agent-${{ hashFiles('core/**/*.rs', 'core/**/Cargo.toml', 'core/Cargo.lock', 'scripts/build-agent.sh') }}
@@ -154,13 +166,8 @@ jobs:
         working-directory: apple/App
         run: |
           set -euo pipefail
-          UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import json,sys
-          d=json.load(sys.stdin)["devices"]
-          c=[x for rt,v in sorted(d.items()) if "iOS" in rt for x in v if "iPad" in x["name"]]
-          print(c[-1]["udid"] if c else "")')
-          if [ -z "$UDID" ]; then echo "no iPad simulator available"; exit 1; fi
-          SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$RUNNER_TEMP/DerivedData"
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai -destination "id=$SIM_UDID" -derivedDataPath "$RUNNER_TEMP/DerivedData"
       - name: Guard - AppIcon has default, dark and tinted renditions
         run: scripts/check-app-icon.sh "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/Shuai.app"
 
@@ -172,7 +179,7 @@ jobs:
       matrix:
         target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -180,7 +187,7 @@ jobs:
       - run: cargo install cargo-zigbuild --locked
       - run: cargo zigbuild --release -p shuai-agent --target ${{ matrix.target }}
         working-directory: core
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: shuai-agent-${{ matrix.target }}
           path: core/target/${{ matrix.target }}/release/shuai-agent

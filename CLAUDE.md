@@ -54,10 +54,18 @@ Real-SSH Swift tests, simulator engine tests, live E2E: `docs/development/testin
 ## Workflow
 
 1. Plan: for non-trivial work write the plan (issue/PR description); architecture changes get an ADR.
-2. TDD: test commit, then implementation commit, small and focused.
+   Design and planning use the strongest available model (plan mode).
+2. TDD: test commit, then implementation commit, small and focused. For multi-step work, hand
+   independent steps to subagents on a mid-tier model, each with a self-contained prompt and
+   done-criteria; the main session runs the checks before committing.
 3. Review: run the checks above, then go through `docs/development/contributing.md#review-checklist`.
+   A mid-tier model may do the first pass; changes touching the security rules or FFI/stream
+   handling get a second pass on the strongest model.
 4. PR: Conventional Commits (feat/fix/test/docs/chore/ci/refactor), branch from `main`, CI green.
 5. Docs describe the final state; update them in the same PR when behaviour or commands change.
+
+Subagents: no real test-server data (hosts, users, paths) in prompts or commits; report a permission
+block, never work around it.
 
 ## Deeper docs
 
