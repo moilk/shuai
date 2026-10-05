@@ -62,6 +62,10 @@ creates it otherwise. An optional **Startup command** runs only when the session
 
 - **Reconnect**: when the network drops or the app returns from the background, shuai reconnects
   and reattaches to the same session. Programs on the server (Claude included) keep running.
+  While it retries, a bar under the window tabs shows the attempt, a countdown and "typing paused"
+  with **Retry now** and **Cancel**; the last output stays readable and scrollable. A session that
+  ended shows the same kind of bar with **Reconnect**. If connecting fails, a card explains why
+  and offers **Retry** (plus **Edit host** or **Open keys** when that is the fix).
 - **No tmux on the server**: if `tmux` is not found, the app opens a plain login shell on the same
   connection and shows a non-blocking notice. Later automatic reconnects of that session skip
   tmux; a fresh connect tries tmux again.

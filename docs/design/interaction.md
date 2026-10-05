@@ -89,6 +89,23 @@ disconnected keep the last output readable, so they are a strip, not a card.
 - Action identifiers: `retry-now`, `cancel-reconnect`, `cancel-connect`, `retry-connect`,
   `reconnect-session`, `edit-host`, `open-keys`.
 
+### Placement and stack order
+
+Cards sit centred over the terminal; the scrim (30 % black) appears only for the failed card, so
+the other cards leave the terminal visible. The strip is a compact bar without a scrim and keeps the
+terminal readable and scrollable. Its countdown ticks once a second, and only while a retry is
+scheduled. From the top of the terminal area:
+
+1. window tab strip (when tmux topology is shown)
+2. connection strip (reconnecting, disconnected)
+3. notices
+4. permission cards, always on top
+
+The window toolbar shows the status indicator (symbol, spoken as "{host}: {status label}",
+identifier `connection-status`); the host list row uses the same symbol and label. Action buttons
+have at least 44 pt hit targets, and text from the server or host profile is rendered verbatim.
+Cancel while connecting disconnects; Cancel while reconnecting ends the reconnect loop.
+
 ### Status indicator
 
 Each status has its own symbol and label, so state never relies on colour alone:
