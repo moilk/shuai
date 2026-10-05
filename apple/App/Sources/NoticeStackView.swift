@@ -68,6 +68,7 @@ private struct NoticeRow: View {
             }
             Button(action: dismiss) { Image(systemName: "xmark") }
                 .accessibilityLabel("Dismiss")
+                .accessibilityIdentifier("notice-dismiss")
         }
         .padding(12)
         .frame(maxWidth: 520)

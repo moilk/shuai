@@ -269,6 +269,27 @@ final class ShuaiUITests: XCTestCase {
         waitForExpectations(timeout: 10)
     }
 
+    /// A notice posted while a permission card is pending stays reachable: its dismiss button can be
+    /// tapped and the card is untouched.
+    @MainActor
+    func testNoticeCanBeDismissedWhileAPermissionCardIsPending() throws {
+        let app = launchWithAgentFixture()
+        let card = app.descendants(matching: .any)["permission-card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 12))
+        app.open(URL(string: "shuai://open?host=00000000-0000-4000-8000-000000000000&pane=%250")!)
+        let notice = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'session-notice' AND label CONTAINS 'not in Shuai'")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        XCTAssertFalse(notice.frame.intersects(card.frame), "notice \(notice.frame) clear of the card column \(card.frame)")
+        let dismiss = app.buttons["notice-dismiss"].firstMatch
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+        XCTAssertTrue(dismiss.isHittable, "the card column does not cover the notice")
+        dismiss.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: notice)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(card.exists, "the permission card stays")
+    }
+
     /// With the software keyboard up the docked accessory bar is used (above the keyboard); the
     /// floating bar must not appear over the terminal text.
     @MainActor

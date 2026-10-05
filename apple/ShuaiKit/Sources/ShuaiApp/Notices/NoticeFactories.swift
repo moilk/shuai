@@ -10,13 +10,16 @@ extension Notice {
             symbol: "link.badge.plus", key: "deeplink")
     }
 
+    public static func pushSyncKey(hostID: UUID) -> String { "push-sync:\(hostID.uuidString)" }
+
     /// Result of syncing notification settings to one host; nil when nothing changed.
-    /// Failure text can quote the request (ntfy topic, token), so every secret is removed before
-    /// the text is sanitized and capped. Shown app-wide because the sync is started from a menu.
+    /// Failure text can quote the request (ntfy topic, token) or remote paths, so secrets are
+    /// removed and home directories collapsed before the notice caps it. Shown app-wide because
+    /// the sync is started from a menu.
     public static func pushSync(
-        _ result: PushSyncOutcome, hostName: String, hostID: UUID?, redacting secrets: [String]
+        _ result: PushSyncOutcome, hostName: String, hostID: UUID, redacting secrets: [String]
     ) -> Notice? {
-        let key = hostID.map { "push-sync:\($0.uuidString)" } ?? "push-sync"
+        let key = pushSyncKey(hostID: hostID)
         switch result {
         case .upToDate:
             return nil
@@ -25,14 +28,48 @@ extension Notice {
                 severity: .success, source: .app, text: "Notification settings synced to \(hostName).",
                 symbol: "checkmark.circle", key: key)
         case .failed(let message):
-            var clean = message
-            for secret in secrets where !secret.isEmpty {
-                clean = clean.replacingOccurrences(of: secret, with: "…")
-            }
+            let clean = collapseHomePaths(redact(message, secrets: secrets, limit: textLimit))
             return Notice(
                 severity: .warning, source: .app, text: "Could not sync to \(hostName): \(clean)",
                 symbol: "exclamationmark.triangle", key: key)
         }
+    }
+
+    /// Sanitizes untrusted text, then removes every secret (longest first, case-insensitive) so a
+    /// secret cannot hide behind invisible characters or survive as a cap-truncated prefix.
+    public static func redact(_ text: String, secrets: [String], limit: Int) -> String {
+        var out = sanitize(text, limit: 100_000)
+        let clean = secrets.map { sanitize($0, limit: 1_000) }.filter { !$0.isEmpty }
+        for secret in clean.sorted(by: { $0.count > $1.count }) {
+            out = out.replacingOccurrences(of: secret, with: "…", options: .caseInsensitive)
+        }
+        return sanitize(out, limit: limit)
+    }
+
+    /// `/home/<name>`, `/Users/<name>` and `/root` become `~`.
+    public static func collapseHomePaths(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: #"(?<![\w])(?:/(?:home|Users)/[^/\s'"`:;,)]+|/root(?![\w.-]))"#, with: "~", options: .regularExpression)
+    }
+
+    /// What to show and what to retract after syncing several hosts: one warning per failed host,
+    /// the success summary only when none failed, and the stale failure of every host that took
+    /// the settings removed.
+    public static func pushSyncSummary(
+        _ results: [(hostID: UUID, hostName: String, outcome: PushSyncOutcome)], redacting secrets: [String]
+    ) -> PushSyncReport {
+        guard !results.isEmpty else { return PushSyncReport(post: [noSyncTargets], retractKeys: []) }
+        var post: [Notice] = []
+        var retract: [String] = []
+        for r in results {
+            if case .failed = r.outcome {
+                if let n = pushSync(r.outcome, hostName: r.hostName, hostID: r.hostID, redacting: secrets) { post.append(n) }
+            } else {
+                retract.append(pushSyncKey(hostID: r.hostID))
+            }
+        }
+        if post.isEmpty { post.append(pushSyncedAll) }
+        return PushSyncReport(post: post, retractKeys: retract)
     }
 
     /// Every connected host took the settings.
@@ -54,5 +91,17 @@ extension Notice {
         Notice(
             severity: .info, source: .app, text: "No agent needs your attention.",
             symbol: "checkmark.circle", key: "no-attention")
+    }
+}
+
+public struct PushSyncReport: Sendable {
+    public var post: [Notice]
+    public var retractKeys: [String]
+}
+
+extension NoticeCenter {
+    public func apply(_ report: PushSyncReport) {
+        for key in report.retractKeys { retract(key: key) }
+        for n in report.post { post(n) }
     }
 }
