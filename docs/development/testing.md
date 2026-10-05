@@ -56,7 +56,8 @@ List simulators with `xcrun simctl list devices available`; any iPad running iOS
   `Package.swift` define `SHUAI_TESTKIT`. SwiftPM caches manifest evaluation, which is why this is an
   environment variable and not a marker file.
 - UI tests launch with `-uiTesting` (ephemeral stores) and `-debugTmuxFixture` or
-  `-debugAgentFixture`. The agent fixture plays the recorded Claude Code transcript
+  `-debugAgentFixture`; `-debugConnectionState <reconnecting|failed|disconnected>` shows a fixed
+  connection state for screenshots and layout checks. The agent fixture plays the recorded Claude Code transcript
   `core/shuai-agent/tests/fixtures/e2e-claude-2.1.288.jsonl` through the real monitor; `respond`
   calls are exposed via the `agent-fixture-log` accessibility value.
 - When several simulators or agents run at once, give UI tests their own simulator device; a shared

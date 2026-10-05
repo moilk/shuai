@@ -10,7 +10,8 @@ in `apple/ShuaiKit`. App: `cd apple/App && xcodegen generate && xcodebuild test 
 - `ShuaiPlatform` (Swift 6): `Connection` actor, `Shell`/`ExecSession`, `KeychainKeyStore`,
   `KnownHostsStore`/`TOFUVerifier`, `ReconnectController`.
 - `ShuaiTerminal` (Swift 6): `TerminalEngine`, `GhosttyEngine`, `TerminalView`, key and bar models.
-- `ShuaiApp` (Swift 6, testable with `swift test`): everything app-level that is not a scene.
+- `ShuaiApp` (Swift 6, testable with `swift test`): everything app-level that is not a scene, including
+  `Notices/` (`NoticeCenter`, `NoticeQueue`) and `ConnectionPresentation`.
 - `apple/App`: entry, root views, menus, settings, DEBUG launch code. Links only the `ShuaiApp`
   product (several dynamic products duplicate classes at runtime).
 
@@ -36,8 +37,15 @@ in `apple/ShuaiKit`. App: `cd apple/App && xcodegen generate && xcodebuild test 
 - Agent: `AgentHub` keys hosts by `HostProfile.id` and maps to the remote hostname the agent reports.
   Permission previews render untrusted input with `Text(verbatim:)`, length-capped.
 - `DeepLink` parsing stays strict (one UUID `host`, optional `%N` pane).
+- Transient messages go through `NoticeCenter` (ADR 0008): views own no timers, sources post `Notice`
+  values, per-host keys include the host id, text goes through `Notice.sanitize` and renders with
+  `Text(verbatim:)`.
+- Connection state UI is derived from `ConnectionPresentation`; only states without a usable live
+  channel (connecting, signing in, host key, failed) block the terminal.
+- Top stack, from the top: window tab strip, connection strip, notices; permission cards are drawn on
+  top and the strip and notices reserve their column (`docs/design/interaction.md`).
 - DEBUG-only code and launch arguments are wrapped in `#if DEBUG`; add new argument names to
-  `scripts/check-no-debug-launch.sh`.
+  `scripts/check-no-debug-launch.sh` (e.g. `-debugConnectionState`).
 - Signing: never put a team or bundle id in `project.yml`; use `Signing.xcconfig` + gitignored
   `Local.xcconfig`. The `.xcodeproj` and `Generated/Info.plist` are generated, never committed.
 - Swift must compile with CI's older Xcode: e.g. write `_ = expr` in `Void` closures.

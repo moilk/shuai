@@ -61,6 +61,14 @@ you want `main › 2: claude` instead.
 messages. Use the generated random topic, rotate it if it leaks, or run your own server with an
 access token.
 
+## In-app notices
+
+While shuai is on screen, agent state changes appear as in-app banners instead (see
+[Claude integration](claude-integration.md#badges)). A terminal notification sent by a program on
+the remote (OSC 9 or 777) is shown as an info notice labelled "<host> · Terminal"; the program's own
+text is cleaned and capped, and repeats from one host collapse into one notice with a count.
+Pending permission cards stay on top, and notices never cover them.
+
 ## Deep links
 
 Tapping a notification opens `shuai://open?host=<id>&pane=<%N>`: shuai selects that host,

@@ -80,7 +80,7 @@ Android app can reuse it (see [ADR 0002](../adr/0002-rust-core-uniffi.md)).
 | `ShuaiCore` | Swift 5 | Generated UniFFI bindings + `ShuaiCoreFFI` binary target |
 | `ShuaiPlatform` | Swift 6 | `Connection` actor, `Shell` / `ExecSession` stream wrappers with pumps, `KeychainKeyStore`, `KnownHostsStore` + `TOFUVerifier`, `ReconnectController` |
 | `ShuaiTerminal` | Swift 6 | `TerminalEngine` protocol, `GhosttyEngine` and `TerminalView` (iOS only), key encoding fallback, accessory bar model, Option-as-Alt, theme, resize/font models |
-| `ShuaiApp` | Swift 6 | Host profiles and stores, key library, `SessionController` state machine, `SessionRegistry`, tmux monitor/actions, agent hub/monitor/installer, push settings, deep links, shortcuts, quick switcher, SwiftUI pieces |
+| `ShuaiApp` | Swift 6 | Host profiles and stores, key library, `SessionController` state machine, `SessionRegistry`, tmux monitor/actions, agent hub/monitor/installer, push settings, deep links, shortcuts, quick switcher, `NoticeCenter` (transient notices), `ConnectionPresentation` (connection state UI model), SwiftUI pieces |
 | `apple/App` (`Shuai`) | Swift 6 | App entry, root views, menus, settings, DEBUG launch arguments; links only the `ShuaiApp` product |
 
 Everything except libghostty-dependent code builds on macOS, so most Swift logic is tested with

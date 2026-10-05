@@ -67,7 +67,15 @@ urgent badge of their panes:
 | moon | idle | lowest |
 
 The orange number on a host row counts sessions waiting for you. State changes of a session you
-are not looking at appear as short in-app banners.
+are not looking at appear as short in-app banners (notices at the top of the terminal area):
+
+- One banner per session; a newer state of the same session replaces it.
+- Tap a banner to jump to that agent's pane; the **x** dismisses it. A banner also goes away on its
+  own after a few seconds, and does not come back once dismissed or expired.
+- No banner for the session you are viewing, and it is removed when the session ends or the
+  request is answered.
+- Needs input and done are shown as attention and success, a failure as an error. Permission
+  requests are never banners: they stay cards, which are drawn above the banners.
 
 How state is derived: the app follows the agent's event stream (`shuai-agent watch`), replays
 history after a reconnect without re-alerting, marks sessions whose tmux pane disappeared as
