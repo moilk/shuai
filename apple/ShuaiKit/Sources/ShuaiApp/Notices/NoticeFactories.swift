@@ -10,6 +10,19 @@ extension Notice {
             symbol: "link.badge.plus", key: "deeplink")
     }
 
+    /// An OSC 9/777 notification. The remote controls both strings, so the notice is always
+    /// attributed to the host (never to the remote title) and stays `.info`, below real agent
+    /// attention. Emptiness is decided after sanitizing; nil when nothing readable remains.
+    public static func terminal(title: String, body: String, hostName: String, hostID: UUID) -> Notice? {
+        let t = sanitize(title, limit: textLimit)
+        let b = sanitize(body, limit: textLimit)
+        let text = t.isEmpty ? b : (b.isEmpty ? t : "\(t): \(b)")
+        guard !text.isEmpty else { return nil }
+        return Notice(
+            severity: .info, source: .terminal, scope: .host(hostID), title: "\(hostName) \u{00B7} Terminal",
+            text: text, symbol: "bell", key: "osc:\(hostID.uuidString)")
+    }
+
     public static func pushSyncKey(hostID: UUID) -> String { "push-sync:\(hostID.uuidString)" }
 
     /// Result of syncing notification settings to one host; nil when nothing changed.

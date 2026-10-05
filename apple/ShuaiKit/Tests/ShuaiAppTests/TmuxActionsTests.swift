@@ -261,7 +261,7 @@ import Testing
         let sink = RecordingNoticeSink()
         let (_, monitor, actions) = await rig(notices: sink)
         await actions.run { throw TmuxError.commandFailed("no such file /home/someone/proj") }
-        #expect(sink.posted.last?.text == "no such file ~")
+        #expect(sink.posted.last?.text == "no such file ~/proj")
         await monitor.stop()
     }
 

@@ -18,17 +18,17 @@ public final class TmuxActions {
     public private(set) var pendingConfirmation: Confirmation?
 
     @ObservationIgnored private let monitor: TmuxMonitor
-    @ObservationIgnored private let hostID: UUID?
-    @ObservationIgnored private let notices: (any NoticePosting)?
+    @ObservationIgnored private let notices: NoticeRoute?
+    @ObservationIgnored private var isRetired = false
 
-    /// - Parameters:
-    ///   - hostID: scopes and keys the error notices of `run { }`.
-    ///   - notices: where failed `run { }` actions are reported; nil drops them.
-    public init(monitor: TmuxMonitor, hostID: UUID? = nil, notices: (any NoticePosting)? = nil) {
+    /// - Parameter notices: where failed `run { }` actions are reported; nil drops them.
+    public init(monitor: TmuxMonitor, notices: NoticeRoute? = nil) {
         self.monitor = monitor
-        self.hostID = hostID
         self.notices = notices
     }
+
+    /// The host is gone: later failures post nothing.
+    public func retire() { isRetired = true }
 
     // MARK: - Derived state
 
@@ -209,11 +209,13 @@ public final class TmuxActions {
     }
 
     private func postError(_ text: String) {
-        let suffix = hostID?.uuidString ?? "local"
-        notices?.post(Notice(
-            severity: .error, source: .tmux, scope: hostID.map { .host($0) } ?? .app, text: text,
-            symbol: "exclamationmark.octagon", key: "tmux-error:\(suffix)"))
+        guard !isRetired, let route = notices else { return }
+        route.poster.post(Notice(
+            severity: .error, source: .tmux, scope: .host(route.hostID), text: Notice.collapseHomePaths(text),
+            symbol: "exclamationmark.octagon", key: Self.errorKey(hostID: route.hostID)))
     }
+
+    static func errorKey(hostID: UUID) -> String { "tmux-error:\(hostID.uuidString)" }
 
     static func describe(_ error: Error) -> String {
         switch error as? TmuxError {
@@ -224,5 +226,16 @@ public final class TmuxActions {
         case .invalidTarget(let t): "Invalid tmux target \(t)."
         case nil: String(describing: error)
         }
+    }
+}
+
+/// Where one host's notices go: the poster plus the host that scopes and keys them.
+public struct NoticeRoute {
+    public let hostID: UUID
+    public let poster: any NoticePosting
+
+    public init(hostID: UUID, poster: any NoticePosting) {
+        self.hostID = hostID
+        self.poster = poster
     }
 }

@@ -511,7 +511,7 @@ struct NoticeCenterReviewTests {
         let center = NoticeCenter(now: { time.get }, sleep: { _ in await gate.wait() })
         center.post(notice("a"))
         #expect(await waitUntil { gate.waiting == 1 })
-        center.post(notice("b", severity: .error))
+        center.post(notice("b", severity: .error, lifetime: .autoAfter(ms: 100))) // earlier deadline: the timer is replaced
         #expect(await waitUntil { gate.waiting == 2 })
         time.with { $0 = 6000 }
         gate.releaseFirst()

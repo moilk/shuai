@@ -57,6 +57,8 @@ public final class SessionController {
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let redrawNudgeDelay: Duration
     @ObservationIgnored private let notices: (any NoticePosting)?
+    /// Set by the registry when the controller is removed or replaced: it posts nothing afterwards.
+    @ObservationIgnored private var isRetired = false
 
     // Live transport
     private enum Command: Sendable {
@@ -132,7 +134,7 @@ public final class SessionController {
             return g.isValid ? (UInt32(g.cols), UInt32(g.rows)) : (80, 24)
         })
         tmux = monitor
-        tmuxActions = TmuxActions(monitor: monitor, hostID: profile.id, notices: notices)
+        tmuxActions = TmuxActions(monitor: monitor, notices: notices.map { NoticeRoute(hostID: profile.id, poster: $0) })
         wireEngine()
     }
 
@@ -163,14 +165,24 @@ public final class SessionController {
     }
 
     private var tmuxMissingKey: String { "tmux-missing:\(profile.id.uuidString)" }
+    private var oscKey: String { "osc:\(profile.id.uuidString)" }
 
-    /// OSC 9/777 from the remote: untrusted, so `Notice` sanitizes and caps it. One key per host,
-    /// so a flood coalesces into a single notice.
+    /// The host entry is gone or replaced: withdraw this controller's notices and post no more.
+    public func retire() {
+        notices?.retract(key: tmuxMissingKey)
+        notices?.retract(key: oscKey)
+        notices?.retract(key: TmuxActions.errorKey(hostID: profile.id))
+        isRetired = true
+        tmuxActions.retire()
+    }
+
+    /// OSC 9/777 from the remote: untrusted, attributed to the host (`Notice.terminal`). One key
+    /// per host, so a flood coalesces into a single notice.
     private func postTerminalNotification(_ n: TerminalNotification) {
-        let content = BannerContent.make(title: n.title, body: n.body, hostName: profile.name)
-        notices?.post(Notice(
-            severity: .attention, source: .terminal, scope: .host(profile.id), title: content.title,
-            text: content.message, symbol: content.symbol, key: "osc:\(profile.id.uuidString)"))
+        guard !isRetired,
+              let notice = Notice.terminal(title: n.title, body: n.body, hostName: profile.name, hostID: profile.id)
+        else { return }
+        notices?.post(notice)
     }
 
     /// Types text into the remote (debug scripting, tests).
@@ -528,9 +540,9 @@ public final class SessionController {
     private func fallBackToPlainShell(gen: Int) async {
         guard gen == generation, let conn = connection else { return }
         tmuxUnavailable = true
-        notices?.post(Notice(
+        if !isRetired { notices?.post(Notice(
             severity: .warning, source: .session, scope: .host(profile.id), text: Self.tmuxMissingNotice,
-            symbol: "exclamationmark.triangle", key: tmuxMissingKey, lifetime: .sticky))
+            symbol: "exclamationmark.triangle", key: tmuxMissingKey, lifetime: .sticky)) }
         inputDuringSwitch = []
         defer { inputDuringSwitch = nil }
         await stopTmuxMonitor()

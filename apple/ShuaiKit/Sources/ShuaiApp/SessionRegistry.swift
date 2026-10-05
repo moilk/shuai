@@ -40,7 +40,7 @@ public final class SessionRegistry {
         if let existing = controllers[host.id] {
             if existing.profile == host { return existing }
             switch existing.state {
-            case .idle, .disconnected, .failed: break
+            case .idle, .disconnected, .failed: existing.retire()
             default: return existing
             }
         }
@@ -78,6 +78,7 @@ public final class SessionRegistry {
     public func remove(id: UUID) async {
         defer { agentHub?.removeHost(id: id) }
         guard let c = controllers.removeValue(forKey: id) else { return }
+        c.retire()
         await c.disconnect()
     }
 

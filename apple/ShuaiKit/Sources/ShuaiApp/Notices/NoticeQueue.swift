@@ -14,7 +14,13 @@ public struct NoticeQueue: Sendable {
         /// Set when the notice first becomes visible; the expiry timer starts there.
         var visibleSince: UInt64?
         var deadline: UInt64?
+        /// When the notice was last posted (including identical reposts).
+        var lastPostedAt: UInt64 = 0
     }
+
+    /// An identical repost this soon after the previous post only bumps the count: a flood must
+    /// not restart the timer on every message.
+    static let repostCoalesceMs: UInt64 = 1000
 
     private var entries: [Entry] = []
     private var nextSeq: UInt64 = 0
@@ -66,16 +72,20 @@ public struct NoticeQueue: Sendable {
         guard !notice.text.isEmpty else { return }
         if let i = entries.firstIndex(where: { $0.notice.key == notice.key && $0.notice.scope == notice.scope }) {
             var e = entries[i]
+            let quick = now >= e.lastPostedAt && now - e.lastPostedAt < Self.repostCoalesceMs
             if Self.sameContent(e.notice, notice) {
                 e.notice.count += 1
+                if !quick { e.visibleSince = nil; e.deadline = nil }
             } else {
                 e.notice = Self.reidentified(notice, as: e.notice.id)
+                e.visibleSince = nil
+                e.deadline = nil
             }
-            e.visibleSince = nil
-            e.deadline = nil
+            e.lastPostedAt = now
             entries[i] = e
         } else {
             insert(notice)
+            if let i = entries.firstIndex(where: { $0.notice.id == notice.id }) { entries[i].lastPostedAt = now }
         }
         arm(now)
     }

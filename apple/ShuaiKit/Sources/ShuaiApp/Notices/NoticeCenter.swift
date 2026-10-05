@@ -21,6 +21,8 @@ public final class NoticeCenter: NoticePosting {
     @ObservationIgnored private let onDismiss: ((Notice) -> Void)?
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
+    /// Deadline the running timer sleeps towards; lets `rearm` keep it when nothing changed.
+    @ObservationIgnored private var armedDeadline: UInt64?
 
     /// - Parameters:
     ///   - now: monotonic clock in milliseconds.
@@ -76,10 +78,14 @@ public final class NoticeCenter: NoticePosting {
     // MARK: - timer
 
     private func rearm() {
+        let deadline = queue.nextDeadline
+        if timer != nil, deadline == armedDeadline { return }
         generation += 1
         timer?.cancel()
         timer = nil
-        guard let deadline = queue.nextDeadline else { return }
+        armedDeadline = nil
+        guard let deadline else { return }
+        armedDeadline = deadline
         let gen = generation
         let current = now()
         // Clamped; `fire` re-arms for the remainder when it wakes before the deadline.
@@ -94,6 +100,7 @@ public final class NoticeCenter: NoticePosting {
     private func fire(_ gen: Int) {
         guard gen == generation else { return }
         timer = nil
+        armedDeadline = nil
         queue.expire(now: now())
         rearm()
     }
