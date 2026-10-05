@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShuaiCore
 import ShuaiPlatform
+import ShuaiTerminal
 @testable import ShuaiApp
 
 @MainActor @Suite struct SessionRegistryTests {
@@ -13,6 +14,19 @@ import ShuaiPlatform
             knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")), hosts: hosts,
             makeEngine: { _ in FakeEngine() })
         return (registry, hosts, factory)
+    }
+
+    @Test func controllersPostToTheRegistryNotices() {
+        let sink = RecordingNoticeSink()
+        let engine = FakeEngine()
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")),
+            hosts: HostStore(fileURL: scratchURL("hosts.json")), makeEngine: { _ in engine }, notices: sink)
+        let p = profile()
+        _ = registry.controller(for: p)
+        engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        #expect(sink.posted.last?.scope == .host(p.id))
     }
 
     private func profile(_ name: String = "dev") -> HostProfile {

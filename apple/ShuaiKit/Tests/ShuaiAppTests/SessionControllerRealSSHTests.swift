@@ -10,22 +10,23 @@ import ShuaiTerminal
 @MainActor @Suite(.timeLimit(.minutes(1))) struct SessionControllerRealSSHTests {
     private func makeController(
         _ server: TestServer, tmux: Bool = false, password: String? = nil
-    ) -> (SessionController, FakeEngine, KnownHostsStore) {
+    ) -> (SessionController, FakeEngine, KnownHostsStore, RecordingNoticeSink) {
         var profile = HostProfile(name: "local", host: "127.0.0.1", port: Int(server.port()), username: server.username(), auth: .password)
         profile.tmux.enabled = tmux
         let engine = FakeEngine()
         let passwords = InMemoryPasswordStore()
         try? passwords.setPassword(password ?? server.password(), for: profile.id)
         let known = KnownHostsStore(fileURL: scratchURL("known_hosts"))
+        let sink = RecordingNoticeSink()
         let c = SessionController(
             profile: profile, engine: engine, factory: LiveConnectionFactory(), keys: InMemoryKeyStore(),
-            passwords: passwords, knownHosts: known)
-        return (c, engine, known)
+            passwords: passwords, knownHosts: known, notices: sink)
+        return (c, engine, known, sink)
     }
 
     @Test func connectsTypesAndReceivesCJKEchoThenResizes() async throws {
         let server = await startTestSshServer()
-        let (c, engine, known) = makeController(server)
+        let (c, engine, known, _) = makeController(server)
         engine.gridSize = TerminalGridSize(cols: 100, rows: 30)
         let task = Task { @MainActor in await c.connect() }
         #expect(await waitUntil { c.pendingPrompt != nil })
@@ -48,7 +49,7 @@ import ShuaiTerminal
 
     @Test func serverSideExitIsReportedWithItsStatus() async throws {
         let server = await startTestSshServer()
-        let (c, engine, known) = makeController(server)
+        let (c, engine, known, _) = makeController(server)
         try known.add(host: "127.0.0.1", port: server.port(), publicKeyLine: server.hostPublicKeyLine())
         await c.connect()
         #expect(c.state == .connected)
@@ -59,11 +60,11 @@ import ShuaiTerminal
     @Test func missingTmuxOnTheServerFallsBackToAPlainShell() async throws {
         // The testkit answers unknown exec commands (like `tmux new -A ...`) with exit status 127.
         let server = await startTestSshServer()
-        let (c, engine, known) = makeController(server, tmux: true)
+        let (c, engine, known, sink) = makeController(server, tmux: true)
         try known.add(host: "127.0.0.1", port: server.port(), publicKeyLine: server.hostPublicKeyLine())
         await c.connect()
         // Bounded safety-net timeouts only; typed input is buffered across the fallback switch, so no sleep is needed.
-        #expect(await waitUntil(timeout: .seconds(20)) { c.notice == SessionController.tmuxMissingNotice })
+        #expect(await waitUntil(timeout: .seconds(20)) { sink.active.first?.text == SessionController.tmuxMissingNotice })
         #expect(c.state == .connected)
         engine.onInput?(Data("hello\r".utf8))
         #expect(await waitUntil(timeout: .seconds(20)) { engine.fedText.contains("hello") })
@@ -90,7 +91,7 @@ import ShuaiTerminal
 
     @Test func wrongPasswordFailsWithAuthFailed() async throws {
         let server = await startTestSshServer()
-        let (c, _, known) = makeController(server, password: "wrong")
+        let (c, _, known, _) = makeController(server, password: "wrong")
         try known.add(host: "127.0.0.1", port: server.port(), publicKeyLine: server.hostPublicKeyLine())
         await c.connect()
         guard case .failed(let e) = c.state else { Issue.record("expected failed, got \(c.state)"); return }
