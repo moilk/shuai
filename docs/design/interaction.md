@@ -37,3 +37,16 @@ terminal, agent), a scope (app-wide or one host), optional title, text, SF Symbo
   (a bounded memory of 64 ids). Keys within one list must be unique.
 - **Accessibility identifiers**: app, deep link, session and tmux notices use `session-notice`,
   terminal notices `notification-banner`, agent notices `agent-banner`.
+
+### Sources
+
+Each session posts through the `NoticePosting` it is given; none keeps notice state of its own.
+
+| Source | Notice | Scope | Key |
+|---|---|---|---|
+| Terminal OSC 9/777 | attention, title and body from the remote (sanitized and capped) | host | `osc:<host>` |
+| tmux missing on the host | sticky warning, retracted on the next fresh connect | host | `tmux-missing:<host>` |
+| Failed tmux action | error with the tmux message | host | `tmux-error:<host>` |
+
+Keys are per host, so two hosts never replace each other and a flood of identical OSC messages
+from one host collapses into one notice with a count.
