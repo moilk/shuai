@@ -304,3 +304,192 @@ struct NoticeCenterTests {
         #expect(center.queue.visible.isEmpty)
     }
 }
+
+// MARK: - review cases
+
+/// A sleep that ignores cancellation, released by hand.
+private final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    var waiting: Int { lock.withLock { waiters.count } }
+    func wait() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            lock.withLock { waiters.append(c) }
+        }
+    }
+    func releaseFirst() {
+        let c: CheckedContinuation<Void, Never>? = lock.withLock { waiters.isEmpty ? nil : waiters.removeFirst() }
+        c?.resume()
+    }
+}
+
+@Suite("Notice review cases")
+struct NoticeReviewTests {
+    @Test func invisibleFormatCharsStripped() {
+        let s = "a\u{200E}b\u{200F}c\u{061C}d\u{200B}e\u{2060}f\u{FEFF}g\u{E0041}h\u{00AD}i\u{180E}j\u{3164}k"
+        #expect(Notice.sanitize(s, limit: 100) == "abcdefghijk")
+        let family = "👨\u{200D}👩\u{200D}👧"
+        #expect(Notice.sanitize(family, limit: 10) == family)
+    }
+
+    @Test func combiningMarksAreBounded() {
+        let s = "a" + String(repeating: "\u{0301}", count: 10_000)
+        let out = Notice.sanitize(s, limit: 300)
+        #expect(out.unicodeScalars.count <= 8)
+        #expect(out.hasPrefix("a"))
+    }
+
+    @Test func hugeInputIsHandledAndCapped() {
+        let s = String(repeating: "ab cd\n", count: 900_000)
+        let out = Notice.sanitize(s, limit: 300)
+        #expect(out.count == 300)
+        #expect(out.hasSuffix("…"))
+        #expect(out.hasPrefix("ab cd ab cd"))
+    }
+
+    @Test func truncationTrimsTrailingWhitespace() {
+        #expect(Notice.sanitize("abc defgh", limit: 5) == "abc…")
+    }
+
+    @Test func emptyAfterSanitizeIsIgnored() {
+        var q = NoticeQueue()
+        q.post(notice("\u{200B}\n\u{202E}"), now: 0)
+        #expect(q.count == 0)
+    }
+
+    @Test func sameKeyDifferentScopeKeepsBoth() {
+        let a = UUID(), b = UUID()
+        var q = NoticeQueue()
+        q.post(notice("x", scope: .host(a), key: "k"), now: 0)
+        q.post(notice("x", scope: .host(b), key: "k"), now: 0)
+        #expect(q.count == 2)
+        #expect(q.allNotices.allSatisfy { $0.count == 1 })
+    }
+
+    @Test func replaceKeepsId() {
+        var q = NoticeQueue()
+        let first = notice("one", key: "k")
+        q.post(first, now: 0)
+        q.post(notice("two", key: "k"), now: 1)
+        #expect(q.visible.map(\.id) == [first.id])
+    }
+
+    @Test func reconcileDoesNotResurrectExpired() {
+        var q = NoticeQueue()
+        let a = notice("a", source: .agent, key: "a")
+        q.reconcile(source: .agent, with: [a], now: 0)
+        q.expire(now: 5000)
+        #expect(q.visible.isEmpty)
+        q.reconcile(source: .agent, with: [a], now: 6000)
+        #expect(q.visible.isEmpty)
+    }
+
+    @Test func reconcileBypassesKeyDedupe() {
+        var q = NoticeQueue()
+        let a = notice("same", source: .agent, key: "k"), b = notice("same", source: .tmux, key: "k")
+        q.post(b, now: 0)
+        q.reconcile(source: .agent, with: [a], now: 0)
+        #expect(q.count == 2)
+        q.reconcile(source: .agent, with: [a], now: 1)
+        q.reconcile(source: .agent, with: [a], now: 2)
+        #expect(q.allNotices.allSatisfy { $0.count == 1 })
+        #expect(q.count == 2)
+    }
+
+    @Test func dismissedStaysDismissedAfterRepeatedReconciles() {
+        var q = NoticeQueue()
+        let a = notice("a", source: .agent, key: "a"), b = notice("b", source: .agent, key: "b")
+        q.reconcile(source: .agent, with: [a, b], now: 0)
+        _ = q.dismiss(id: a.id, now: 1)
+        for t in 2..<5 { q.reconcile(source: .agent, with: [a, b], now: UInt64(t)) }
+        #expect(q.visible.map(\.text) == ["b"])
+    }
+
+    @Test func settledMemoryIsBounded() {
+        var q = NoticeQueue()
+        let all = (0..<70).map { notice("n\($0)", source: .agent, key: "k\($0)") }
+        for n in all { q.post(n, now: 0); _ = q.dismiss(id: n.id, now: 0) }
+        #expect(q.settledCount == 64)
+        q.reconcile(source: .agent, with: [all[0]], now: 0)
+        #expect(q.count == 1)
+    }
+
+    @Test func overflowingDeadlineNeverExpiresEarly() {
+        var q = NoticeQueue()
+        q.post(notice("x", lifetime: .autoAfter(ms: .max)), now: 1000)
+        #expect(q.nextDeadline == .max)
+        q.expire(now: 1_000_000_000)
+        #expect(q.count == 1)
+    }
+
+    @Test func stickySurvivesCapacityPressure() {
+        var q = NoticeQueue()
+        q.post(notice("sticky", severity: .info, lifetime: .sticky), now: 0)
+        for i in 0..<20 { q.post(notice("w\(i)", severity: .warning, scope: .host(UUID())), now: 0) }
+        #expect(q.count == 20)
+        #expect(q.allNotices.contains { $0.text == "sticky" })
+    }
+}
+
+@MainActor
+@Suite("NoticeCenter review cases")
+struct NoticeCenterReviewTests {
+    private func make(_ clock: FakeClock) -> NoticeCenter {
+        NoticeCenter(now: { clock.now }, sleep: { try await clock.sleep($0) })
+    }
+
+    @Test func retractCancelsTimer() async {
+        let clock = FakeClock()
+        let center = make(clock)
+        center.post(notice("hi", key: "k"))
+        #expect(await waitUntil { clock.sleeping == 1 })
+        center.retract(key: "k")
+        #expect(await waitUntil { clock.sleeping == 0 })
+    }
+
+    @Test func removeAllCancelsTimer() async {
+        let clock = FakeClock()
+        let center = make(clock)
+        let host = UUID()
+        center.setFocus(.host(host))
+        center.post(notice("hi", scope: .host(host)))
+        #expect(await waitUntil { clock.sleeping == 1 })
+        center.removeAll(scope: .host(host))
+        #expect(await waitUntil { clock.sleeping == 0 })
+    }
+
+    @Test func earlierDeadlineRearms() async {
+        let clock = FakeClock()
+        let center = make(clock)
+        center.post(notice("e", severity: .error))
+        #expect(await waitUntil { clock.requested == [10000] })
+        center.post(notice("i", severity: .info))
+        #expect(await waitUntil { clock.requested == [10000, 5000] })
+        #expect(await waitUntil { clock.sleeping == 1 })
+    }
+
+    @Test func longDelayIsClampedAndRearmed() async {
+        let clock = FakeClock()
+        let center = make(clock)
+        let day: UInt64 = 86_400_000
+        center.post(notice("long", lifetime: .autoAfter(ms: 3 * day)))
+        #expect(await waitUntil { clock.requested == [day] })
+        clock.advance(day)
+        #expect(await waitUntil { clock.requested == [day, day] })
+        #expect(center.queue.visible.count == 1)
+    }
+
+    @Test func staleTimerDoesNotFire() async {
+        let gate = Gate()
+        let time = Locked<UInt64>(0)
+        let center = NoticeCenter(now: { time.get }, sleep: { _ in await gate.wait() })
+        center.post(notice("a"))
+        #expect(await waitUntil { gate.waiting == 1 })
+        center.post(notice("b", severity: .error))
+        #expect(await waitUntil { gate.waiting == 2 })
+        time.with { $0 = 6000 }
+        gate.releaseFirst()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(center.queue.visible.count == 2)
+    }
+}
