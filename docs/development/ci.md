@@ -50,18 +50,20 @@ shipped or used by the app.
 
 ### `apple-app` (macos-latest)
 
-1. Rust with the Apple targets and XcodeGen.
-2. The bundled `shuai-agent` Linux binaries come from a cache keyed on `core/` sources and
+1. Right after checkout, boot the newest available iPad simulator in the background (its UDID goes
+   to `SIM_UDID`), so the cold boot overlaps the build steps below.
+2. Rust with the Apple targets and XcodeGen.
+3. The bundled `shuai-agent` Linux binaries come from a cache keyed on `core/` sources and
    `scripts/build-agent.sh`; on a miss, zig and cargo-zigbuild build both targets with
    `scripts/build-agent.sh`.
-3. `scripts/test-check-no-testkit.sh` and `scripts/test-check-app-icon.sh` (self-tests of the
+4. `scripts/test-check-no-testkit.sh` and `scripts/test-check-app-icon.sh` (self-tests of the
    release guards).
-4. **Normal pass**: `scripts/build-xcframework.sh`, `scripts/check-no-testkit.sh` (explicitly),
+5. **Normal pass**: `scripts/build-xcframework.sh`, `scripts/check-no-testkit.sh` (explicitly),
    `swift test`.
-5. `xcodegen generate`, then `SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai` on the newest
-   available iPad simulator (app unit tests and UI tests with DEBUG fixtures), with a derived data
-   path under `$RUNNER_TEMP`.
-6. `scripts/check-app-icon.sh` on the built `Shuai.app`: the compiled asset catalog must contain the
+6. `xcodegen generate`, wait for the simulator (`simctl bootstatus -b`), then
+   `SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai` on it (app unit tests and UI tests with
+   DEBUG fixtures), with a derived data path under `$RUNNER_TEMP`.
+7. `scripts/check-app-icon.sh` on the built `Shuai.app`: the compiled asset catalog must contain the
    default, dark and tinted AppIcon renditions.
 
 The app is always tested against the normal (non-testkit) xcframework, the one that could ship.

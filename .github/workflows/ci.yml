@@ -112,6 +112,18 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+      # Boot the simulator now so the cold boot overlaps the Rust, xcframework and swift test steps.
+      - name: Boot iPad simulator
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          c=[x for rt,v in sorted(d.items()) if "iOS" in rt for x in v if "iPad" in x["name"]]
+          print(c[-1]["udid"] if c else "")')
+          if [ -z "$UDID" ]; then echo "no iPad simulator available"; exit 1; fi
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || echo "simulator already booted"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
@@ -154,13 +166,8 @@ jobs:
         working-directory: apple/App
         run: |
           set -euo pipefail
-          UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import json,sys
-          d=json.load(sys.stdin)["devices"]
-          c=[x for rt,v in sorted(d.items()) if "iOS" in rt for x in v if "iPad" in x["name"]]
-          print(c[-1]["udid"] if c else "")')
-          if [ -z "$UDID" ]; then echo "no iPad simulator available"; exit 1; fi
-          SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$RUNNER_TEMP/DerivedData"
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          SHUAI_REQUIRE_AGENT=1 xcodebuild test -scheme Shuai -destination "id=$SIM_UDID" -derivedDataPath "$RUNNER_TEMP/DerivedData"
       - name: Guard - AppIcon has default, dark and tinted renditions
         run: scripts/check-app-icon.sh "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/Shuai.app"
 
