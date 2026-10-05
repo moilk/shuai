@@ -18,8 +18,9 @@ tmux errors, remote stderr).
   sleep that owns the single expiry timer. Views own no timers.
 - Notice text is sanitized and length-capped in `Notice.init` (control characters and bidi
   overrides removed, whitespace collapsed) and rendered with `Text(verbatim:)`.
-- `AttentionBannerQueue` remains a domain source of agent attention; it is mapped into the center
-  with `reconcile(source:with:)` instead of being rendered directly.
+- `AttentionBannerQueue` remains a domain source of agent attention; the center's
+  `reconcile(source:with:)` is the contract for mapping such a source into notices instead of
+  rendering it directly.
 - Rules are specified in [interaction](../design/interaction.md#notices).
 
 ## Alternatives considered
