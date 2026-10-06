@@ -67,6 +67,68 @@ struct NtfyServerTests {
         }
     }
 
+    @Test(arguments: ["https://tk%40ntfy.example", "https://user%3Apass%40ntfy.example"])
+    func percentEncodedUserinfoIsRejected(_ text: String) {
+        guard case .invalid = NtfyServer.validate(text) else {
+            Issue.record("accepted \(text)")
+            return
+        }
+    }
+
+    @Test(arguments: ["https://user@ntfy.example", "https://user:pw@ntfy.example", "http://:pw@ntfy.example"])
+    func plainUserinfoStillRejected(_ text: String) {
+        #expect(NtfyServer.validate(text) == .invalid(.hasCredentials))
+    }
+
+    @Test(arguments: [
+        "https://ntfy.example%2Fx", "https://ntfy.example%3Fx=1", "https://ntfy.example%23frag",
+        "https://ntfy%2F.example", "https://ntfy.example%20x", "https://ntfy.example%0Ax", "https://ntfy.example%25",
+    ])
+    func hostWithEncodedSlashOrQuestionIsRejected(_ text: String) {
+        guard case .invalid = NtfyServer.validate(text) else {
+            Issue.record("accepted \(text)")
+            return
+        }
+    }
+
+    @Test(arguments: [
+        "https://ntfy.sh", "https://ntfy.example:8443/prefix", "http://10.0.0.5:8080", "https://[2001:db8::1]:8443",
+        "https://[::1]", "https://ntfy.example/a/b/",
+    ])
+    func roundTripNeverContainsUserinfo(_ text: String) {
+        guard let url = NtfyServer.validate(text).url else {
+            Issue.record("rejected \(text)")
+            return
+        }
+        #expect(url.user == nil)
+        #expect(url.password == nil)
+        #expect(!url.absoluteString.contains("@"))
+    }
+
+    @Test func ipv6LiteralAccepted() {
+        #expect(NtfyServer.validate("https://[::1]") == .valid(URL(string: "https://[::1]")!))
+        #expect(NtfyServer.validate("https://[2001:db8::1]") == .valid(URL(string: "https://[2001:db8::1]")!))
+    }
+
+    @Test func ipv6LiteralWithPortAccepted() {
+        #expect(NtfyServer.validate("https://[2001:db8::1]:8443") == .valid(URL(string: "https://[2001:db8::1]:8443")!))
+        #expect(NtfyServer.validate("http://[::1]:8080/p/") == .insecure(URL(string: "http://[::1]:8080/p")!))
+    }
+
+    @Test(arguments: ["https://[::1", "https://::1", "https://[::1]x", "https://[zz::1]", "https://[]", "https://[::1]:99999"])
+    func malformedIPv6Rejected(_ text: String) {
+        guard case .invalid = NtfyServer.validate(text) else {
+            Issue.record("accepted \(text)")
+            return
+        }
+    }
+
+    @Test func existingValidServersUnchanged() {
+        #expect(NtfyServer.validate("https://ntfy.sh") == .valid(URL(string: "https://ntfy.sh")!))
+        #expect(NtfyServer.validate("https://ntfy.example:8443/prefix") == .valid(URL(string: "https://ntfy.example:8443/prefix")!))
+        #expect(NtfyServer.validate("http://10.0.0.5:8080") == .insecure(URL(string: "http://10.0.0.5:8080")!))
+    }
+
     @Test func appLinkUsesHostAndTopic() {
         let https = URL(string: "https://ntfy.sh")!
         #expect(NtfyServer.appLink(server: https, topic: "shuai-abc")?.absoluteString == "ntfy://ntfy.sh/shuai-abc")
