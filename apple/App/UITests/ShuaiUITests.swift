@@ -284,24 +284,68 @@ final class ShuaiUITests: XCTestCase {
     }
 
     @MainActor
+    private func openPushSettings(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Background push (ntfy)"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testNotificationSettingsShowTopicAndTestButton() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Background push (ntfy)"].waitForExistence(timeout: 5))
         // top to bottom, so scrolling for the next target never passes an earlier one
-        scrollSheet(app, until: app.textFields["push-server-field"])
-        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
         let topic = app.staticTexts["push-topic"]
         scrollSheet(app, until: topic)
-        // the row's label is "Topic, <topic>" (LabeledContent)
-        let value = topic.label.components(separatedBy: ", ").last ?? ""
-        XCTAssertNotNil(value.wholeMatch(of: /shuai-[a-z2-7]{26}/), topic.label)
+        // masked by default: the label never matches the full topic
+        XCTAssertNil(topic.label.firstMatch(of: /shuai-[a-z2-7]{26}/), "topic must be masked: \(topic.label)")
+        let reveal = app.buttons["push-topic-reveal"]
+        XCTAssertTrue(reveal.isHittable)
+        reveal.tap()
+        let revealed = app.staticTexts["push-topic"]
+        XCTAssertNotNil(revealed.label.firstMatch(of: /shuai-[a-z2-7]{26}/), revealed.label)
+        scrollSheet(app, until: app.textFields["push-server-field"])
+        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
         scrollSheet(app, until: app.buttons["push-send-test"])
         XCTAssertTrue(app.buttons["push-send-test"].exists)
         scrollSheet(app, until: app.buttons["push-open-ntfy"])
         XCTAssertTrue(app.buttons["push-open-ntfy"].exists)
+    }
+
+    @MainActor
+    func testCopyTopicStillWorks() throws {
+        let app = launchWithTmuxFixture()
+        openPushSettings(app)
+        let copy = app.buttons["push-copy-topic"]
+        scrollSheet(app, until: copy)
+        XCTAssertEqual(copy.label, "Copy topic")
+        copy.tap()
+        XCTAssertEqual(app.buttons["push-copy-topic"].label, "Copied")
+    }
+
+    @MainActor
+    func testSettingsFirstPageShowsPushSummaryWithoutTheTopic() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        XCTAssertTrue(link.label.contains("Background push"), link.label)
+        XCTAssertFalse(link.label.contains("shuai-"), link.label)
+        XCTAssertFalse(String(describing: link.value ?? "").contains("shuai-"))
+        XCTAssertFalse(app.staticTexts["push-topic"].exists, "the topic row lives on the push page only")
     }
 
     // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
