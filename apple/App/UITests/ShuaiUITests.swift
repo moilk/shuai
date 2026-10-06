@@ -333,10 +333,10 @@ final class ShuaiUITests: XCTestCase {
     // MARK: connection states (fixed presentation, no server)
 
     @MainActor
-    private func launchWithConnectionState(_ state: String) -> XCUIApplication {
+    private func launchWithConnectionState(_ state: String, extraArguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting", "-debugTmuxFixture", "-debugConnectionState", state]
+        app.launchArguments = ["-uiTesting", "-debugTmuxFixture", "-debugConnectionState", state] + extraArguments
         app.launch()
         return app
     }
@@ -352,6 +352,44 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(app.buttons["retry-now"].frame.height, 44, "tap target height")
         XCTAssertGreaterThanOrEqual(app.buttons["cancel-reconnect"].frame.height, 44, "tap target height")
         XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable, "no scrim over the terminal")
+    }
+
+    @MainActor
+    func testNoticeDismissIsAtLeast44pt() throws {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugNoticeTimeScale", "10"])
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.open(URL(string: "shuai://open?host=00000000-0000-4000-8000-000000000000&pane=%250")!)
+        let dismiss = app.buttons["notice-dismiss"].firstMatch
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 10))
+        XCTAssertTrue(dismiss.isHittable)
+        XCTAssertGreaterThanOrEqual(dismiss.frame.width, 44, "tap target width")
+        XCTAssertGreaterThanOrEqual(dismiss.frame.height, 44, "tap target height")
+    }
+
+    @MainActor
+    func testConnectionStripPassesTheAccessibilityAudit() throws {
+        let app = launchWithConnectionState("reconnecting")
+        XCTAssertTrue(app.descendants(matching: .any)["reconnect-overlay"].waitForExistence(timeout: 10))
+        let strip = app.descendants(matching: .any)["reconnect-overlay"].frame.insetBy(dx: -1, dy: -1)
+        try app.performAccessibilityAudit(for: [.dynamicType, .hitRegion, .sufficientElementDescription]) { issue in
+            // Only this strip is audited here. Other screens (host list, accessory bar, terminal
+            // surface) have their own owners; an issue outside the strip is not a failure.
+            guard let frame = issue.element?.frame else { return true }
+            return !strip.contains(frame)
+        }
+    }
+
+    @MainActor
+    func testConnectionStripActionsStayTappableAtAccessibilityTextSize() throws {
+        let app = launchWithConnectionState(
+            "reconnecting",
+            extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        XCTAssertTrue(app.descendants(matching: .any)["reconnect-overlay"].waitForExistence(timeout: 10))
+        let retry = app.buttons["retry-now"], cancel = app.buttons["cancel-reconnect"]
+        XCTAssertTrue(retry.isHittable)
+        XCTAssertTrue(cancel.isHittable)
+        XCTAssertFalse(retry.frame.intersects(cancel.frame), "buttons never overlap")
+        XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
     }
 
     @MainActor
