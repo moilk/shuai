@@ -326,6 +326,8 @@ private struct SidebarSessionRow: View {
                     identifier: "tmux-session-toggle-\(row.name)", action: toggle)
             }
         }
+        // A secondary tint, not a second selection: hosts keep the list's system highlight.
+        .listRowBackground(viewed ? Color.accentColor.opacity(0.12) : nil)
     }
 }
 
@@ -341,10 +343,10 @@ private struct SidebarWindowRow: View {
             model.runTmux(host: row.host) { try await $0.selectWindow(window.id) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "macwindow").foregroundStyle(window.active ? Color.accentColor : .secondary)
+                Image(systemName: "macwindow").foregroundStyle(row.isCurrent ? Color.accentColor : .secondary)
                 Text(window.title)
                     .font(.subheadline)
-                    .fontWeight(window.active ? .semibold : .regular)
+                    .fontWeight(row.isCurrent ? .semibold : .regular)
                     .lineLimit(1)
                 if window.zoomed {
                     Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2).foregroundStyle(.secondary)
@@ -359,7 +361,7 @@ private struct SidebarWindowRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel(row.accessibilityLabel)
         .accessibilityValue(row.accessibilityValue)
-        .accessibilityAddTraits(window.active ? .isSelected : [])
+        .accessibilityAddTraits(row.isCurrent ? .isSelected : [])
         .accessibilityIdentifier("tmux-window-\(window.id)")
         .contextMenu { TmuxWindowMenu(host: row.host, sessionID: sessionID, window: window, rename: rename) }
     }
@@ -375,10 +377,10 @@ private struct SidebarPaneRow: View {
             model.runTmux(host: row.host) { try await $0.selectPane(pane.id) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: pane.active ? "circle.fill" : "circle")
+                Image(systemName: row.isCurrent ? "circle.fill" : "circle")
                     .font(.caption2)
                     .imageScale(.small)
-                    .foregroundStyle(pane.active ? Color.accentColor : .secondary)
+                    .foregroundStyle(row.isCurrent ? Color.accentColor : .secondary)
                     .accessibilityHidden(true)
                 Text(pane.title).font(.caption).lineLimit(1)
                 Spacer()
@@ -388,7 +390,7 @@ private struct SidebarPaneRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel(row.accessibilityLabel)
         .accessibilityValue(row.accessibilityValue)
-        .accessibilityAddTraits(pane.active ? .isSelected : [])
+        .accessibilityAddTraits(row.isCurrent ? .isSelected : [])
         .accessibilityIdentifier("tmux-pane-\(pane.id)")
         .contextMenu { TmuxPaneMenu(host: row.host, paneID: pane.id) }
     }
