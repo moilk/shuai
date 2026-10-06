@@ -164,3 +164,12 @@ Keys is not a second sheet. Inside the host editor ("Open Keys", `editor-open-ke
 ("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
 with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
 request (toolbar, the connection card's Open keys) presents Keys as its own sheet with Done.
+
+## Accessory bar accessibility
+
+Each accessory key is spoken with a worded label from `AccessoryButton.spokenLabel` ("Escape",
+"Up arrow", "Vertical bar", "Claude: Yes", "Interrupt, Escape"), so no label is a bare symbol and
+the Claude strip's Esc differs from the standard one. Identifiers are `accessory-<key>` (Claude
+strip `accessory-claude-<key>`). Ctrl and Alt expose their state as the accessibility value (Off,
+On for the next key, Locked) and carry the selected trait when armed; a one-shot modifier also gets
+a 2 pt border besides its fill, and a locked one the lock glyph, so state never relies on colour.

@@ -6,6 +6,15 @@ public enum StickyState: Sendable, Equatable {
     case oneShot
     /// Stays on until tapped again (double tap on the button).
     case locked
+
+    /// Spoken state of a modifier button.
+    public var accessibilityValue: String {
+        switch self {
+        case .off: "Off"
+        case .oneShot: "On for the next key"
+        case .locked: "Locked"
+        }
+    }
 }
 
 public enum AccessoryButton: Sendable, Hashable {
@@ -53,6 +62,70 @@ public enum AccessoryButton: Sendable, Hashable {
         case .claudeInterrupt: "Esc"
         case .claudeCtrlC: "^C"
         case .claudeSlash: "/"
+        }
+    }
+
+    /// Worded, unique label for VoiceOver; never a bare symbol.
+    public var spokenLabel: String {
+        switch self {
+        case .esc: "Escape"
+        case .tab: "Tab"
+        case .ctrl: "Control"
+        case .alt: "Alt"
+        case .up: "Up arrow"
+        case .down: "Down arrow"
+        case .left: "Left arrow"
+        case .right: "Right arrow"
+        case let .symbol(c): Self.symbolName(c) ?? "Key \(c)"
+        case .claudeYes: "Claude: Yes"
+        case .claudeAlways: "Claude: Always"
+        case .claudeNo: "Claude: No"
+        case .claudeModeCycle: "Cycle mode, Shift Tab"
+        case .claudeInterrupt: "Interrupt, Escape"
+        case .claudeCtrlC: "Control C"
+        case .claudeSlash: "Slash command"
+        }
+    }
+
+    /// Stable, unique identifier for UI tests and automation.
+    public var accessibilityIdentifier: String {
+        switch self {
+        case .esc: "accessory-esc"
+        case .tab: "accessory-tab"
+        case .ctrl: "accessory-ctrl"
+        case .alt: "accessory-alt"
+        case .up: "accessory-up"
+        case .down: "accessory-down"
+        case .left: "accessory-left"
+        case .right: "accessory-right"
+        case let .symbol(c): "accessory-symbol-" + (Self.symbolSlug(c) ?? "u\(c.unicodeScalars.first?.value ?? 0)")
+        case .claudeYes: "accessory-claude-yes"
+        case .claudeAlways: "accessory-claude-always"
+        case .claudeNo: "accessory-claude-no"
+        case .claudeModeCycle: "accessory-claude-mode-cycle"
+        case .claudeInterrupt: "accessory-claude-interrupt"
+        case .claudeCtrlC: "accessory-claude-ctrl-c"
+        case .claudeSlash: "accessory-claude-slash"
+        }
+    }
+
+    private static func symbolName(_ c: Character) -> String? {
+        switch c {
+        case "/": "Slash"
+        case "|": "Vertical bar"
+        case "~": "Tilde"
+        case "-": "Hyphen"
+        default: nil
+        }
+    }
+
+    private static func symbolSlug(_ c: Character) -> String? {
+        switch c {
+        case "/": "slash"
+        case "|": "pipe"
+        case "~": "tilde"
+        case "-": "hyphen"
+        default: nil
         }
     }
 }
