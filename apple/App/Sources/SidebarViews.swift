@@ -7,14 +7,8 @@ struct HostListView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var pendingDelete: HostProfile?
-    @State private var renaming: Renaming?
+    @State private var renaming: WindowRenaming?
     @State private var newName = ""
-
-    struct Renaming: Identifiable {
-        let host: UUID
-        let windowID: String
-        var id: String { windowID }
-    }
 
     /// A model row with the session it sits under (window menus act on that session).
     private struct Entry: Identifiable {
@@ -68,17 +62,7 @@ struct HostListView: View {
         } message: {
             Text("The saved password (if any) is removed too. tmux sessions on the server keep running.")
         }
-        .alert("Rename Window", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Name", text: $newName).accessibilityIdentifier("rename-window-field")
-            Button("Rename") {
-                if let r = renaming {
-                    let name = newName
-                    model.runTmux(host: r.host) { try await $0.renameWindow(r.windowID, to: name) }
-                }
-                renaming = nil
-            }
-            Button("Cancel", role: .cancel) { renaming = nil }
-        }
+        .windowRenameAlert(renaming: $renaming, newName: $newName)
     }
 
     private var newHostButton: some View {
@@ -152,7 +136,7 @@ struct HostListView: View {
         case .window(let w):
             SidebarWindowRow(row: w, sessionID: entry.sessionID ?? "") {
                 newName = w.row.name
-                renaming = Renaming(host: w.host, windowID: w.row.id)
+                renaming = WindowRenaming(host: w.host, windowID: w.row.id)
             }
             .sidebarIndent(depth: entry.row.depth)
         case .pane(let p):

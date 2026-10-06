@@ -121,47 +121,133 @@ extension AppModel {
     }
 }
 
-/// Compact horizontal window strip above the terminal (shown while the sidebar is collapsed).
+/// A pending window rename (the alert's target).
+struct WindowRenaming: Identifiable {
+    let host: UUID
+    let windowID: String
+    var id: String { windowID }
+}
+
+extension View {
+    /// The "Rename Window" alert shared by sidebar rows and window tabs; the owner sets `renaming`
+    /// and `newName` (the current name) from the menu's rename action.
+    func windowRenameAlert(renaming: Binding<WindowRenaming?>, newName: Binding<String>) -> some View {
+        modifier(WindowRenameAlert(renaming: renaming, newName: newName))
+    }
+}
+
+private struct WindowRenameAlert: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Binding var renaming: WindowRenaming?
+    @Binding var newName: String
+
+    func body(content: Content) -> some View {
+        content.alert("Rename Window", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName).accessibilityIdentifier("rename-window-field")
+            Button("Rename") {
+                if let r = renaming {
+                    let name = newName
+                    model.runTmux(host: r.host) { try await $0.renameWindow(r.windowID, to: name) }
+                }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+    }
+}
+
+/// Window strip above the terminal (shown while the sidebar is collapsed): a session menu, one tab
+/// per window of the viewed session and a new-window button. Targets are at least 44 pt and the
+/// strip grows with Dynamic Type.
 struct WindowTabStrip: View {
     @Environment(AppModel.self) private var model
     let host: HostProfile
     let controller: SessionController
+    @State private var renaming: WindowRenaming?
+    @State private var newName = ""
+    @ScaledMetric(relativeTo: .body) private var minTarget: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var hPadding: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var spacing: CGFloat = 4
 
     var body: some View {
         let actions = controller.tmuxActions
-        if let session = actions.viewedSession {
-            let rows = TmuxTree.windowRows(of: session, host: host.id, badges: model.badges)
+        if let topology = controller.tmux.topology, let session = actions.viewedSession {
+            let strip = TabStripModel(topology: topology, viewedSessionID: session.id, host: host.id, badges: model.badges)
             HStack(spacing: 0) {
+                sessionMenu(strip)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(rows) { w in
-                            Button { Task { await actions.run { try await actions.selectWindow(w.id) } } } label: {
-                                HStack(spacing: 4) {
-                                    Text(w.title).lineLimit(1)
-                                    if w.zoomed { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2) }
-                                    BadgeView(badge: w.badge)
-                                }
-                                .font(.footnote.weight(w.active ? .semibold : .regular))
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(w.active ? Color.accentColor.opacity(0.25) : Color.clear, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("window-tab-\(w.id)")
-                            .accessibilityValue(w.active ? "active" : "")
-                        }
+                    HStack(spacing: spacing) {
+                        ForEach(strip.tabs) { tab in tabButton(tab, actions: actions, sessionID: session.id) }
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, spacing * 2)
                 }
-                Button { Task { await actions.run { try await actions.newWindow() } } } label: { Image(systemName: "plus") }
-                    .padding(.horizontal, 10)
-                    .accessibilityLabel("New Window")
-                    .accessibilityIdentifier("window-tab-new")
+                Button { Task { await actions.run { try await actions.newWindow() } } } label: {
+                    Image(systemName: "plus")
+                        .frame(minWidth: minTarget, minHeight: minTarget)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("New Window")
+                .accessibilityIdentifier("window-tab-new")
             }
-            .frame(height: 34)
             .background(.bar)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("window-tab-strip")
+            .windowRenameAlert(renaming: $renaming, newName: $newName)
         }
+    }
+
+    private func sessionMenu(_ strip: TabStripModel) -> some View {
+        Menu {
+            ForEach(strip.sessions) { entry in
+                Button {
+                    model.runTmux(host: host.id) { try await $0.switchSession(entry.id) }
+                } label: {
+                    if entry.isViewed {
+                        Label(entry.name, systemImage: "checkmark")
+                    } else {
+                        Text(verbatim: entry.name)
+                    }
+                }
+            }
+            Divider()
+            if let id = strip.viewedSessionID {
+                Button("New Window", systemImage: "plus.rectangle") {
+                    model.runTmux(host: host.id) { try await $0.newWindow(inSession: id) }
+                }
+            }
+        } label: {
+            Image(systemName: "rectangle.stack")
+                .frame(minWidth: minTarget, minHeight: minTarget)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Session: \(strip.viewedSessionName ?? "")")
+        .accessibilityIdentifier("window-tab-session-menu")
+    }
+
+    private func tabButton(_ tab: TabStripModel.Tab, actions: TmuxActions, sessionID: String) -> some View {
+        let w = tab.row
+        return Button { Task { await actions.run { try await actions.selectWindow(w.id) } } } label: {
+            HStack(spacing: spacing) {
+                Text(w.title).lineLimit(1)
+                if w.zoomed { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2) }
+                BadgeView(badge: w.badge)
+            }
+            .font(.subheadline.weight(w.active ? .semibold : .regular))
+            .padding(.horizontal, hPadding)
+            .frame(minHeight: minTarget)
+            .background(w.active ? Color.accentColor.opacity(0.25) : Color.clear, in: Capsule())
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            TmuxWindowMenu(host: host.id, sessionID: sessionID, window: w) {
+                newName = w.name
+                renaming = WindowRenaming(host: host.id, windowID: w.id)
+            }
+        }
+        .accessibilityLabel(tab.label)
+        .accessibilityIdentifier("window-tab-\(w.id)")
+        .accessibilityValue(tab.value)
     }
 }
 
