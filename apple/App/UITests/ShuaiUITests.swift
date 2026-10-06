@@ -39,6 +39,56 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["alice@example.invalid"].exists)
     }
 
+    @MainActor
+    func testCancelWithChangesAsksToDiscard() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+
+        let name = app.textFields["host-name-field"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("unsaved-host")
+
+        app.buttons["Cancel"].tap()
+        let keep = app.buttons["keep-editing"]
+        XCTAssertTrue(app.buttons["discard-changes"].waitForExistence(timeout: 5), "unsaved input asks before closing")
+        XCTAssertTrue(keep.exists)
+        keep.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "Keep Editing leaves the sheet open")
+        XCTAssertEqual(name.value as? String, "unsaved-host")
+
+        app.buttons["Cancel"].tap()
+        let discard = app.buttons["discard-changes"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 5))
+        discard.tap()
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 5), "Discard Changes closes the editor")
+        XCTAssertFalse(app.staticTexts["unsaved-host"].exists)
+    }
+
+    @MainActor
+    func testSaveWithErrorsFocusesTheFirstInvalidField() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+
+        let save = app.buttons["save-host-button"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+        XCTAssertTrue(app.staticTexts["Enter a name."].waitForExistence(timeout: 3))
+        let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
+        let focused = expectation(for: hasFocus, evaluatedWith: app.textFields["host-name-field"])
+        wait(for: [focused], timeout: 5)
+    }
+
     // MARK: tmux (fixture topology, no server)
 
     @MainActor
