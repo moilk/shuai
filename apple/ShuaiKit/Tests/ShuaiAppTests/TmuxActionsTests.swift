@@ -120,6 +120,23 @@ import Testing
         await monitor.stop()
     }
 
+    @Test func newWindowInSessionTargetsThatSession() async throws {
+        let (server, monitor, actions) = await rig()
+        try await actions.newWindow(inSession: "$1")
+        #expect(sent(server) == [tmuxNewWindow(session: "work", cwd: "/srv/w", name: nil).controlLine])
+        await monitor.stop()
+    }
+
+    @Test func newWindowInSessionRejectsMalformedID() async throws {
+        let (server, monitor, actions) = await rig()
+        for bad in ["work", "$", "$x", "@1", "$1; kill-server", "", "$-1"] {
+            await #expect(throws: TmuxError.invalidTarget(bad)) { try await actions.newWindow(inSession: bad) }
+        }
+        await #expect(throws: TmuxError.invalidTarget("$99")) { try await actions.newWindow(inSession: "$99") }
+        #expect(sent(server).isEmpty)
+        await monitor.stop()
+    }
+
     @Test func splitUsesTheActivePaneAndDirection() async throws {
         let (server, monitor, actions) = await rig()
         try await actions.split(horizontal: true)
