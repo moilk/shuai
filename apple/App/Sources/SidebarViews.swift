@@ -5,6 +5,7 @@ import SwiftUI
 /// the only selectable rows; tmux rows are buttons that act on tmux.
 struct HostListView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var pendingDelete: HostProfile?
     @State private var renaming: Renaming?
     @State private var newName = ""
@@ -41,23 +42,19 @@ struct HostListView: View {
         }
         .navigationTitle("shuai")
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { model.openQuickSwitcher() } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
                     .accessibilityIdentifier("quick-switcher-button")
-                Button { model.request(.newHost) } label: { Label("Add Host", systemImage: "plus") }
-                    .accessibilityIdentifier("add-host-button")
-                // Frequent actions stay visible; the library and settings live in More.
-                Menu {
-                    Button { model.request(.settings) } label: { Label("Settings…", systemImage: "gearshape") }
-                        .accessibilityIdentifier("settings-button")
-                    Button { model.request(.keys) } label: { Label("Keys…", systemImage: "key") }
-                        .accessibilityIdentifier("keys-button")
-                } label: {
-                    Label("More", systemImage: "ellipsis.circle")
-                }
-                .accessibilityIdentifier("more-menu")
-                .accessibilityLabel("More")
             }
+            // System bottom bar: New Host leads, Settings trails. Keys stays reachable through Settings,
+            // the app menu, the host editor and the connection card.
+            ToolbarItem(placement: .bottomBar) { newHostButton }
+            if #available(iOS 26, *) {
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+            } else {
+                ToolbarItem(placement: .bottomBar) { Spacer() }
+            }
+            ToolbarItem(placement: .bottomBar) { settingsButton }
         }
         .confirmationDialog(
             "Delete \(pendingDelete?.name ?? "host")?", isPresented: Binding(
@@ -82,6 +79,27 @@ struct HostListView: View {
             }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
+    }
+
+    private var newHostButton: some View {
+        Button { model.request(.newHost) } label: {
+            if typeSize.isAccessibilitySize {
+                Image(systemName: "plus")
+            } else {
+                // An explicit HStack: the bottom bar renders a `Label` icon-only.
+                HStack(spacing: 6) { Image(systemName: "plus"); Text("New Host") }
+            }
+        }
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityLabel(typeSize.isAccessibilitySize ? "Add Host" : "New Host")
+        .accessibilityIdentifier("add-host-button")
+    }
+
+    private var settingsButton: some View {
+        Button { model.request(.settings) } label: { Label("Settings", systemImage: "gearshape") }
+            .labelStyle(.iconOnly)
+            .accessibilityIdentifier("settings-button")
     }
 
     // MARK: rows
