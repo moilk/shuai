@@ -319,6 +319,45 @@ final class ShuaiUITests: XCTestCase {
         }
     }
 
+    /// Every accessory key is a 44 pt tap target (docked bar, default text size).
+    @MainActor
+    func testAccessoryBarKeysAreAtLeast44ptTall() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 12))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), "software keyboard is up")
+        for id in ["accessory-esc", "accessory-tab", "accessory-ctrl", "accessory-alt"] {
+            let key = app.buttons[id].firstMatch
+            XCTAssertTrue(key.waitForExistence(timeout: 10), "\(id) present")
+            XCTAssertGreaterThanOrEqual(key.frame.height, 44, "\(id) tap target height")
+        }
+    }
+
+    /// At an accessibility text size the docked bar grows and still leaves the first row visible.
+    @MainActor
+    func testAccessoryBarGrowsAtAccessibilityTextSize() throws {
+        func barHeight(_ extra: [String]) -> (CGFloat, Bool) {
+            let app = launchWithAgentFixture(extraArguments: extra)
+            let terminal = app.descendants(matching: .any)["terminal-view"].firstMatch
+            XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+            let esc = app.buttons["accessory-esc"].firstMatch
+            XCTAssertTrue(esc.waitForExistence(timeout: 10))
+            Thread.sleep(forTimeInterval: 2)
+            let top = app.buttons["accessory-esc"].firstMatch.frame.minY
+            let firstRow = CGRect(x: terminal.frame.minX, y: terminal.frame.minY, width: terminal.frame.width, height: 20)
+            let covered = ["accessory-esc", "accessory-ctrl", "accessory-alt", "accessory-tab"]
+                .contains { app.buttons[$0].firstMatch.frame.intersects(firstRow) }
+            let height = app.keyboards.firstMatch.frame.minY - top
+            app.terminate()
+            return (height, covered)
+        }
+        let (normal, normalCovered) = barHeight([])
+        let (large, largeCovered) = barHeight(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        XCTAssertFalse(normalCovered)
+        XCTAssertFalse(largeCovered, "the first terminal row stays uncovered at a large text size")
+        XCTAssertGreaterThan(large, normal, "the bar grows with the text size (\(normal) -> \(large))")
+    }
+
     @MainActor
     func testQuickSwitcherRanksTheWaitingSessionFirst() throws {
         let app = launchWithAgentFixture()
