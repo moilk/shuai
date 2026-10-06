@@ -179,3 +179,54 @@ struct AccessoryBarClaudeTests {
         #expect(m.bytes(for: .ctrl).isEmpty)
     }
 }
+
+@Suite("AccessoryBarModel: accessibility")
+struct AccessoryBarAccessibilityTests {
+    private static let all = AccessoryButton.standardRow + AccessoryButton.claudeStrip
+
+    @Test func spokenLabelsAreUniqueAndWorded() {
+        let labels = Self.all.map(\.spokenLabel)
+        #expect(Set(labels).count == labels.count)
+        #expect(AccessoryButton.esc.spokenLabel == "Escape")
+        #expect(AccessoryButton.up.spokenLabel == "Up arrow")
+        #expect(AccessoryButton.symbol("/").spokenLabel == "Slash")
+        #expect(AccessoryButton.symbol("|").spokenLabel == "Vertical bar")
+        #expect(AccessoryButton.symbol("~").spokenLabel == "Tilde")
+        #expect(AccessoryButton.symbol("-").spokenLabel == "Hyphen")
+        #expect(AccessoryButton.claudeYes.spokenLabel == "Claude: Yes")
+        #expect(AccessoryButton.claudeNo.spokenLabel == "Claude: No")
+        #expect(AccessoryButton.claudeModeCycle.spokenLabel == "Cycle mode, Shift Tab")
+    }
+
+    @Test func noSpokenLabelIsABareSymbol() {
+        for b in Self.all + [.symbol("!"), .symbol("\\")] {
+            let label = b.spokenLabel
+            #expect(label.count > 1, "\(label)")
+            #expect(label.contains { $0.isLetter }, "\(label)")
+        }
+    }
+
+    @Test func identifiersUniqueAndStable() {
+        let ids = Self.all.map(\.accessibilityIdentifier)
+        #expect(Set(ids).count == ids.count)
+        #expect(AccessoryButton.esc.accessibilityIdentifier == "accessory-esc")
+        #expect(AccessoryButton.tab.accessibilityIdentifier == "accessory-tab")
+        #expect(AccessoryButton.ctrl.accessibilityIdentifier == "accessory-ctrl")
+        #expect(AccessoryButton.alt.accessibilityIdentifier == "accessory-alt")
+        #expect(AccessoryButton.claudeInterrupt.accessibilityIdentifier == "accessory-claude-interrupt")
+        #expect(AccessoryButton.symbol("/").accessibilityIdentifier == "accessory-symbol-slash")
+        for id in ids { #expect(id.hasPrefix("accessory-")) }
+    }
+
+    @Test func modifierValueNamesTheState() {
+        #expect(StickyState.off.accessibilityValue == "Off")
+        #expect(StickyState.oneShot.accessibilityValue == "On for the next key")
+        #expect(StickyState.locked.accessibilityValue == "Locked")
+    }
+
+    @Test func claudeStripEscIsNotTheStandardEsc() {
+        #expect(AccessoryButton.claudeInterrupt.title == AccessoryButton.esc.title)
+        #expect(AccessoryButton.claudeInterrupt.spokenLabel != AccessoryButton.esc.spokenLabel)
+        #expect(AccessoryButton.claudeInterrupt.accessibilityIdentifier != AccessoryButton.esc.accessibilityIdentifier)
+    }
+}
