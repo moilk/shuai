@@ -147,8 +147,57 @@ switcher and the AI-integration sheet. Opening a sheet resigns the terminal firs
 Keys is not a second sheet. Inside the host editor ("Generate a key" while the library is empty, `editor-open-keys`) and Settings
 ("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
 with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
-request (toolbar, the connection card's Open keys) presents Keys as its own sheet with Done.
+request (More menu > Keys…, the connection card's Open keys) presents Keys as its own sheet with Done.
 
+
+
+## Sidebar
+
+`HostListView` renders `SidebarModel.rows` (pure, in `ShuaiApp/Sidebar/`): one `List(selection:)`
+of host, loading, session, window and pane rows. Only host rows are tagged for selection; tmux rows
+are plain buttons (the active one carries `.isSelected`). Indentation is `row.depth` times a
+`@ScaledMetric` step, capped at two levels at accessibility text sizes.
+
+- **Defaults.** Hosts and the viewed session are expanded, other sessions collapsed. Collapsing
+  never changes selection, and an agent needing attention never expands anything.
+- **Persistence.** `SidebarExpansionStore` keeps only the exceptions to the defaults, keyed by host
+  UUID and session name (never tmux `$N`/`@N`/`%N` ids, which are reused after a server restart), in
+  UserDefaults, capped at 256 entries. Deleting a host forgets its entries; launch prunes entries of
+  hosts that no longer exist. UI tests use an isolated suite per launch.
+- **Host row.** One element (`host-row-<name>`) holds status symbol, name and target, so its tap
+  and long-press area is at least 44 pt tall; its label comes from the model. Beside it: the host
+  aggregate badge (`host-aggregate-badge`, the most urgent pane badge, visible while collapsed), the
+  waiting count (hand symbol plus number) and a 44 x 44 chevron (`host-toggle-<name>`,
+  `tmux-session-toggle-<name>` for sessions) that is also exposed as an Expand/Collapse
+  accessibility action.
+- **Menus.** The host menu keeps Edit and Delete and groups the AI items in an "AI integration"
+  section; while the host is not connected they are disabled and say "Connect to this host first".
+  Session rows offer Switch to Session and New Window; window and pane menus live in the shared
+  `TmuxWindowMenu`/`TmuxPaneMenu`. New Window always targets the row's own session
+  (`TmuxActions.newWindow(inSession:)`, which accepts only a known `$N` id).
+- **Accessibility text.** Window rows keep the accessibility value `active`/empty; the richer text
+  (index, name, pane count, zoom, badge) is the label. The pane dot is decorative and hidden.
+
+## Toolbar and menus
+
+The sidebar toolbar has three items: Quick Switcher (`quick-switcher-button`), Add Host `+`
+(`add-host-button`) and a More menu (`ellipsis.circle`, `more-menu`, spoken as "More") holding
+Settings… (`settings-button`) and Keys… (`keys-button`). High-frequency actions stay visible; the key
+library and settings are rarely used and live in More, which keeps the bar at three targets. Both
+menu items go through `AppModel.request`, so they obey the modal rules above.
+
+The menu bar mirrors the same actions and the keyboard shortcuts for discoverability:
+
+- App menu: Settings… (⌘,) and Keys… (no chord). File: New Host (⌘N). Go: Quick Switcher, Next
+  Agent Needing Attention.
+- A **tmux** menu lists New Window, Close Window, Previous/Next Window, Split Right/Down, Zoom Pane
+  and Window 1-9 (`TmuxMenuState`, derived from `ShortcutMap`). Items call
+  `AppModel.handleShortcut` for the selected host and are disabled unless that host's tmux is live
+  or polling. The items carry no keyboard shortcut of their own: the terminal's priority key commands
+  own the chords and tmux commands are not idempotent, so a second delivery path could run an
+  action twice.
+- New Host, Settings…, Keys… and Quick Switcher are disabled while a modal that cannot be replaced
+  is open (`ModalRouter.canPresent`).
 ## Editor
 
 The host editor's logic is the pure `HostEditorDraft` (every field as text, no password),

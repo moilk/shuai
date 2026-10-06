@@ -37,7 +37,8 @@ keyboard**, using Pinyin - Simplified.
 
 - [ ] **B1 Shortcuts**: with the terminal focused, every chord in
   [Keyboard shortcuts](../user/keyboard-shortcuts.md) performs its action and the remote receives
-  nothing for it (check with `cat -v` on the server or `-debugByteTap`).
+  nothing for it (check with `cat -v` on the server or `-debugByteTap`). Each chord acts once (one
+  new window per ⌘T), and the menu bar's tmux menu items work and are disabled without a live tmux.
 - [ ] **B2 Option as Alt**: with "Option key sends Alt" on, Option+B / Option+F move by word in a
   readline shell and Option+letter works in vim; with it off (new session) Option types special
   characters.

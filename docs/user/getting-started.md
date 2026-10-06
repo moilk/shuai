@@ -4,7 +4,8 @@
 
 ## 1. Add a host
 
-Tap **+** in the sidebar toolbar (or press ⌘N, "New Host"). Enter a name, host or IP, port and
+Tap **+** in the sidebar toolbar (or press ⌘N, "New Host"). Settings is in the More (…) menu next to
+it, or ⌘,. Enter a name, host or IP, port and
 user name, then pick an authentication method:
 
 - **SSH key**: a key from the app's key library. With keys in the library a new host defaults to
@@ -23,7 +24,7 @@ down does nothing while there are unsaved changes.
 
 ## 2. Keys
 
-Open the key library with the key icon in the toolbar (or Settings > Keys, or Generate a key in the host editor; Back returns to where you were), then
+Open the key library from the toolbar's More (…) menu > **Keys…** (or Settings > Keys, or Generate a key in the host editor; Back returns to where you were), then
 **Add Key**:
 
 - **Generate ed25519 key** / **Generate ECDSA P-256 key**: created on the iPad.
