@@ -7,6 +7,9 @@ public struct AgentInstallSheet: View {
     @Bindable var model: AgentInstallModel
     public var hostName: String
     public var onClose: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var lineSpacing: CGFloat = 2
+    @ScaledMetric(relativeTo: .body) private var blockSpacing: CGFloat = 4
 
     public init(model: AgentInstallModel, hostName: String, onClose: @escaping () -> Void) {
         self.model = model
@@ -80,13 +83,19 @@ public struct AgentInstallSheet: View {
     }
 
     private func row(_ title: String, _ value: String) -> some View {
-        LabeledContent(title) { Text(value).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+        // Long values (paths) are shortened in the middle only while they fit beside the title;
+        // at accessibility sizes they wrap in full.
+        LabeledContent(title) {
+            Text(value).foregroundStyle(.secondary)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                .truncationMode(.middle)
+        }
     }
 
     private func planSection(title: String, _ steps: [(String, StepStatus, [String])]) -> some View {
         Section(title) {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, s in
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: lineSpacing) {
                     Text(s.0)
                     ForEach(Array(s.2.enumerated()), id: \.offset) { _, line in
                         Text(line).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
@@ -110,6 +119,7 @@ public struct AgentInstallSheet: View {
                             if case .failed(let m) = s.status { Text(m).font(.caption).foregroundStyle(.red) }
                         }
                     }
+                    .accessibilityElement(children: .combine)
                 }
             } else {
                 ForEach(Array(model.log.enumerated()), id: \.offset) { _, e in
@@ -117,12 +127,17 @@ public struct AgentInstallSheet: View {
                         icon(e.status)
                         Text(e.message ?? e.title).font(e.message == nil ? .body : .caption)
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
     }
 
-    @ViewBuilder private func icon(_ status: StepStatus) -> some View {
+    private func icon(_ status: StepStatus) -> some View {
+        statusSymbol(status).accessibilityLabel(status.accessibilityLabel)
+    }
+
+    @ViewBuilder private func statusSymbol(_ status: StepStatus) -> some View {
         switch status {
         case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed: Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
@@ -137,7 +152,7 @@ public struct AgentInstallSheet: View {
         if !r.conflicts.isEmpty {
             Section("Needs your decision") {
                 ForEach(r.conflicts, id: \.configPath) { c in
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: blockSpacing) {
                         Text("Codex already runs a notify program:")
                         Text(c.existing).font(.system(.caption, design: .monospaced))
                         Text("Replacing it keeps a backup (config.toml.shuai-bak).").font(.caption).foregroundStyle(.secondary)

@@ -19,13 +19,14 @@ extension SessionState.Status {
 private struct ConnectionActionButtons: View {
     let actions: [ConnectionPresentation.Action]
     let perform: (ConnectionPresentation.Action) -> Void
+    @ScaledMetric(relativeTo: .body) private var minTarget: CGFloat = 44
 
     var body: some View {
         ForEach(Array(actions.enumerated()), id: \.offset) { index, action in
             // The 44 pt minimum lives in the label, so the whole height is tappable.
             let button = Button { perform(action) } label: {
                 Text(action.title)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: minTarget)
                     .contentShape(Rectangle())
             }
             .accessibilityIdentifier(action.accessibilityIdentifier)
@@ -43,13 +44,16 @@ private struct ConnectionActionButtons: View {
 struct ConnectionCard: View {
     let presentation: ConnectionPresentation
     let perform: (ConnectionPresentation.Action) -> Void
+    @ScaledMetric(relativeTo: .body) private var cardPadding: CGFloat = 24
+    @ScaledMetric(relativeTo: .body) private var spacing: CGFloat = 12
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ZStack {
             if presentation.dimsTerminal {
                 Color.black.opacity(0.3).ignoresSafeArea()
             }
-            VStack(spacing: 12) {
+            VStack(spacing: spacing) {
                 if presentation.showsProgress {
                     ProgressView()
                 } else {
@@ -64,12 +68,13 @@ struct ConnectionCard: View {
                         .multilineTextAlignment(.center)
                 }
                 if !presentation.actions.isEmpty {
-                    HStack {
+                    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout()) : AnyLayout(HStackLayout())
+                    layout {
                         ConnectionActionButtons(actions: presentation.actions, perform: perform)
                     }
                 }
             }
-            .padding(24)
+            .padding(cardPadding)
             .frame(maxWidth: 480)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
             .padding()
@@ -84,24 +89,36 @@ struct ConnectionCard: View {
 struct ConnectionStrip: View {
     let presentation: ConnectionPresentation
     let perform: (ConnectionPresentation.Action) -> Void
+    @ScaledMetric(relativeTo: .body) private var hPadding: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var vPadding: CGFloat = 6
+    @ScaledMetric(relativeTo: .body) private var spacing: CGFloat = 10
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// At accessibility sizes the text takes the full width and the buttons stack below it, so
+    /// nothing overlaps or truncates.
+    private var stacked: Bool { typeSize.isAccessibilitySize }
 
     var body: some View {
-        HStack(spacing: 10) {
-            if presentation.showsProgress {
-                ProgressView()
-            } else {
-                Image(systemName: presentation.symbol)
-                    .foregroundStyle(presentation.tone.tint)
-                    .accessibilityHidden(true)
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: spacing))
+            : AnyLayout(HStackLayout(spacing: spacing))
+        layout {
+            HStack(alignment: .top, spacing: spacing) {
+                if presentation.showsProgress {
+                    ProgressView()
+                } else {
+                    Image(systemName: presentation.symbol)
+                        .foregroundStyle(presentation.tone.tint)
+                        .accessibilityHidden(true)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: presentation.title).font(.subheadline.weight(.semibold))
+                    detail
+                }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: presentation.title).font(.subheadline.weight(.semibold))
-                detail
-            }
-            Spacer(minLength: 8)
+            if !stacked { Spacer(minLength: 8) }
             ConnectionActionButtons(actions: presentation.actions, perform: perform)
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .padding(.horizontal, hPadding).padding(.vertical, vPadding)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(presentation.accessibilityIdentifier)

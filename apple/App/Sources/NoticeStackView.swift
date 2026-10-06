@@ -54,6 +54,10 @@ private struct NoticeRow: View {
     let dismiss: () -> Void
     let activate: () -> Void
 
+    @ScaledMetric(relativeTo: .body) private var padding: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var spacing: CGFloat = 10
+    @ScaledMetric(relativeTo: .body) private var minTarget: CGFloat = 44
+
     private var severityLabel: String {
         switch notice.severity {
         case .info: "Info"
@@ -65,20 +69,25 @@ private struct NoticeRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: spacing) {
             content
-            Button(action: dismiss) { Image(systemName: "xmark") }
-                .accessibilityLabel("Dismiss")
-                .accessibilityIdentifier("notice-dismiss")
+            // The minimum lives in the label so the whole square is tappable.
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .frame(minWidth: minTarget, minHeight: minTarget)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Dismiss")
+            .accessibilityIdentifier("notice-dismiss")
         }
-        .padding(12)
+        .padding(padding)
         .frame(maxWidth: 520)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
 
     /// Icon, text and count are one accessibility element; the dismiss button stays separate.
     private var content: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: spacing) {
             Image(systemName: notice.symbol)
             VStack(alignment: .leading, spacing: 2) {
                 if let title = notice.title {

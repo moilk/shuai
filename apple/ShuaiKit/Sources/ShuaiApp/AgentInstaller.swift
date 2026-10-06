@@ -46,6 +46,19 @@ public enum StepStatus: Equatable, Sendable {
     case wouldRun
     /// Needs the user (a Codex `notify` that is not ours).
     case needsDecision
+
+    /// Spoken name of the status icon. Never includes the failure message (shown as text).
+    public var accessibilityLabel: String {
+        switch self {
+        case .pending: "Pending"
+        case .running: "Running"
+        case .done: "Done"
+        case .skipped: "Skipped"
+        case .failed: "Failed"
+        case .wouldRun: "Planned"
+        case .needsDecision: "Needs your decision"
+        }
+    }
 }
 
 public struct StepOutcome: Equatable, Sendable {
