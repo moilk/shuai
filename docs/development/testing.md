@@ -57,7 +57,8 @@ List simulators with `xcrun simctl list devices available`; any iPad running iOS
   environment variable and not a marker file.
 - UI tests launch with `-uiTesting` (ephemeral stores) and `-debugTmuxFixture` or
   `-debugAgentFixture`; `-debugConnectionState <reconnecting|failed|disconnected>` shows a fixed
-  connection state for screenshots and layout checks. The agent fixture plays the recorded Claude Code transcript
+  connection state for screenshots and layout checks; `-debugNoticeTimeScale <n>` makes notices last
+  `n` times longer, so transient-notice tests do not race a slow runner. The agent fixture plays the recorded Claude Code transcript
   `core/shuai-agent/tests/fixtures/e2e-claude-2.1.288.jsonl` through the real monitor; `respond`
   calls are exposed via the `agent-fixture-log` accessibility value.
 - When several simulators or agents run at once, give UI tests their own simulator device; a shared

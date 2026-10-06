@@ -14,6 +14,8 @@ import ShuaiTerminal
 ///   views without a server (a fixed `ConnectionPresentation`; the session controller is untouched
 ///   and does not connect).
 /// - `-debugSendAfterConnect <text>`: types `text` + Enter shortly after the session attaches.
+/// - `-debugNoticeTimeScale <n>`: notices last `n` times longer (default 1), so UI tests on a slow
+///   runner can still find a transient notice.
 enum DebugLaunch {
     private static let args = ProcessInfo.processInfo.arguments
 
@@ -30,6 +32,18 @@ enum DebugLaunch {
     static var autoAccept: Bool { args.contains("-debugAutoAcceptHostKey") }
     static var sendAfterConnect: String? { value(of: "-debugSendAfterConnect") }
     static var connectionState: String? { value(of: "-debugConnectionState") }
+
+    /// `-debugNoticeTimeScale`: an integer >= 1, else 1.
+    static var noticeTimeScale: UInt64 { value(of: "-debugNoticeTimeScale").flatMap(UInt64.init).map { max($0, 1) } ?? 1 }
+
+    /// The notice clock slowed by `noticeTimeScale`: time advances `n` times slower, sleeps last `n` times longer.
+    static func slowedNoticeTime(
+        now: @escaping @Sendable () -> UInt64, sleep: @escaping @Sendable (UInt64) async throws -> Void
+    ) -> (@Sendable () -> UInt64, @Sendable (UInt64) async throws -> Void) {
+        let scale = min(noticeTimeScale, 1_000_000)
+        guard scale > 1 else { return (now, sleep) }
+        return ({ now() / scale }, { ms in try await sleep(ms.multipliedReportingOverflow(by: scale).partialValue) })
+    }
 
     /// The presentation shown instead of the controller's, or nil without `-debugConnectionState`.
     static func connectionPresentation(hostName: String, target: String) -> ConnectionPresentation? {

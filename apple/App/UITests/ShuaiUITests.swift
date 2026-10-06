@@ -42,10 +42,10 @@ final class ShuaiUITests: XCTestCase {
     // MARK: tmux (fixture topology, no server)
 
     @MainActor
-    private func launchWithTmuxFixture() -> XCUIApplication {
+    private func launchWithTmuxFixture(extraArguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting", "-debugTmuxFixture"]
+        app.launchArguments = ["-uiTesting", "-debugTmuxFixture"] + extraArguments
         app.launch()
         return app
     }
@@ -155,7 +155,7 @@ final class ShuaiUITests: XCTestCase {
 
     @MainActor
     func testDeepLinkToAMissingPaneOrHostShowsAFriendlyNotice() throws {
-        let app = launchWithTmuxFixture()
+        let app = launchWithTmuxFixture(extraArguments: ["-debugNoticeTimeScale", "10"])
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         app.open(URL(string: "shuai://open?host=\(Self.fixtureHost)&pane=%2599")!)
         // The notice is transient: match its text in the query itself instead of re-reading it later.
@@ -215,10 +215,10 @@ final class ShuaiUITests: XCTestCase {
     // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
 
     @MainActor
-    private func launchWithAgentFixture() -> XCUIApplication {
+    private func launchWithAgentFixture(extraArguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting", "-debugAgentFixture"]
+        app.launchArguments = ["-uiTesting", "-debugAgentFixture"] + extraArguments
         app.launch()
         return app
     }
@@ -273,16 +273,16 @@ final class ShuaiUITests: XCTestCase {
     /// tapped and the card is untouched.
     @MainActor
     func testNoticeCanBeDismissedWhileAPermissionCardIsPending() throws {
-        let app = launchWithAgentFixture()
+        let app = launchWithAgentFixture(extraArguments: ["-debugNoticeTimeScale", "10"])
         let card = app.descendants(matching: .any)["permission-card"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 12))
         app.open(URL(string: "shuai://open?host=00000000-0000-4000-8000-000000000000&pane=%250")!)
         let notice = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'session-notice' AND label CONTAINS 'not in Shuai'")).firstMatch
         XCTAssertTrue(notice.waitForExistence(timeout: 10))
-        XCTAssertFalse(notice.frame.intersects(card.frame), "notice \(notice.frame) clear of the card column \(card.frame)")
         let dismiss = app.buttons["notice-dismiss"].firstMatch
         XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+        XCTAssertFalse(notice.frame.intersects(card.frame), "notice \(notice.frame) clear of the card column \(card.frame)")
         XCTAssertTrue(dismiss.isHittable, "the card column does not cover the notice")
         dismiss.tap()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: notice)

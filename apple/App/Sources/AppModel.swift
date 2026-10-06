@@ -101,10 +101,17 @@ final class AppModel {
         let hub = AgentHub(banners: AttentionBannerQueue(isSuppressed: { key in viewingBox.check(key) }))
         agentHub = hub
         let banners = hub.banners
+        // One clock for both: system uptime and `SuspendingClock` both stop while the device sleeps.
+        var noticeNow: @Sendable () -> UInt64 = { UInt64(ProcessInfo.processInfo.systemUptime * 1000) }
+        var noticeSleep: @Sendable (UInt64) async throws -> Void = { ms in
+            try await Task.sleep(for: .milliseconds(ms), clock: .suspending)
+        }
+        #if DEBUG
+        (noticeNow, noticeSleep) = DebugLaunch.slowedNoticeTime(now: noticeNow, sleep: noticeSleep)
+        #endif
         notices = NoticeCenter(
-            // One clock for both: system uptime and `SuspendingClock` both stop while the device sleeps.
-            now: { UInt64(ProcessInfo.processInfo.systemUptime * 1000) },
-            sleep: { ms in try await Task.sleep(for: .milliseconds(ms), clock: .suspending) },
+            now: noticeNow,
+            sleep: noticeSleep,
             onDismiss: { AgentNotices.dismissed($0, in: banners) },
             onExpire: { AgentNotices.dismissed($0, in: banners) })
         notifier = ephemeral ? nil : LocalNotifier()
