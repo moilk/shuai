@@ -331,44 +331,85 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(target.isHittable, "\(target) not reachable after \(swipes) swipes\n\(app.debugDescription)")
     }
 
-    /// Opens the sidebar's More menu and taps the item (`settings-button`, `keys-button`).
+    /// Taps the sidebar bottom bar's Settings button.
     @MainActor
-    private func openMoreMenuItem(_ app: XCUIApplication, _ id: String) {
-        let more = app.buttons["more-menu"]
-        XCTAssertTrue(more.waitForExistence(timeout: 5), "More menu missing\n\(app.debugDescription)")
-        more.tap()
-        let item = app.buttons[id]
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "\(id) missing from the More menu\n\(app.debugDescription)")
-        item.tap()
+    private func tapSettings(_ app: XCUIApplication) {
+        let button = app.buttons["settings-button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "settings-button missing\n\(app.debugDescription)")
+        button.tap()
     }
 
     @MainActor
-    func testToolbarShowsSearchPlusAndMore() throws {
+    func testSidebarTopHasOnlyQuickSwitcher() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["quick-switcher-button"].exists)
-        XCTAssertTrue(app.buttons["add-host-button"].exists)
-        XCTAssertTrue(app.buttons["more-menu"].exists)
-        XCTAssertFalse(app.buttons["settings-button"].exists, "Settings lives in the More menu")
-        XCTAssertFalse(app.buttons["keys-button"].exists, "Keys lives in the More menu")
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.exists, "New Host is in the bottom bar")
+        XCTAssertTrue(settings.exists, "Settings is in the bottom bar")
+        let hostRow = app.buttons["tmux-window-@1"].frame
+        let list = app.collectionViews.firstMatch.frame
+        XCTAssertGreaterThan(add.frame.minY, list.midY, "New Host sits in the lower half of the sidebar")
+        XCTAssertGreaterThan(settings.frame.minY, list.midY, "Settings sits in the lower half of the sidebar")
+        XCTAssertGreaterThan(add.frame.minY, hostRow.maxY, "the bottom bar sits below the rows")
+        XCTAssertLessThan(settings.frame.maxX, app.frame.width / 2, "the bottom bar is in the sidebar column")
+        XCTAssertFalse(app.buttons["more-menu"].exists, "the More menu is retired")
+        XCTAssertFalse(app.buttons["keys-button"].exists, "Keys lives in Settings and the app menu")
     }
 
     @MainActor
-    func testMoreMenuOpensSettingsAndKeys() throws {
+    func testSettingsButtonOpensSettingsDirectly() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        openMoreMenuItem(app, "settings-button")
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        tapSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), "one tap opens Settings, no menu")
         app.buttons["Done"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 5))
-        openMoreMenuItem(app, "keys-button")
-        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testSidebarBottomBarTargetsAreAtLeast44pt() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        for id in ["add-host-button", "settings-button"] {
+            let button = app.buttons[id]
+            XCTAssertTrue(button.waitForExistence(timeout: 5), id)
+            XCTAssertTrue(button.isHittable, "\(id) hittable")
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) tap target height")
+        }
+    }
+
+    @MainActor
+    func testSidebarBottomBarAtAccessibilitySizeStillWorks() throws {
+        let app = launchWithTmuxFixture(
+            extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(add.isHittable)
+        XCTAssertTrue(settings.isHittable)
+        XCTAssertEqual(add.label, "Add Host", "icon-only keeps its accessibility label")
+        XCTAssertFalse(app.staticTexts["New Host"].exists, "New Host is icon-only at accessibility sizes")
+        XCTAssertFalse(add.frame.intersects(settings.frame), "buttons never overlap")
+    }
+
+    @MainActor
+    func testSidebarBottomBarPassesTheAccessibilityAudit() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        let bar = app.buttons["add-host-button"].frame.union(app.buttons["settings-button"].frame).insetBy(dx: -1, dy: -1)
+        try app.performAccessibilityAudit(for: [.dynamicType, .hitRegion, .sufficientElementDescription]) { issue in
+            // Only the bottom bar is audited here; other screens have their own owners.
+            guard let frame = issue.element?.frame else { return true }
+            return !bar.contains(frame)
+        }
     }
 
     @MainActor
     private func openPushSettings(_ app: XCUIApplication) {
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        openMoreMenuItem(app, "settings-button")
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["push-settings-link"]
         scrollSheet(app, until: link)
@@ -380,7 +421,7 @@ final class ShuaiUITests: XCTestCase {
     func testNotificationSettingsShowTopicAndTestButton() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        openMoreMenuItem(app, "settings-button")
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
         let link = app.buttons["push-settings-link"]
@@ -420,7 +461,7 @@ final class ShuaiUITests: XCTestCase {
     func testSettingsFirstPageShowsPushSummaryWithoutTheTopic() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        openMoreMenuItem(app, "settings-button")
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["push-settings-link"]
         scrollSheet(app, until: link)
@@ -689,7 +730,7 @@ final class ShuaiUITests: XCTestCase {
     func testKeysFromSettingsOpens() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        openMoreMenuItem(app, "settings-button")
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["settings-keys-link"]
         scrollSheet(app, until: link)
