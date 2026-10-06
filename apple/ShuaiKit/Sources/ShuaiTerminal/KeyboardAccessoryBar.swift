@@ -139,7 +139,8 @@ public final class KeyboardAccessoryBar: UIView {
             return c
         }
         let button = UIButton(configuration: config)
-        button.accessibilityLabel = item.title
+        button.accessibilityLabel = item.spokenLabel
+        button.accessibilityIdentifier = item.accessibilityIdentifier
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         button.widthAnchor.constraint(greaterThanOrEqualToConstant: 40).isActive = true
         if AccessoryBarModel.isRepeatable(item) {
@@ -186,6 +187,9 @@ public final class KeyboardAccessoryBar: UIView {
             case .oneShot:
                 config = UIButton.Configuration.filled()
                 config.baseBackgroundColor = .systemBlue
+                // Not colour alone: a border marks the armed state.
+                config.background.strokeColor = .label
+                config.background.strokeWidth = 2
                 config.title = item.title
             case .locked:
                 config = UIButton.Configuration.filled()
@@ -200,6 +204,12 @@ public final class KeyboardAccessoryBar: UIView {
                 return c
             }
             button.configuration = config
+            button.accessibilityValue = state.accessibilityValue
+            if state == .off {
+                button.accessibilityTraits.remove(.selected)
+            } else {
+                button.accessibilityTraits.insert(.selected)
+            }
         }
     }
 }
