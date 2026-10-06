@@ -167,8 +167,15 @@ the save progress in `@State`, because the sheet content is rebuilt whenever the
   "Keep Editing". Swipe-to-dismiss is disabled while dirty rather than prompting. The key choice
   only counts as a change for key auth.
 - The password lives only in view state and is written only to the Keychain. It is cleared when the
-  editor closes (Save, Discard, or the navigation stack disappearing); a pushed Keys page covers the
-  form without clearing it.
+  editor closes (Save, Discard, or the sheet's navigation stack disappearing). The lifecycle hook is
+  on the `NavigationStack` itself, which does not disappear when a page is pushed, so a pushed Keys
+  page covers the form without clearing the password or the dirty state (UI test
+  `testPushingKeysKeepsThePasswordAndDirtyState`).
+- When an earlier Save stored a new host but not its password, the discard dialog says so ("The host
+  is already saved, but its password is not stored…"); the stored host stays and is selected when
+  nothing else is.
+- The editor's save state is in `@State`, so a rebuilt sheet content keeps the host id; no automated
+  test rebuilds the view, only the pure save flow is tested.
 - Save errors use fixed copy and never include an underlying error's description. "Host saved, but
   the password could not be stored" is shown only when the host write of that same attempt
   succeeded; a retry updates the same host.
