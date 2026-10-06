@@ -386,4 +386,47 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertLessThanOrEqual(app.buttons["cancel-reconnect"].frame.maxX, cards.frame.minX, "no overlap with the cards")
         XCTAssertLessThanOrEqual(retry.frame.maxX, cards.frame.minX)
     }
+
+    // MARK: modals (Keys opens from inside the editor and Settings)
+
+    @MainActor
+    func testOpenKeysFromTheHostEditorShowsKeysAndReturns() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+
+        let name = app.textFields["host-name-field"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("keys-flow-host")
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Method'")).firstMatch.tap()
+        app.buttons["SSH key"].tap()
+
+        let openKeys = app.buttons["editor-open-keys"]
+        XCTAssertTrue(openKeys.waitForExistence(timeout: 5), "no keys yet: the editor offers Open Keys")
+        openKeys.tap()
+        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5), "Keys appears over the editor")
+
+        app.navigationBars["Keys"].buttons.firstMatch.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "back in the editor")
+        XCTAssertEqual(name.value as? String, "keys-flow-host", "the editor keeps what was typed")
+    }
+
+    @MainActor
+    func testKeysFromSettingsOpens() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let link = app.buttons["settings-keys-link"]
+        scrollSheet(app, until: link)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5), "Keys appears from Settings")
+        app.navigationBars["Keys"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), "back in Settings")
+    }
 }
