@@ -26,11 +26,11 @@ struct ShuaiMain: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Host") { model.editor = .new }
+                Button("New Host") { model.request(.newHost) }
                     .keyboardShortcut("n", modifiers: .command)
             }
             CommandGroup(replacing: .appSettings) {
-                Button("Settings…") { model.showSettings = true }
+                Button("Settings…") { model.request(.settings) }
                     .keyboardShortcut(",", modifiers: .command)
             }
             CommandMenu("Go") {

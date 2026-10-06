@@ -40,11 +40,13 @@ final class AppModel {
     var selection: UUID? {
         didSet { notices.setFocus(selection.map { .host($0) }) }
     }
-    var editor: HostEditorTarget?
-    var showSettings = false
-    var showKeys = false
+    /// Which modal is up; `RootView` shows it through a single sheet.
+    private(set) var router = ModalRouter()
+    var modal: ModalRoute? { router.current }
     /// Any modal sheet driven by the model is up.
-    var hasSheetOpen: Bool { editor != nil || showSettings || showKeys || quickSwitcher != nil || agentInstall != nil }
+    var hasSheetOpen: Bool { router.current != nil }
+    /// Seam for the host editor's unsaved-changes guard: a dirty modal is never replaced.
+    private var modalIsDirty: Bool { false }
     /// Sidebar visibility (the window tab strip shows while the sidebar is collapsed).
     var columnVisibility: NavigationSplitViewVisibility = .all
     /// Hardware shortcuts delivered while the terminal has focus.
@@ -166,13 +168,39 @@ final class AppModel {
         Task { await actions.run { try await actions.perform(action) } }
     }
 
+    /// Presents `route` unless another modal is open (the quick switcher yields to anything).
+    @discardableResult
+    func request(_ route: ModalRoute) -> Bool {
+        if case .editHost(let id) = route, hosts.host(id: id) == nil { return false }
+        let wasQuickSwitcher = router.current == .quickSwitcher
+        let outcome = router.request(route, currentIsDirty: modalIsDirty)
+        if outcome == .replaced, wasQuickSwitcher { discardQuickSwitcher() }
+        return outcome != .ignored
+    }
+
+    /// The sheet went away (button or swipe): run the route's cleanup and clear it.
+    func dismissModal() {
+        switch router.current {
+        case .quickSwitcher: closeQuickSwitcher(activated: false)
+        case .agentInstall: closeAgentInstall()
+        case let route?: router.dismiss(route)
+        case nil: break
+        }
+    }
+
     func openQuickSwitcher() {
-        guard quickSwitcher == nil else { return }
+        guard router.current == nil else { return }
         let items = SwitcherItem.build(hosts: sessions.switcherSnapshots(for: hosts.hosts))
         quickSwitcher = QuickSwitcherModel(items: items, ranker: AttentionRanker(), badges: badges, history: switcherHistory)
+        _ = request(.quickSwitcher)
     }
 
     func closeQuickSwitcher(activated: Bool) {
+        discardQuickSwitcher()
+        router.dismiss(.quickSwitcher)
+    }
+
+    private func discardQuickSwitcher() {
         if let q = quickSwitcher { switcherHistory = q.history }
         quickSwitcher = nil
     }
@@ -305,11 +333,14 @@ final class AppModel {
     func presentAgentInstall(host: HostProfile, uninstall: Bool) {
         guard let remote = sessions.existingController(for: host.id)?.agentRemote else { return }
         let installer = AgentInstaller(remote: remote, binaries: BundleAgentBinaryProvider())
-        agentInstall = AgentInstallRequest(
+        guard router.current == nil else { return }
+        let req = AgentInstallRequest(
             host: host,
             model: AgentInstallModel(
                 installer: installer, mode: uninstall ? .uninstall : .install,
                 agentConfigToml: uninstall ? nil : pushSync.toml(for: host)))
+        agentInstall = req
+        _ = request(.agentInstall(req.id))
     }
 
     /// "Sync notification settings": rewrites the host's `config.toml` now.
@@ -359,6 +390,7 @@ final class AppModel {
     func closeAgentInstall() {
         let req = agentInstall
         agentInstall = nil
+        if let req { router.dismiss(.agentInstall(req.id)) }
         if let req, req.model.report?.ok == true, let toml = req.model.agentConfigToml {
             pushSync.recordSynced(host: req.host, toml: toml)
         }

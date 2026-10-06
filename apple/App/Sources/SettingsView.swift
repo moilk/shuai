@@ -43,12 +43,16 @@ struct SettingsView: View {
                 }
                 PushSettingsSection()
                 Section("SSH") {
-                    Button("Manage keys…") { dismiss(); model.showKeys = true }
+                    NavigationLink("Keys", value: SettingsPage.keys)
+                        .accessibilityIdentifier("settings-keys-link")
                 }
                 Section("About") {
                     LabeledContent("Core", value: coreVersionString)
                     LabeledContent("Terminal engine", value: "libghostty")
                 }
+            }
+            .navigationDestination(for: SettingsPage.self) { page in
+                if page == .keys { KeysView(placement: .pushed) }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
