@@ -225,6 +225,37 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(pane.exists)
     }
 
+    @MainActor
+    func testCollapsingASessionHidesItsWindows() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        let toggle = app.buttons["tmux-session-toggle-main"]
+        XCTAssertTrue(toggle.exists, "session chevron")
+        XCTAssertGreaterThanOrEqual(toggle.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(toggle.frame.height, 44)
+        toggle.tap()
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-window-@1"])
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-window-@0"])
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-pane-%1"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.buttons["tmux-session-main"].exists, "the session row stays")
+        app.buttons["tmux-session-toggle-main"].tap()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 5), "windows return")
+        XCTAssertTrue(app.buttons["tmux-window-@0"].exists)
+    }
+
+    @MainActor
+    func testHostMenuExplainsDisabledAIItems() throws {
+        let app = launchWithTmuxFixture()
+        let row = app.staticTexts["host-row-fixture-host"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5), "host menu is open")
+        let hint = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Connect to this host first'")).firstMatch
+        XCTAssertTrue(hint.waitForExistence(timeout: 5), "disabled AI items say why: \(app.debugDescription)")
+    }
+
     // MARK: deep links (shuai://open?host=&pane=, what an ntfy push click opens)
 
     private static let fixtureHost = "5B0F1C00-0000-4000-8000-00000000F1E1"
@@ -376,6 +407,19 @@ final class ShuaiUITests: XCTestCase {
         // host row: waiting count
         let waiting = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'waiting for you'")).firstMatch
         XCTAssertTrue(waiting.waitForExistence(timeout: 5), "host row shows the waiting count")
+    }
+
+    @MainActor
+    func testCollapsedHostKeepsTheWaitingBadge() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@0"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 10))
+        let toggle = app.buttons["host-toggle-fixture-host"]
+        XCTAssertTrue(toggle.exists, "host chevron")
+        toggle.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["tmux-window-@0"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.descendants(matching: .any)["host-aggregate-badge"].waitForExistence(timeout: 5), "badge stays on the collapsed host")
     }
 
     @MainActor
