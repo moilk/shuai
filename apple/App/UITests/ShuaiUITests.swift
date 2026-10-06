@@ -267,8 +267,8 @@ final class ShuaiUITests: XCTestCase {
 
     /// Scrolls the list inside the open sheet (not the whole app) until `target` is hittable; bounded.
     @MainActor
-    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, maxSwipes: Int = 12) {
-        let bar = app.navigationBars["Settings"]
+    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, title: String = "Settings", maxSwipes: Int = 12) {
+        let bar = app.navigationBars[title]
         let sheetX = bar.frame.midX
         let lists = app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex
         let list = lists.first { $0.frame.minX <= sheetX && sheetX <= $0.frame.maxX && $0.frame.width < app.frame.width * 0.95 }
@@ -307,7 +307,7 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Background push (ntfy)"].waitForExistence(timeout: 5))
         // top to bottom, so scrolling for the next target never passes an earlier one
         let topic = app.staticTexts["push-topic"]
-        scrollSheet(app, until: topic)
+        scrollSheet(app, until: topic, title: "Background push (ntfy)")
         // masked by default: the label never matches the full topic
         XCTAssertNil(topic.label.firstMatch(of: /shuai-[a-z2-7]{26}/), "topic must be masked: \(topic.label)")
         let reveal = app.buttons["push-topic-reveal"]
@@ -315,12 +315,12 @@ final class ShuaiUITests: XCTestCase {
         reveal.tap()
         let revealed = app.staticTexts["push-topic"]
         XCTAssertNotNil(revealed.label.firstMatch(of: /shuai-[a-z2-7]{26}/), revealed.label)
-        scrollSheet(app, until: app.textFields["push-server-field"])
-        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
-        scrollSheet(app, until: app.buttons["push-send-test"])
-        XCTAssertTrue(app.buttons["push-send-test"].exists)
-        scrollSheet(app, until: app.buttons["push-open-ntfy"])
+        scrollSheet(app, until: app.buttons["push-open-ntfy"], title: "Background push (ntfy)")
         XCTAssertTrue(app.buttons["push-open-ntfy"].exists)
+        scrollSheet(app, until: app.buttons["push-send-test"], title: "Background push (ntfy)")
+        XCTAssertTrue(app.buttons["push-send-test"].exists)
+        scrollSheet(app, until: app.textFields["push-server-field"], title: "Background push (ntfy)")
+        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
     }
 
     @MainActor
@@ -328,7 +328,7 @@ final class ShuaiUITests: XCTestCase {
         let app = launchWithTmuxFixture()
         openPushSettings(app)
         let copy = app.buttons["push-copy-topic"]
-        scrollSheet(app, until: copy)
+        scrollSheet(app, until: copy, title: "Background push (ntfy)")
         XCTAssertEqual(copy.label, "Copy topic")
         copy.tap()
         XCTAssertEqual(app.buttons["push-copy-topic"].label, "Copied")
