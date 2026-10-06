@@ -29,7 +29,7 @@ struct SettingsView: View {
                         Text("Floating").tag(AppSettings.AccessoryBarStyle.floating)
                     }
                     Toggle("Option key sends Alt (Esc prefix)", isOn: $settings.optionAsAlt)
-                    Text("A hardware keyboard always uses the floating bar. Applies to new sessions.")
+                    Text("A hardware keyboard always uses the floating bar. Option-as-Alt applies to new sessions.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("SSH") {

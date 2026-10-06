@@ -13,6 +13,8 @@ struct PushSettingsView: View {
     @State private var confirmRegenerate = false
     @State private var copied = false
     @State private var revealed = false
+    @State private var copiedReset: Task<Void, Never>?
+    @Environment(\.scenePhase) private var scenePhase
 
     private static let rowHeight: CGFloat = 44
 
@@ -126,6 +128,13 @@ struct PushSettingsView: View {
                 .accessibilityIdentifier("push-regenerate")
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if !TopicRevealPolicy.shouldKeepRevealed(isActive: phase == .active) { revealed = false }
+        }
+        .onDisappear {
+            revealed = false
+            copiedReset?.cancel()
+        }
         .navigationTitle("Background push (ntfy)")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Create a new topic?", isPresented: $confirmRegenerate, titleVisibility: .visible) {
@@ -150,10 +159,12 @@ struct PushSettingsView: View {
                     .accessibilityIdentifier("push-topic")
             } else {
                 Text(NtfyTopic.masked(topic)).font(.system(.footnote, design: .monospaced))
+                    .accessibilityLabel(NtfyTopic.maskedSpoken(topic))
                     .accessibilityIdentifier("push-topic")
             }
             Button(revealed ? "Hide" : "Show") { revealed.toggle() }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(revealed ? "Hide topic" : "Show topic")
                 .accessibilityIdentifier("push-topic-reveal")
         }
         .frame(minHeight: Self.rowHeight)
@@ -165,9 +176,10 @@ struct PushSettingsView: View {
             [[UTType.plainText.identifier: topic]],
             options: [.expirationDate: Date().addingTimeInterval(120)])
         copied = true
-        Task {
+        copiedReset?.cancel()
+        copiedReset = Task {
             try? await Task.sleep(for: .seconds(2))
-            copied = false
+            if !Task.isCancelled { copied = false }
         }
     }
 

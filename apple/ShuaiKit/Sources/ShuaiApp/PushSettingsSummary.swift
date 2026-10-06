@@ -26,4 +26,17 @@ extension NtfyTopic {
         else { return maskedPlaceholder }
         return prefix + "••••…" + topic.suffix(4)
     }
+
+    /// What VoiceOver reads while the topic is masked: only the last four characters, and nothing
+    /// for input that is not a generated topic.
+    public static func maskedSpoken(_ topic: String) -> String {
+        guard masked(topic) != maskedPlaceholder else { return "Topic hidden" }
+        return "Topic hidden, ends in \(topic.suffix(4))"
+    }
+}
+
+/// A revealed topic is hidden again as soon as the app is not the active scene (the app switcher
+/// snapshot must not capture it) or the page goes away.
+public enum TopicRevealPolicy {
+    public static func shouldKeepRevealed(isActive: Bool) -> Bool { isActive }
 }
