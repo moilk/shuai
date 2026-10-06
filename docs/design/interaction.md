@@ -115,6 +115,25 @@ buttons are at least 44 pt tall, the minimum is part of the button label so the 
 tappable, and text from the server or host profile is rendered verbatim. Cancel while connecting (or
 at the host key prompt) disconnects; Cancel while reconnecting ends the reconnect loop.
 
+### Window tab strip
+
+Shown above the terminal while the sidebar is collapsed and a tmux topology exists. From the
+leading edge: the session menu (`window-tab-session-menu`, spoken "Session: {name}", symbol
+`rectangle.stack`), one tab per window of the viewed session (`window-tab-{id}`, value exactly
+`active` or empty, label `{index}: {name}[, zoomed][, {badge}]`) and a new-window button
+(`window-tab-new`). The strip itself is `window-tab-strip`.
+
+- Tabs and both buttons are at least 44 pt; the minimum and the content shape belong to the button
+  label so the whole area is tappable. The strip has no fixed height: paddings and spacing scale
+  with Dynamic Type.
+- The session menu lists the host's sessions from the topology, marks the viewed one and switches
+  with the same action as the sidebar's **Switch to Session**; it also offers **New Window** in the
+  viewed session.
+- A tab's context menu is the sidebar's window menu (`TmuxWindowMenu`: Rename, New Window, Split,
+  Close; closing asks first); the rename alert is shared too (`windowRenameAlert`).
+- Badges keep their symbol, and zoom and badge are part of the spoken label, so nothing is
+  colour-only. The rows come from `TabStripModel` (pure, tested in `ShuaiApp`).
+
 ### Status indicator
 
 Each status has its own symbol and label, so state never relies on colour alone:

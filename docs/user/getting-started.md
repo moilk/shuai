@@ -93,6 +93,12 @@ window is created in that session, not in the one you are viewing). A host's con
 its AI items under **AI integration**; they are disabled with "Connect to this host first" until
 the host is connected.
 
+With the sidebar collapsed, a window tab strip appears above the terminal: one tab per window of the
+viewed session (the active one highlighted), a **+** button for a new window, and a stack button on
+the left that lists the host's tmux sessions (the viewed one is checked) to switch session or add a
+window. Touch and hold a tab for the same window menu as in the sidebar. Tabs and buttons are at
+least 44 pt and grow with the text size.
+
 ## 5. Keyboard bars
 
 Above the software keyboard there are two rows:
