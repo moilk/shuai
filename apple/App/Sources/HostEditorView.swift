@@ -20,6 +20,7 @@ struct HostEditorView: View {
     @State private var saveError: String?
     @State private var confirmDiscard = false
     @State private var scrollTarget: String?
+    @State private var announcement: Task<Void, Never>?
     @FocusState private var focus: HostValidationError?
 
     init(target: HostEditorTarget, keyIDs: [String] = []) {
@@ -61,12 +62,14 @@ struct HostEditorView: View {
                     Button("Save", action: attemptSave).accessibilityIdentifier("save-host-button")
                 }
             }
-            .confirmationDialog("Discard your changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
-                Button("Discard Changes", role: .destructive) { close() }
+            .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                Button("Discard Changes", role: .destructive) { discard() }
                     .accessibilityIdentifier("discard-changes")
                 // No `.cancel` role: iPad's popover presentation omits cancel-role buttons.
                 Button("Keep Editing") {}
                     .accessibilityIdentifier("keep-editing")
+            } message: {
+                Text(save.discardMessage)
             }
             .interactiveDismissDisabled(isDirty)
             .onChange(of: focus) { old, _ in
@@ -76,11 +79,13 @@ struct HostEditorView: View {
                 draft = draft.adoptingNewKey(before: old, after: new)
             }
             .onChange(of: isDirty, initial: true) { _, dirty in model.editorIsDirty = dirty }
-            // On the stack, not the form: a pushed page covers the form without ending the editor.
-            .onDisappear {
-                password = ""
-                model.editorIsDirty = false
-            }
+        }
+        // On the stack itself: its root content disappears when a page is pushed, the stack only
+        // when the sheet goes away.
+        .onDisappear {
+            announcement?.cancel()
+            password = ""
+            model.editorIsDirty = false
         }
     }
 
@@ -157,6 +162,12 @@ struct HostEditorView: View {
         Label(s, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red)
     }
 
+    private func discard() {
+        // A new host that an earlier Save already stored stays; make it reachable.
+        if save.keepsSavedNewHost, model.selection == nil { model.selection = save.id }
+        close()
+    }
+
     private func close() {
         password = ""
         model.editorIsDirty = false
@@ -170,8 +181,10 @@ struct HostEditorView: View {
             if first == .key { scrollTarget = Self.keyRow } else { focus = first }
             let message = first.message
             // Let VoiceOver finish announcing the focus change before the message.
-            Task { @MainActor in
+            announcement?.cancel()
+            announcement = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled else { return }
                 AccessibilityNotification.Announcement(message).post()
             }
             return

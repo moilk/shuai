@@ -16,17 +16,31 @@ public struct HostEditorSave: Sendable {
     public let initial: HostEditorDraft
     /// The host is in the store (editing, or a save of a new host went through).
     public private(set) var persisted: Bool
+    /// The editor was opened for a new host.
+    public let isNewHost: Bool
 
     public init(new keys: [String], id: UUID = UUID()) {
         self.id = id
         initial = HostEditorDraft(new: keys)
         persisted = false
+        isNewHost = true
     }
 
     public init(editing profile: HostProfile) {
         id = profile.id
         initial = HostEditorDraft(editing: profile)
         persisted = true
+        isNewHost = false
+    }
+
+    /// A new host was stored by an earlier attempt of this editor (its password may not be).
+    public var keepsSavedNewHost: Bool { isNewHost && persisted }
+
+    /// The discard dialog's message.
+    public var discardMessage: String {
+        keepsSavedNewHost
+            ? "The host is already saved, but its password is not stored. Discard the remaining changes?"
+            : "Discard your changes?"
     }
 
     /// Writes the host, then the password (password auth) or removes it (other auth). An error
