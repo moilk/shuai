@@ -128,3 +128,21 @@ Each status has its own symbol and label, so state never relies on colour alone:
 | error | `xmark.octagon.fill` | Connection failed |
 
 The accessibility label of every presentation, including the hidden ones, is "{host}: {status label}".
+
+## Modals
+
+One `ModalRoute` is open at a time (`AppModel.modal`, decided by the pure `ModalRouter`) and
+`RootView` shows it through a single `.sheet(item:)`: new or edited host, Settings, Keys, the quick
+switcher and the AI-integration sheet. Opening a sheet resigns the terminal first responder.
+
+- Nothing open: the request presents. The same route again is a no-op.
+- The quick switcher yields: any other request replaces it.
+- Every other open modal wins: a request for a different route is ignored, so menu chords (New Host
+  ⌘N, Settings ⌘,, Quick Switcher ⌘K) never stack sheets. A modal with unsaved input is never
+  replaced (`currentIsDirty`; the host editor does not report dirtiness yet).
+- A late dismissal of a route that has already been replaced does not close its successor.
+
+Keys is not a second sheet. Inside the host editor ("Open Keys", `editor-open-keys`) and Settings
+("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
+with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
+request (toolbar, the connection card's Open keys) presents Keys as its own sheet with Done.

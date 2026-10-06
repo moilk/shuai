@@ -16,7 +16,7 @@ Keyboard-interactive authentication (for example one-time codes) is answered in 
 
 ## 2. Keys
 
-Open the key library with the key icon in the toolbar (or Settings > SSH > Manage keys…), then
+Open the key library with the key icon in the toolbar (or Settings > Keys, or Open Keys in the host editor; Back returns to where you were), then
 **Add Key**:
 
 - **Generate ed25519 key** / **Generate ECDSA P-256 key**: created on the iPad.
