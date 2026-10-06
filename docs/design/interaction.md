@@ -129,6 +129,42 @@ Each status has its own symbol and label, so state never relies on colour alone:
 
 The accessibility label of every presentation, including the hidden ones, is "{host}: {status label}".
 
+
+
+## Modals
+
+One `ModalRoute` is open at a time (`AppModel.modal`, decided by the pure `ModalRouter`) and
+`RootView` shows it through a single `.sheet(item:)`: new or edited host, Settings, Keys, the quick
+switcher and the AI-integration sheet. Opening a sheet resigns the terminal first responder.
+
+- Nothing open: the request presents. The same route again is a no-op.
+- The quick switcher yields: any other request replaces it.
+- Every other open modal wins: a request for a different route is ignored, so menu chords (New Host
+  ⌘N, Settings ⌘,, Quick Switcher ⌘K) never stack sheets. A modal with unsaved input is never
+  replaced (`currentIsDirty`; the host editor reports it through `AppModel.editorIsDirty`).
+- A late dismissal of a route that has already been replaced does not close its successor.
+
+Keys is not a second sheet. Inside the host editor ("Generate a key" while the library is empty, `editor-open-keys`) and Settings
+("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
+with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
+request (toolbar, the connection card's Open keys) presents Keys as its own sheet with Done.
+
+## Editor
+
+The host editor's logic is the pure `HostEditorDraft` (every field as text, no password),
+`HostEditorValidation`, `HostEditorDirty` and `HostEditorSaveError`; the view only renders them.
+
+- A field's error shows once the field lost focus or Save was tapped, and hides as soon as the field
+  is valid. It renders as an `exclamationmark.circle.fill` label with the message text.
+- Save is never disabled. With errors it focuses the first invalid field in form order and posts a
+  VoiceOver announcement.
+- Cancel with unsaved changes (any edited field, or a typed password) asks "Discard Changes" /
+  "Keep Editing", and swipe-to-dismiss is disabled while dirty.
+- The password lives only in view state, is cleared on disappear and is written only to the Keychain.
+  Save errors use fixed copy and never include an underlying error's description; when only the
+  Keychain write fails the message says the host was saved.
+- A new host defaults to SSH key auth when the library has keys (preselected when there is one),
+  otherwise Ask each time. A key generated from the pushed Keys page is selected when none was chosen.
 ## Accessibility
 
 - **44 pt targets.** Every tappable control is at least 44 x 44 pt. The minimum is set inside the
