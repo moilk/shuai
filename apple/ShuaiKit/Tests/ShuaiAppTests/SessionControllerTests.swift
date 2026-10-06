@@ -603,6 +603,187 @@ private struct Harness {
         #expect(await waitUntil { h.factory.attempts == 3 && h.controller.state == .connected })
     }
 
+    @Test func networkChangeDuringAReconnectAttemptAttachesOnlyOnce() async {
+        await expectSingleAttach { $0.networkChanged() }
+    }
+
+    @Test func foregroundDuringAReconnectAttemptAttachesOnlyOnce() async {
+        await expectSingleAttach { $0.appForegrounded() }
+    }
+
+    /// Attempt 2 stalls in the handshake, `nudge` restarts it as attempt 3, then attempt 2 completes late.
+    private func expectSingleAttach(_ nudge: (SessionController) -> Void) async {
+        let gate = Latch()
+        let factory = FakeFactory { n, _, _, _ in
+            if n == 2 { await gate.wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        nudge(h.controller)
+        #expect(await waitUntil { h.factory.attempts == 3 && h.controller.state == .connected })
+        gate.open()
+
+        let conns = h.factory.connections.get
+        let stale = conns[1]
+        #expect(await waitUntil { stale.disconnects.get == 1 })
+        #expect(stale.opens.get.isEmpty)
+        #expect(h.controller.state == .connected)
+
+        for c in conns { c.shell.emit("a") }
+        #expect(await waitUntil { h.engine.fedText.contains("a") })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(h.engine.fedText == "a")
+        h.engine.onInput?(Data("x".utf8))
+        #expect(await waitUntil { conns[2].shell.writtenText == "x" })
+        #expect(conns[1].shell.writes.get.isEmpty)
+        #expect(conns[0].shell.writes.get.isEmpty)
+    }
+
+    @Test func restartStormAttachesOnlyTheLastAttempt() async {
+        let gates = (0..<6).map { _ in Latch() }
+        let factory = FakeFactory { n, _, _, _ in
+            if (2...4).contains(n) { await gates[n].wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 3 })
+        h.controller.appForegrounded()
+        #expect(await waitUntil { h.factory.attempts == 4 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 5 && h.controller.state == .connected })
+        gates[3].open(); gates[2].open(); gates[4].open()
+
+        let conns = h.factory.connections.get
+        for stale in conns[1...3] {
+            #expect(await waitUntil { stale.disconnects.get == 1 })
+            #expect(stale.opens.get.isEmpty)
+        }
+        #expect(conns[4].opens.get.count == 1)
+        #expect(conns[4].disconnects.get == 0)
+
+        for c in conns { c.shell.emit("a") }
+        #expect(await waitUntil { h.engine.fedText.contains("a") })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(h.engine.fedText == "a")
+        #expect(h.controller.state == .connected)
+        #expect(h.factory.attempts == 5)
+
+        conns[4].end(.io)
+        #expect(await waitUntil { h.factory.attempts == 6 && h.controller.state == .connected })
+    }
+
+    @Test func userDisconnectWhileAStaleAttemptIsBlockedDoesNotResurrect() async {
+        let gate = Latch()
+        let factory = FakeFactory { n, _, _, _ in
+            if n == 2 { await gate.wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        await h.controller.disconnect()
+        gate.open()
+
+        let stale = h.factory.connections.get[1]
+        #expect(await waitUntil { stale.disconnects.get == 1 })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(stale.opens.get.isEmpty)
+        #expect(h.controller.state == .disconnected(exitStatus: nil))
+        #expect(h.factory.attempts == 2)
+    }
+
+    @Test func disconnectAfterARestartWhileBothAttemptsAreBlockedDoesNotResurrect() async {
+        let gates = (0..<4).map { _ in Latch() }
+        let factory = FakeFactory { n, _, _, _ in
+            if (2...3).contains(n) { await gates[n].wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 3 })
+        await h.controller.disconnect()
+        gates[3].open(); gates[2].open()
+
+        let conns = h.factory.connections.get
+        #expect(await waitUntil { conns[1].disconnects.get == 1 && conns[2].disconnects.get == 1 })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(conns[1].opens.get.isEmpty && conns[2].opens.get.isEmpty)
+        #expect(h.controller.state == .disconnected(exitStatus: nil))
+        #expect(h.factory.attempts == 3)
+    }
+
+    /// Releases the stale attempt and nudges in the same main-actor turn, in both orders.
+    @Test(arguments: 0..<20) func nudgeRacingTheStaleCompletionAttachesOnce(_ i: Int) async {
+        let gate = Latch()
+        let factory = FakeFactory { n, _, _, _ in
+            if n == 2 { await gate.wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        if i.isMultiple(of: 2) {
+            gate.open(); h.controller.networkChanged()
+        } else {
+            h.controller.networkChanged(); gate.open()
+        }
+        #expect(await waitUntil { h.controller.state == .connected })
+        try? await Task.sleep(for: .milliseconds(30))
+
+        let conns = h.factory.connections.get
+        let live = conns.dropFirst().filter { $0.disconnects.get == 0 }
+        #expect(live.count == 1)
+        for c in conns.dropFirst() where c.disconnects.get == 1 && !c.opens.get.isEmpty {
+            #expect(c.shell.closeCalls.get == 1)
+        }
+
+        for c in conns { c.shell.emit("a") }
+        #expect(await waitUntil { h.engine.fedText.contains("a") })
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(h.engine.fedText == "a")
+        #expect(h.controller.state == .connected)
+
+        live.first!.end(.io)
+        #expect(await waitUntil { h.controller.state == .connected && h.factory.attempts > conns.count })
+    }
+
+    /// Known gap: a superseded attempt that reaches its password prompt late replaces the live
+    /// attempt's pending prompt, which ends the session.
+    @Test func staleAttemptsPasswordPromptDoesNotEndTheLiveAttempt() async {
+        let key = newHostKey()
+        var profile = HostProfile(name: "dev", host: host, username: "alice", auth: .password)
+        profile.tmux.enabled = false
+        let gate = Latch()
+        let h = Harness(profile: profile, maxAttempts: nil, factory: FakeFactory { n, c, v, _ in
+            if n == 2 { await gate.wait() }
+            try await handshake(c, v, key: key)
+        })
+        try? h.knownHosts.add(host: host, port: 22, publicKeyLine: key)
+        try? h.passwords.deletePassword(for: profile.id)
+        let task = h.connectInBackground()
+        #expect(await waitUntil { h.controller.pendingPrompt != nil })
+        h.controller.answerPassword("pw")
+        await task.value
+        #expect(h.controller.state == .connected)
+
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 3 && h.controller.pendingPrompt != nil })
+        gate.open()
+        try? await Task.sleep(for: .milliseconds(50))
+        await withKnownIssue("a stale attempt's prompt cancels the live attempt's prompt") {
+            #expect(h.controller.state != .disconnected(exitStatus: nil))
+        }
+    }
+
     @Test func manualReconnectFromFailedConnectsAgain() async {
         let h = Harness(factory: FakeFactory { n, _, _, _ in
             if n == 1 { throw FfiSshError.Timeout }
