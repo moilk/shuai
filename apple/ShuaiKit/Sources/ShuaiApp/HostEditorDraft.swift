@@ -9,7 +9,7 @@ extension HostValidationError {
         case .port: "Port must be 1–65535."
         case .username: "Enter a username."
         case .key: "Choose a key."
-        case .tmuxSessionName: "Use a name without ':' or '.'."
+        case .tmuxSessionName: "Enter a name without spaces at the ends, ':' or '.'."
         }
     }
 }
@@ -68,11 +68,11 @@ public struct HostEditorDraft: Equatable, Sendable {
         return (.key, keyIDs.count == 1 ? keyIDs[0] : "")
     }
 
-    /// The draft after the key library changed: a newly created key is selected only while no key
-    /// is chosen.
+    /// The draft after the key library changed: a newly created key is selected only for key auth
+    /// and only while no key is chosen.
     public func adoptingNewKey(before: [String], after: [String]) -> HostEditorDraft {
         var d = self
-        guard d.keyID.isEmpty, let new = after.first(where: { !before.contains($0) }) else { return d }
+        guard d.authKind == .key, d.keyID.isEmpty, let new = after.first(where: { !before.contains($0) }) else { return d }
         d.keyID = new
         return d
     }
@@ -129,9 +129,15 @@ public struct HostEditorValidation: Equatable, Sendable {
 }
 
 public enum HostEditorDirty {
-    /// A typed password counts as a change even though the draft does not hold it.
+    /// A typed password counts as a change even though the draft does not hold it. The key choice
+    /// only counts for key auth.
     public static func needsConfirmation(initial: HostEditorDraft, current: HostEditorDraft, passwordTyped: Bool) -> Bool {
-        passwordTyped || initial != current
+        func normalized(_ d: HostEditorDraft) -> HostEditorDraft {
+            var d = d
+            if d.authKind != .key { d.keyID = "" }
+            return d
+        }
+        return passwordTyped || normalized(initial) != normalized(current)
     }
 }
 

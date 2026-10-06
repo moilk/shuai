@@ -7,100 +7,62 @@ struct HostEditorView: View {
 
     private enum EditorPage: Hashable { case keys }
 
-    private let original: HostProfile?
-    private let id: UUID
-    private let initial: HostEditorDraft
+    private static let keyRow = "editor-key-row"
+
+    private let editing: Bool
+    /// Stable for the editor's lifetime: the sheet content is rebuilt when the app model changes,
+    /// so the host id, the initial snapshot and the save progress live in `@State`.
+    @State private var save: HostEditorSave
     @State private var draft: HostEditorDraft
     @State private var validation = HostEditorValidation()
     /// Held only here and written only to the Keychain; never part of the draft.
     @State private var password = ""
     @State private var saveError: String?
-    @State private var hostPersisted = false
     @State private var confirmDiscard = false
+    @State private var scrollTarget: String?
     @FocusState private var focus: HostValidationError?
 
     init(target: HostEditorTarget, keyIDs: [String] = []) {
+        let s: HostEditorSave
         switch target {
         case .new:
-            original = nil
-            id = UUID()
-            initial = HostEditorDraft(new: keyIDs)
+            editing = false
+            s = HostEditorSave(new: keyIDs)
         case .edit(let p):
-            original = p
-            id = p.id
-            initial = HostEditorDraft(editing: p)
+            editing = true
+            s = HostEditorSave(editing: p)
         }
-        _draft = State(initialValue: initial)
+        _save = State(initialValue: s)
+        _draft = State(initialValue: s.initial)
     }
 
-    private var keyIDs: [String] { model.keys.items.map(\.id) }
-
     private var isDirty: Bool {
-        HostEditorDirty.needsConfirmation(initial: initial, current: draft, passwordTyped: !password.isEmpty)
+        HostEditorDirty.needsConfirmation(initial: save.initial, current: draft, passwordTyped: !password.isEmpty)
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Server") {
-                    field("Name", text: $draft.name, error: .name, id: "host-name-field")
-                    field("Host or IP", text: $draft.host, error: .host, id: "host-address-field", keyboard: .URL)
-                    field("Port", text: $draft.portText, error: .port, id: "host-port-field", keyboard: .numberPad)
-                    field("Username", text: $draft.username, error: .username, id: "host-user-field")
-                }
-                Section("Authentication") {
-                    Picker("Method", selection: $draft.authKind) {
-                        ForEach(HostEditorDraft.AuthKind.allCases) { Text($0.rawValue).tag($0) }
+            ScrollViewReader { proxy in
+                form
+                    .onChange(of: scrollTarget) { _, target in
+                        guard let target else { return }
+                        withAnimation { proxy.scrollTo(target, anchor: .center) }
+                        scrollTarget = nil
                     }
-                    switch draft.authKind {
-                    case .key:
-                        if model.keys.items.isEmpty {
-                            Text("No keys yet.").foregroundStyle(.secondary)
-                        } else {
-                            Picker("Key", selection: $draft.keyID) {
-                                Text("Choose…").tag("")
-                                ForEach(model.keys.items) { Text($0.name).tag($0.id) }
-                            }
-                            errorLabel(.key)
-                        }
-                    case .password:
-                        SecureField(original == nil ? "Password" : "Password (leave empty to keep)", text: $password)
-                            .textContentType(.password)
-                    case .ask:
-                        Text("You are asked for the password every time you connect.").font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if model.keys.items.isEmpty {
-                        NavigationLink("Generate a key", value: EditorPage.keys)
-                            .accessibilityIdentifier("editor-open-keys")
-                    }
-                }
-                Section {
-                    Toggle("Attach to tmux", isOn: $draft.tmuxEnabled)
-                    if draft.tmuxEnabled {
-                        field("Session name", text: $draft.tmuxName, error: .tmuxSessionName, id: "host-tmux-field")
-                    }
-                    TextField("Startup command (optional)", text: $draft.startup)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                } header: {
-                    Text("Session")
-                } footer: {
-                    Text("`tmux new -A -s NAME` keeps your session alive across disconnects. The startup command runs when the session is created.")
-                }
-                if let saveError { Section { errorText(saveError) } }
             }
             .navigationDestination(for: EditorPage.self) { _ in KeysView(placement: .pushed) }
-            .navigationTitle(original == nil ? "New Host" : "Edit Host")
+            .navigationTitle(editing ? "Edit Host" : "New Host")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { if isDirty { confirmDiscard = true } else { dismiss() } }
+                    Button("Cancel") { if isDirty { confirmDiscard = true } else { close() } }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).accessibilityIdentifier("save-host-button")
+                    Button("Save", action: attemptSave).accessibilityIdentifier("save-host-button")
                 }
             }
             .confirmationDialog("Discard your changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
-                Button("Discard Changes", role: .destructive) { dismiss() }
+                Button("Discard Changes", role: .destructive) { close() }
                     .accessibilityIdentifier("discard-changes")
                 // No `.cancel` role: iPad's popover presentation omits cancel-role buttons.
                 Button("Keep Editing") {}
@@ -114,10 +76,61 @@ struct HostEditorView: View {
                 draft = draft.adoptingNewKey(before: old, after: new)
             }
             .onChange(of: isDirty, initial: true) { _, dirty in model.editorIsDirty = dirty }
+            // On the stack, not the form: a pushed page covers the form without ending the editor.
             .onDisappear {
                 password = ""
                 model.editorIsDirty = false
             }
+        }
+    }
+
+    private var form: some View {
+        Form {
+            Section("Server") {
+                field("Name", text: $draft.name, error: .name, id: "host-name-field")
+                field("Host or IP", text: $draft.host, error: .host, id: "host-address-field", keyboard: .URL)
+                field("Port", text: $draft.portText, error: .port, id: "host-port-field", keyboard: .numberPad)
+                field("Username", text: $draft.username, error: .username, id: "host-user-field")
+            }
+            Section("Authentication") {
+                Picker("Method", selection: $draft.authKind) {
+                    ForEach(HostEditorDraft.AuthKind.allCases) { Text($0.rawValue).tag($0) }
+                }
+                switch draft.authKind {
+                case .key:
+                    if model.keys.items.isEmpty {
+                        Text("No keys yet.").foregroundStyle(.secondary).id(Self.keyRow)
+                        errorLabel(.key)
+                        NavigationLink("Generate a key", value: EditorPage.keys)
+                            .accessibilityIdentifier("editor-open-keys")
+                    } else {
+                        Picker("Key", selection: $draft.keyID) {
+                            Text("Choose…").tag("")
+                            ForEach(model.keys.items) { Text($0.name).tag($0.id) }
+                        }
+                        .id(Self.keyRow)
+                        errorLabel(.key)
+                    }
+                case .password:
+                    SecureField(editing ? "Password (leave empty to keep)" : "Password", text: $password)
+                        .textContentType(.password)
+                case .ask:
+                    Text("You are asked for the password every time you connect.").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Toggle("Attach to tmux", isOn: $draft.tmuxEnabled)
+                if draft.tmuxEnabled {
+                    field("Session name", text: $draft.tmuxName, error: .tmuxSessionName, id: "host-tmux-field")
+                }
+                TextField("Startup command (optional)", text: $draft.startup)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            } header: {
+                Text("Session")
+            } footer: {
+                Text("`tmux new -A -s NAME` keeps your session alive across disconnects. The startup command runs when the session is created.")
+            }
+            if let saveError { Section { errorText(saveError) } }
         }
     }
 
@@ -144,27 +157,41 @@ struct HostEditorView: View {
         Label(s, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red)
     }
 
-    private func save() {
+    private func close() {
+        password = ""
+        model.editorIsDirty = false
+        dismiss()
+    }
+
+    private func attemptSave() {
         saveError = nil
         if let first = validation.attemptSave(draft) {
-            focus = first
-            AccessibilityNotification.Announcement(first.message).post()
+            // The key choice is a picker, which takes no text focus: scroll to it instead.
+            if first == .key { scrollTarget = Self.keyRow } else { focus = first }
+            let message = first.message
+            // Let VoiceOver finish announcing the focus change before the message.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                AccessibilityNotification.Announcement(message).post()
+            }
             return
         }
-        let p = draft.profile(id: id, lastConnectedAt: original?.lastConnectedAt)
-        do {
-            if original == nil, !hostPersisted { try model.hosts.add(p) } else { try model.hosts.update(p) }
-            hostPersisted = true
-            switch draft.authKind {
-            case .password:
-                if !password.isEmpty { try model.passwords.setPassword(password, for: p.id) }
-                password = ""
-            case .key, .ask: try? model.passwords.deletePassword(for: p.id)
-            }
+        let result = save.attempt(
+            draft, password: password, lastConnectedAt: model.hosts.host(id: save.id)?.lastConnectedAt,
+            writeHost: { p, step in
+                switch step {
+                case .add: try model.hosts.add(p)
+                case .update: try model.hosts.update(p)
+                }
+            },
+            setPassword: { pw, id in try model.passwords.setPassword(pw, for: id) },
+            deletePassword: { id in _ = try? model.passwords.deletePassword(for: id) })
+        switch result {
+        case .saved(let p):
             if model.selection == nil { model.selection = p.id }
-            dismiss()
-        } catch {
-            saveError = HostEditorSaveError.message(for: error, hostSaved: hostPersisted)
+            close()
+        case .failed(let message):
+            saveError = message
         }
     }
 }

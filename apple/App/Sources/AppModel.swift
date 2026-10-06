@@ -187,6 +187,7 @@ final class AppModel {
 
     /// The sheet went away (button or swipe): run the route's cleanup and clear it.
     func dismissModal() {
+        editorIsDirty = false
         switch router.current {
         case .quickSwitcher: closeQuickSwitcher(activated: false)
         case .agentInstall: closeAgentInstall()
