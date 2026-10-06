@@ -57,7 +57,7 @@ import Testing
     @Test func hostWithoutTopologyHasNoChildren() {
         let r = rows(input(session: .idle, monitor: .idle))
         #expect(kinds(r) == ["host"])
-        guard case .host(let h) = r[0] else { return Issue.record("not a host") }
+        guard case .host(let h) = r[0] else { Issue.record("not a host"); return }
         #expect(!h.hasChildren)
         #expect(h.aggregate == nil)
     }
@@ -74,7 +74,7 @@ import Testing
         let r = rows(input(topology: topology()))
         #expect(kinds(r) == ["host", "session:main", "window:1", "window:2", "pane:0", "pane:1", "session:work"])
         #expect(r.map(\.depth) == [0, 1, 2, 2, 3, 3, 1])
-        guard case .session(let work) = r[6] else { return Issue.record("not a session") }
+        guard case .session(let work) = r[6] else { Issue.record("not a session"); return }
         #expect(!work.isExpanded)
         #expect(work.hasChildren)
     }
@@ -84,7 +84,7 @@ import Testing
         e.toggle(.host(hostID), default: true)
         let r = rows(input(topology: topology()), e)
         #expect(kinds(r) == ["host"])
-        guard case .host(let h) = r[0] else { return Issue.record("not a host") }
+        guard case .host(let h) = r[0] else { Issue.record("not a host"); return }
         #expect(h.hasChildren)
         #expect(!h.isExpanded)
         #expect(h.toggleLabel == "Expand")
@@ -147,14 +147,14 @@ import Testing
     @Test func hostAggregateIsHighestPaneBadge() {
         let b = Badges(map: ["%0": .working, "%5": .needsPermission, "%2": .done])
         let r = rows(input(topology: topology()), badges: b)
-        guard case .host(let h) = r[0] else { return Issue.record("not a host") }
+        guard case .host(let h) = r[0] else { Issue.record("not a host"); return }
         #expect(h.aggregate == .needsPermission)
     }
 
     @Test func collapsedSessionKeepsAttentionBadge() {
         let b = Badges(map: ["%5": .needsInput])
         let r = rows(input(topology: topology()), badges: b)
-        guard case .session(let work) = r.last else { return Issue.record("not a session") }
+        guard case .session(let work) = r.last else { Issue.record("not a session"); return }
         #expect(!work.isExpanded)
         #expect(work.badge == .needsInput)
         #expect(work.accessibilityLabel.hasSuffix("needs input"))
@@ -162,7 +162,7 @@ import Testing
 
     @Test func windowValueIsExactlyActive() {
         let r = rows(input(topology: topology()))
-        guard case .window(let w1) = r[2], case .window(let w2) = r[3] else { return Issue.record("not windows") }
+        guard case .window(let w1) = r[2], case .window(let w2) = r[3] else { Issue.record("not windows"); return }
         #expect(w1.accessibilityValue == "")
         #expect(w2.accessibilityValue == "active")
     }
@@ -173,7 +173,7 @@ import Testing
         guard case .host(let h) = r[0], case .session(let s) = r[1], case .window(let w0) = r[2],
             case .window(let w1) = r[3], case .pane(let p0) = r[4], case .pane(let p1) = r[5],
             case .session(let work) = r[6]
-        else { return Issue.record("shape") }
+        else { Issue.record("shape"); return }
         #expect(h.accessibilityLabel == "dev, me@example.test")
         #expect(h.accessibilityValue == "Connected, 2 waiting for you")
         #expect(h.toggleLabel == "Collapse")
