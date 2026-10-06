@@ -214,6 +214,8 @@ struct QuickSwitcherView: View {
     @Environment(AppModel.self) private var model
     @Bindable var switcher: QuickSwitcherModel
     @FocusState private var focused: Bool
+    @ScaledMetric(relativeTo: .body) private var padding: CGFloat = 14
+    @ScaledMetric(relativeTo: .body) private var minTarget: CGFloat = 44
 
     var body: some View {
         VStack(spacing: 0) {
@@ -226,12 +228,17 @@ struct QuickSwitcherView: View {
                     .textInputAutocapitalization(.never)
                     .onSubmit(activate)
                     .accessibilityIdentifier("quick-switcher-field")
-                Button { model.closeQuickSwitcher(activated: false) } label: { Image(systemName: "xmark.circle.fill") }
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Close")
-                    .accessibilityIdentifier("quick-switcher-close")
+                // The minimum lives in the label so the whole square is tappable.
+                Button { model.closeQuickSwitcher(activated: false) } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .frame(minWidth: minTarget, minHeight: minTarget)
+                        .contentShape(Rectangle())
+                }
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Close")
+                .accessibilityIdentifier("quick-switcher-close")
             }
-            .padding(14)
+            .padding(padding)
             Divider()
             ScrollViewReader { proxy in
                 List {

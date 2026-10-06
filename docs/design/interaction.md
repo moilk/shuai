@@ -129,6 +129,24 @@ Each status has its own symbol and label, so state never relies on colour alone:
 
 The accessibility label of every presentation, including the hidden ones, is "{host}: {status label}".
 
+## Accessibility
+
+- **44 pt targets.** Every tappable control is at least 44 x 44 pt. The minimum is set inside the
+  button's label (`.frame(minWidth:minHeight:)` plus `.contentShape(Rectangle())`); a frame outside
+  the `Button` enlarges the layout but not the tappable area. This covers the notice dismiss
+  button, the Quick Switcher close button and the connection actions.
+- **Scaled metrics.** Paddings, spacings and minimum target sizes in the notice rows, connection
+  views, Quick Switcher and the AI install sheet are `@ScaledMetric(relativeTo: .body)`, so they grow
+  with the text size.
+- **Accessibility sizes.** At `dynamicTypeSize.isAccessibilitySize` the connection strip stacks
+  vertically (icon and text, then the actions) and the card's actions stack, so text and buttons
+  never overlap or truncate. Probe rows in the install sheet drop the one-line limit and wrap.
+- **Status icons are spoken.** Install step icons carry `StepStatus.accessibilityLabel` ("Done",
+  "Failed", "Needs your decision", "Running", "Pending", "Planned", "Skipped"), never the failure
+  message. Each step row is one accessibility element.
+- **Audit.** A UI test runs `performAccessibilityAudit` (Dynamic Type, hit region, element
+  description) on the connection strip; the terminal surface is excluded.
+
 ## Modals
 
 One `ModalRoute` is open at a time (`AppModel.modal`, decided by the pure `ModalRouter`) and
