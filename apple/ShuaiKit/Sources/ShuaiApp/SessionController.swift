@@ -408,6 +408,16 @@ public final class SessionController {
             throw Cancelled()
         }
 
+        // A shell or connection still installed is replaced: close it so only one PTY feeds the engine.
+        if shell != nil || connection != nil {
+            await teardownTransport()
+            guard gen == generation else {
+                await newShell.close()
+                await conn.disconnect()
+                throw Cancelled()
+            }
+        }
+
         connection = conn
         startShell(newShell, gen: gen, tmuxAttempt: useTmux)
         closedTask = Task { [weak self] in
@@ -678,7 +688,13 @@ public final class SessionController {
         }
     }
 
+    /// One reconnect attempt. Attempts can overlap (a network change restarts one while its
+    /// handshake is still running and the SSH layer ignores cancellation), so each claims a new
+    /// `generation`: an attempt that is superseded, or that finds the session already reattached,
+    /// disconnects its own connection and never attaches a shell.
     private func reconnectOnce() async throws {
+        guard isReconnecting else { return }
+        generation += 1
         let gen = generation
         passwordCancelled = false
         do {
