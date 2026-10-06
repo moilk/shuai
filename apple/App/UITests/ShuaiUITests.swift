@@ -300,7 +300,7 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(terminal.waitForExistence(timeout: 10))
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10), "software keyboard is up")
-        let esc = app.buttons["Esc"].firstMatch
+        let esc = app.buttons["accessory-esc"].firstMatch
         XCTAssertTrue(esc.waitForExistence(timeout: 10), "accessory bar present")
         // Let any keyboard / bar re-layout settle, then check it stayed stable (no flip-flopping loop).
         Thread.sleep(forTimeInterval: 2)
@@ -312,8 +312,8 @@ final class ShuaiUITests: XCTestCase {
         // nothing but the terminal itself occupies the first row band
         let firstRow = CGRect(x: terminal.frame.minX, y: terminal.frame.minY, width: terminal.frame.width, height: 20)
         for b in app.buttons.allElementsBoundByIndex where b.frame.width > 0 && b.exists {
-            let l = b.label
-            if ["Esc", "Ctrl", "Alt", "Tab"].contains(l) {
+            let l = b.identifier
+            if ["accessory-esc", "accessory-ctrl", "accessory-alt", "accessory-tab"].contains(l) {
                 XCTAssertFalse(b.frame.intersects(firstRow), "accessory key '\(l)' overlaps the first terminal row")
             }
         }
