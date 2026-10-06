@@ -184,6 +184,33 @@ the save progress in `@State`, because the sheet content is rebuilt whenever the
   SSH key and no key was chosen. "Generate a key" appears under the SSH key method when the library
   is empty.
 
+## Sidebar
+
+`HostListView` renders `SidebarModel.rows` (pure, in `ShuaiApp/Sidebar/`): one `List(selection:)`
+of host, loading, session, window and pane rows. Only host rows are tagged for selection; tmux rows
+are plain buttons (the active one carries `.isSelected`). Indentation is `row.depth` times a
+`@ScaledMetric` step, capped at two levels at accessibility text sizes.
+
+- **Defaults.** Hosts and the viewed session are expanded, other sessions collapsed. Collapsing
+  never changes selection, and an agent needing attention never expands anything.
+- **Persistence.** `SidebarExpansionStore` keeps only the exceptions to the defaults, keyed by host
+  UUID and session name (never tmux `$N`/`@N`/`%N` ids, which are reused after a server restart), in
+  UserDefaults, capped at 256 entries. Deleting a host forgets its entries; launch prunes entries of
+  hosts that no longer exist. UI tests use an isolated suite per launch.
+- **Host row.** One element (`host-row-<name>`) holds status symbol, name and target, so its tap
+  and long-press area is at least 44 pt tall; its label comes from the model. Beside it: the host
+  aggregate badge (`host-aggregate-badge`, the most urgent pane badge, visible while collapsed), the
+  waiting count (hand symbol plus number) and a 44 x 44 chevron (`host-toggle-<name>`,
+  `tmux-session-toggle-<name>` for sessions) that is also exposed as an Expand/Collapse
+  accessibility action.
+- **Menus.** The host menu keeps Edit and Delete and groups the AI items in an "AI integration"
+  section; while the host is not connected they are disabled and say "Connect to this host first".
+  Session rows offer Switch to Session and New Window; window and pane menus live in the shared
+  `TmuxWindowMenu`/`TmuxPaneMenu`. New Window always targets the row's own session
+  (`TmuxActions.newWindow(inSession:)`, which accepts only a known `$N` id).
+- **Accessibility text.** Window rows keep the accessibility value `active`/empty; the richer text
+  (index, name, pane count, zoom, badge) is the label. The pane dot is decorative and hidden.
+
 ## Accessibility
 
 - **44 pt targets.** Every tappable control is at least 44 x 44 pt. The minimum is set inside the
