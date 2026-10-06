@@ -15,7 +15,7 @@ telemetry. Agent status travels inside the same SSH connection (an extra exec ch
 | "Ask each time" passwords | Memory only; cleared on disconnect, remote exit, auth failure |
 | Host profiles | JSON file in Application Support |
 | Trusted host keys | OpenSSH `known_hosts` file in Application Support |
-| ntfy topic and token | Keychain |
+| ntfy topic and token | Keychain; the topic is masked on screen until you tap Show |
 | Preferences | UserDefaults (no secrets) |
 
 Deleting the app deletes all of it, including the keys.
@@ -48,6 +48,9 @@ prompts, commands, tool input, messages, paths or the working directory. See
 
 The ntfy topic and token are never logged by `shuai-agent`; errors that might quote them are
 redacted, and `shuai-agent doctor` reports only whether ntfy is configured.
+
+Copy topic puts the topic on the pasteboard for two minutes; it then expires, and Universal
+Clipboard still works during that time.
 
 ## Untrusted input
 
