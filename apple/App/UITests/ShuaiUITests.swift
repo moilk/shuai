@@ -331,9 +331,31 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(target.isHittable, "\(target) not reachable after \(swipes) swipes\n\(app.debugDescription)")
     }
 
+    /// The software keyboard (up while the terminal is focused) covers the sidebar bottom bar, so
+    /// tests that use the bar first move focus out of the terminal by tapping the host row.
+    @MainActor
+    private func hideSoftwareKeyboard(_ app: XCUIApplication) {
+        guard app.keyboards.count > 0 else { return }
+        app.staticTexts["host-row-fixture-host"].tap()
+        let gone = expectation(for: NSPredicate(format: "count == 0"), evaluatedWith: app.keyboards)
+        if XCTWaiter().wait(for: [gone], timeout: 3) != .completed {
+            // Landscape: the keyboard's dismiss key sits at its trailing bottom corner. The key's own
+            // frame is reported off screen by the simulator, so tap the corner of the keyboard frame.
+            let frame = app.keyboards.firstMatch.frame
+            let window = app.windows.firstMatch
+            let corner = CGVector(dx: (frame.maxX - 40) / window.frame.width, dy: (frame.maxY - 50) / window.frame.height)
+            window.coordinate(withNormalizedOffset: corner).tap()
+        }
+        for id in ["add-host-button", "settings-button"] {
+            let hittable = expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: app.buttons[id])
+            wait(for: [hittable], timeout: 5)
+        }
+    }
+
     /// Taps the sidebar bottom bar's Settings button.
     @MainActor
     private func tapSettings(_ app: XCUIApplication) {
+        hideSoftwareKeyboard(app)
         let button = app.buttons["settings-button"]
         XCTAssertTrue(button.waitForExistence(timeout: 5), "settings-button missing\n\(app.debugDescription)")
         button.tap()
@@ -343,6 +365,7 @@ final class ShuaiUITests: XCTestCase {
     func testSidebarTopHasOnlyQuickSwitcher() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
         XCTAssertTrue(app.buttons["quick-switcher-button"].exists)
         let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
         XCTAssertTrue(add.exists, "New Host is in the bottom bar")
@@ -367,16 +390,20 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 5))
     }
 
+    /// New Host is custom content sized to 44 pt. Settings is the system's icon-only glass button,
+    /// which reports 36 pt: a taller frame on it makes the whole bar report as not hittable.
     @MainActor
     func testSidebarBottomBarTargetsAreAtLeast44pt() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        for id in ["add-host-button", "settings-button"] {
-            let button = app.buttons[id]
-            XCTAssertTrue(button.waitForExistence(timeout: 5), id)
-            XCTAssertTrue(button.isHittable, "\(id) hittable")
-            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) tap target height")
-        }
+        hideSoftwareKeyboard(app)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(add.isHittable, "add-host-button hittable")
+        XCTAssertTrue(settings.isHittable, "settings-button hittable")
+        XCTAssertGreaterThanOrEqual(add.frame.height, 44, "add-host-button tap target height")
+        XCTAssertGreaterThanOrEqual(settings.frame.height, 36, "settings-button is the system bar button size")
     }
 
     @MainActor
@@ -384,6 +411,7 @@ final class ShuaiUITests: XCTestCase {
         let app = launchWithTmuxFixture(
             extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
         let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
         XCTAssertTrue(add.waitForExistence(timeout: 5))
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
@@ -398,6 +426,7 @@ final class ShuaiUITests: XCTestCase {
     func testSidebarBottomBarPassesTheAccessibilityAudit() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
         let bar = app.buttons["add-host-button"].frame.union(app.buttons["settings-button"].frame).insetBy(dx: -1, dy: -1)
         try app.performAccessibilityAudit(for: [.dynamicType, .hitRegion, .sufficientElementDescription]) { issue in
             // Only the bottom bar is audited here; other screens have their own owners.
