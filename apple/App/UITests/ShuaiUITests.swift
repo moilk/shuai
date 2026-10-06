@@ -667,6 +667,56 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(dismiss.frame.height, 44, "tap target height")
     }
 
+    // MARK: window tab strip (sidebar collapsed)
+
+    @MainActor
+    private func launchWithCollapsedSidebar() -> XCUIApplication {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugSidebarCollapsed"])
+        XCTAssertTrue(app.descendants(matching: .any)["window-tab-strip"].waitForExistence(timeout: 10), "tab strip")
+        return app
+    }
+
+    @MainActor
+    func testWindowTabStripTargetsAreAtLeast44pt() throws {
+        let app = launchWithCollapsedSidebar()
+        let ids = ["window-tab-@0", "window-tab-@1", "window-tab-new", "window-tab-session-menu"]
+        for id in ids {
+            let element = app.buttons[id]
+            XCTAssertTrue(element.waitForExistence(timeout: 5), id)
+            XCTAssertTrue(element.isHittable, "\(id) hittable")
+            XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(id) height")
+            XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(id) width")
+        }
+        XCTAssertEqual(app.buttons["window-tab-@1"].value as? String, "active")
+        XCTAssertEqual(app.buttons["window-tab-@0"].value as? String, "")
+    }
+
+    @MainActor
+    func testSessionMenuListsSessionsInTheTabStrip() throws {
+        let app = launchWithCollapsedSidebar()
+        let menu = app.buttons["window-tab-session-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        XCTAssertEqual(menu.label, "Session: main")
+        menu.tap()
+        XCTAssertTrue(app.buttons["main"].waitForExistence(timeout: 5), "viewed session listed")
+        XCTAssertTrue(app.buttons["scratch"].exists, "other session listed")
+    }
+
+    @MainActor
+    func testTabLongPressOffersTheWindowMenu() throws {
+        let app = launchWithCollapsedSidebar()
+        let tab = app.buttons["window-tab-@0"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 5))
+        tab.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Rename\u{2026}"].waitForExistence(timeout: 5), "menu offers Rename")
+        let close = app.buttons["Close Window"]
+        XCTAssertTrue(close.exists, "menu offers Close Window")
+        close.tap()
+        XCTAssertTrue(app.buttons["confirm-kill"].waitForExistence(timeout: 5), "closing asks first")
+        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        XCTAssertTrue(tab.exists)
+    }
+
     @MainActor
     func testConnectionStripPassesTheAccessibilityAudit() throws {
         let app = launchWithConnectionState("reconnecting")
