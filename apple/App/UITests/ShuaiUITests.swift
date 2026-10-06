@@ -55,7 +55,7 @@ final class ShuaiUITests: XCTestCase {
         name.typeText("unsaved-host")
 
         app.buttons["Cancel"].tap()
-        let keep = app.buttons["keep-editing"]
+        let keep = app.buttons.matching(identifier: "keep-editing").firstMatch
         XCTAssertTrue(app.buttons["discard-changes"].waitForExistence(timeout: 5), "unsaved input asks before closing")
         XCTAssertTrue(keep.exists)
         keep.tap()
@@ -63,7 +63,7 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertEqual(name.value as? String, "unsaved-host")
 
         app.buttons["Cancel"].tap()
-        let discard = app.buttons["discard-changes"]
+        let discard = app.buttons.matching(identifier: "discard-changes").firstMatch
         XCTAssertTrue(discard.waitForExistence(timeout: 5))
         discard.tap()
         XCTAssertTrue(addFirst.waitForExistence(timeout: 5), "Discard Changes closes the editor")

@@ -102,7 +102,8 @@ struct HostEditorView: View {
             .confirmationDialog("Discard your changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
                 Button("Discard Changes", role: .destructive) { dismiss() }
                     .accessibilityIdentifier("discard-changes")
-                Button("Keep Editing", role: .cancel) {}
+                // No `.cancel` role: iPad's popover presentation omits cancel-role buttons.
+                Button("Keep Editing") {}
                     .accessibilityIdentifier("keep-editing")
             }
             .interactiveDismissDisabled(isDirty)
