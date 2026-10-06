@@ -20,16 +20,8 @@ struct RootView: View {
         #if DEBUG
         .overlay(alignment: .bottomLeading) { if DebugLaunch.agentFixture { FixtureLogProbe() } }
         #endif
-        .sheet(item: $model.editor) { target in
-            HostEditorView(target: target)
-        }
-        .sheet(isPresented: Binding(
-            get: { model.quickSwitcher != nil }, set: { if !$0 { model.closeQuickSwitcher(activated: false) } })
-        ) {
-            if let q = model.quickSwitcher { QuickSwitcherView(switcher: q) }
-        }
-        .sheet(item: $model.agentInstall) { req in
-            AgentInstallSheet(model: req.model, hostName: req.host.name) { model.closeAgentInstall() }
+        .sheet(item: Binding(get: { model.modal }, set: { if $0 == nil { model.dismissModal() } })) { route in
+            modalContent(route)
         }
         .overlay(alignment: .bottom) { NotificationOptInBanner() }
         .overlay(alignment: .top) {
@@ -38,8 +30,6 @@ struct RootView: View {
                 NoticeStackView().padding()
             }
         }
-        .sheet(isPresented: $model.showSettings) { SettingsView() }
-        .sheet(isPresented: $model.showKeys) { NavigationStack { KeysView() } }
         // The terminal is first responder; without this its software keyboard stays up under a sheet
         // and covers half of it on smaller iPads.
         .onChange(of: model.hasSheetOpen) { _, open in
@@ -57,6 +47,25 @@ struct RootView: View {
         #endif
     }
 
+    @ViewBuilder private func modalContent(_ route: ModalRoute) -> some View {
+        switch route {
+        case .newHost:
+            HostEditorView(target: .new)
+        case .editHost(let id):
+            if let host = model.hosts.host(id: id) { HostEditorView(target: .edit(host)) }
+        case .settings:
+            SettingsView()
+        case .keys:
+            NavigationStack { KeysView(placement: .sheetRoot) }
+        case .quickSwitcher:
+            if let q = model.quickSwitcher { QuickSwitcherView(switcher: q) }
+        case .agentInstall:
+            if let req = model.agentInstall {
+                AgentInstallSheet(model: req.model, hostName: req.host.name) { model.closeAgentInstall() }
+            }
+        }
+    }
+
     @MainActor private static func resignFirstResponder() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
@@ -71,7 +80,7 @@ struct RootView: View {
                 Text(model.hosts.hosts.isEmpty ? "Add a server to start a terminal session." : "Choose a host from the sidebar.")
             } actions: {
                 if model.hosts.hosts.isEmpty {
-                    Button("Add your first host") { model.editor = .new }
+                    Button("Add your first host") { model.request(.newHost) }
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("add-first-host")
                 }
@@ -95,11 +104,11 @@ struct HostListView: View {
                     .accessibilityIdentifier("host-row-\(host.name)")
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { pendingDelete = host } label: { Label("Delete", systemImage: "trash") }
-                        Button { model.editor = .edit(host) } label: { Label("Edit", systemImage: "pencil") }
+                        Button { model.request(.editHost(host.id)) } label: { Label("Edit", systemImage: "pencil") }
                             .tint(.blue)
                     }
                     .contextMenu {
-                        Button("Edit", systemImage: "pencil") { model.editor = .edit(host) }
+                        Button("Edit", systemImage: "pencil") { model.request(.editHost(host.id)) }
                         let connected = model.sessions.existingController(for: host.id)?.agentRemote != nil
                         Button("Enable AI integration…", systemImage: "sparkles") {
                             model.presentAgentInstall(host: host, uninstall: false)
@@ -131,7 +140,7 @@ struct HostListView: View {
                 ContentUnavailableView {
                     Label("No hosts", systemImage: "server.rack")
                 } actions: {
-                    Button("Add your first host") { model.editor = .new }
+                    Button("Add your first host") { model.request(.newHost) }
                         .accessibilityIdentifier("sidebar-add-first-host")
                 }
             }
@@ -141,11 +150,11 @@ struct HostListView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { model.openQuickSwitcher() } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
                     .accessibilityIdentifier("quick-switcher-button")
-                Button { model.showKeys = true } label: { Label("Keys", systemImage: "key") }
+                Button { model.request(.keys) } label: { Label("Keys", systemImage: "key") }
                     .accessibilityIdentifier("keys-button")
-                Button { model.showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                Button { model.request(.settings) } label: { Label("Settings", systemImage: "gearshape") }
                     .accessibilityIdentifier("settings-button")
-                Button { model.editor = .new } label: { Label("Add Host", systemImage: "plus") }
+                Button { model.request(.newHost) } label: { Label("Add Host", systemImage: "plus") }
                     .accessibilityIdentifier("add-host-button")
             }
         }

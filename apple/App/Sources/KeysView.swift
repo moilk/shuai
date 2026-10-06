@@ -3,6 +3,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct KeysView: View {
+    enum Placement {
+        /// The root of its own sheet: shows Done.
+        case sheetRoot
+        /// Pushed inside the editor or Settings sheet: the back button returns.
+        case pushed
+    }
+
+    let placement: Placement
+
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
@@ -31,7 +40,9 @@ struct KeysView: View {
         .navigationTitle("Keys")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+            if placement == .sheetRoot {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Generate ed25519 key") { newKeyName = ""; generateAlgorithm = .ed25519 }

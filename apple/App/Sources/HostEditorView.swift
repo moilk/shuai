@@ -10,6 +10,8 @@ struct HostEditorView: View {
         var id: String { rawValue }
     }
 
+    private enum EditorPage: Hashable { case keys }
+
     private let original: HostProfile?
     @State private var id: UUID
     @State private var name: String
@@ -92,7 +94,8 @@ struct HostEditorView: View {
                     case .key:
                         if model.keys.items.isEmpty {
                             Text("No keys yet. Generate or import one in Keys.").foregroundStyle(.secondary)
-                            Button("Open Keys") { model.showKeys = true }
+                            NavigationLink("Open Keys", value: EditorPage.keys)
+                                .accessibilityIdentifier("editor-open-keys")
                         } else {
                             Picker("Key", selection: $keyID) {
                                 Text("Choose…").tag("")
@@ -121,6 +124,7 @@ struct HostEditorView: View {
                 }
                 if let saveError { Section { errorText(saveError) } }
             }
+            .navigationDestination(for: EditorPage.self) { _ in KeysView(placement: .pushed) }
             .navigationTitle(original == nil ? "New Host" : "Edit Host")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -204,8 +204,8 @@ private struct TerminalSessionView: View {
         case .cancelReconnect: Task { await controller.cancelReconnect() }
         case .cancelConnect: Task { await controller.disconnect() }
         case .retry, .reconnect: Task { await controller.reconnect() }
-        case .editHost: model.editor = .edit(host)
-        case .openKeys: model.showKeys = true
+        case .editHost: model.request(.editHost(host.id))
+        case .openKeys: model.request(.keys)
         }
     }
 }
