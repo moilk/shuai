@@ -141,7 +141,9 @@ switcher and the AI-integration sheet. Opening a sheet resigns the terminal firs
 - The quick switcher yields: any other request replaces it.
 - Every other open modal wins: a request for a different route is ignored, so menu chords (New Host
   ⌘N, Settings ⌘,, Quick Switcher ⌘K) never stack sheets. A modal with unsaved input is never
-  replaced (`currentIsDirty`; the host editor reports it through `AppModel.editorIsDirty`).
+  replaced (`currentIsDirty`). The open host editor reports its dirtiness through
+  `AppModel.editorIsDirty`, which `AppModel` reads only for the new and edit host routes and clears
+  when the modal is dismissed.
 - A late dismissal of a route that has already been replaced does not close its successor.
 
 Keys is not a second sheet. Inside the host editor ("Generate a key" while the library is empty, `editor-open-keys`) and Settings
@@ -152,19 +154,30 @@ request (toolbar, the connection card's Open keys) presents Keys as its own shee
 ## Editor
 
 The host editor's logic is the pure `HostEditorDraft` (every field as text, no password),
-`HostEditorValidation`, `HostEditorDirty` and `HostEditorSaveError`; the view only renders them.
+`HostEditorValidation`, `HostEditorDirty`, `HostEditorSaveError` and the save flow
+`HostEditorSave`; the view only renders them. The view keeps the host id, the initial snapshot and
+the save progress in `@State`, because the sheet content is rebuilt whenever the app model changes.
 
 - A field's error shows once the field lost focus or Save was tapped, and hides as soon as the field
   is valid. It renders as an `exclamationmark.circle.fill` label with the message text.
-- Save is never disabled. With errors it focuses the first invalid field in form order and posts a
-  VoiceOver announcement.
+- Save is never disabled. With errors it focuses the first invalid field in form order (the key
+  choice, which takes no text focus, is scrolled into view) and posts a VoiceOver announcement
+  shortly after, so the focus speech does not cut it off.
 - Cancel with unsaved changes (any edited field, or a typed password) asks "Discard Changes" /
-  "Keep Editing", and swipe-to-dismiss is disabled while dirty.
-- The password lives only in view state, is cleared on disappear and is written only to the Keychain.
-  Save errors use fixed copy and never include an underlying error's description; when only the
-  Keychain write fails the message says the host was saved.
+  "Keep Editing". Swipe-to-dismiss is disabled while dirty rather than prompting. The key choice
+  only counts as a change for key auth.
+- The password lives only in view state and is written only to the Keychain. It is cleared when the
+  editor closes (Save, Discard, or the navigation stack disappearing); a pushed Keys page covers the
+  form without clearing it.
+- Save errors use fixed copy and never include an underlying error's description. "Host saved, but
+  the password could not be stored" is shown only when the host write of that same attempt
+  succeeded; a retry updates the same host.
 - A new host defaults to SSH key auth when the library has keys (preselected when there is one),
   otherwise Ask each time. A key generated from the pushed Keys page is selected when none was chosen.
+
+  otherwise Ask each time. A key generated from the pushed Keys page is selected when the method is
+  SSH key and no key was chosen. "Generate a key" appears under the SSH key method when the library
+  is empty.
 ## Accessibility
 
 - **44 pt targets.** Every tappable control is at least 44 x 44 pt. The minimum is set inside the

@@ -18,8 +18,8 @@ Keyboard-interactive authentication (for example one-time codes) is answered in 
 
 A field's problem is shown under it when you leave the field, and disappears as soon as it is
 fixed. **Save** stays available: with problems it moves to the first invalid field and announces it
-to VoiceOver. **Cancel** (and swiping the sheet down) with unsaved changes asks whether to discard
-them.
+to VoiceOver. **Cancel** with unsaved changes asks whether to discard them, and swiping the sheet
+down does nothing while there are unsaved changes.
 
 ## 2. Keys
 
