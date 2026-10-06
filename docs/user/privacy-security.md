@@ -49,8 +49,9 @@ prompts, commands, tool input, messages, paths or the working directory. See
 The ntfy topic and token are never logged by `shuai-agent`; errors that might quote them are
 redacted, and `shuai-agent doctor` reports only whether ntfy is configured.
 
-Copy topic puts the topic on the pasteboard for two minutes; it then expires, and Universal
-Clipboard still works during that time.
+Copy topic puts the topic on this device's pasteboard for two minutes. It is also offered to your
+other devices through Universal Clipboard, and a copy pasted there is not removed. A revealed topic
+is hidden again when the app leaves the foreground or you leave the page.
 
 ## Untrusted input
 
