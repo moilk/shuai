@@ -192,6 +192,24 @@ final class AppModel {
         return outcome != .ignored
     }
 
+    /// Whether a menu item for `route` would do anything right now (no non-replaceable modal in the way).
+    func canRequest(_ route: ModalRoute) -> Bool {
+        if route == .quickSwitcher { return router.current == nil }
+        return router.canPresent(route, currentIsDirty: modalIsDirty)
+    }
+
+    /// The selected host's tmux availability for the menu bar's tmux menu.
+    var tmuxMenuAvailability: TmuxMenuAvailability {
+        guard let id = selection, let host = hosts.host(id: id) else { return .unavailable }
+        return TmuxMenuAvailability(sessions.controller(for: host).tmux.state)
+    }
+
+    /// Runs a tmux menu item for the selected host.
+    func performTmuxMenuItem(id: String) {
+        guard let hostID = selection, let host = hosts.host(id: hostID) else { return }
+        handleShortcut(id: id, host: host)
+    }
+
     /// The sheet went away (button or swipe): run the route's cleanup and clear it.
     func dismissModal() {
         editorIsDirty = false

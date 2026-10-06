@@ -44,12 +44,19 @@ struct HostListView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { model.openQuickSwitcher() } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
                     .accessibilityIdentifier("quick-switcher-button")
-                Button { model.request(.keys) } label: { Label("Keys", systemImage: "key") }
-                    .accessibilityIdentifier("keys-button")
-                Button { model.request(.settings) } label: { Label("Settings", systemImage: "gearshape") }
-                    .accessibilityIdentifier("settings-button")
                 Button { model.request(.newHost) } label: { Label("Add Host", systemImage: "plus") }
                     .accessibilityIdentifier("add-host-button")
+                // Frequent actions stay visible; the library and settings live in More.
+                Menu {
+                    Button { model.request(.settings) } label: { Label("Settings…", systemImage: "gearshape") }
+                        .accessibilityIdentifier("settings-button")
+                    Button { model.request(.keys) } label: { Label("Keys…", systemImage: "key") }
+                        .accessibilityIdentifier("keys-button")
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+                .accessibilityIdentifier("more-menu")
+                .accessibilityLabel("More")
             }
         }
         .confirmationDialog(

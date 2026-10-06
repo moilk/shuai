@@ -28,17 +28,33 @@ struct ShuaiMain: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Host") { model.request(.newHost) }
                     .keyboardShortcut("n", modifiers: .command)
+                    .disabled(!model.canRequest(.newHost))
             }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { model.request(.settings) }
                     .keyboardShortcut(",", modifiers: .command)
+                    .disabled(!model.canRequest(.settings))
+                Button("Keys…") { model.request(.keys) }
+                    .disabled(!model.canRequest(.keys))
             }
             CommandMenu("Go") {
                 // Also works while the sidebar has focus; in the terminal the key command takes the chord.
                 Button("Quick Switcher") { model.openQuickSwitcher() }
                     .keyboardShortcut("k", modifiers: .command)
+                    .disabled(!model.canRequest(.quickSwitcher))
                 Button("Next Agent Needing Attention") { model.jumpNextAttention() }
                     .keyboardShortcut("a", modifiers: [.command, .shift])
+            }
+            CommandMenu("tmux") {
+                // Mirrors `ShortcutMap.defaults` for discoverability and pointer use. The items carry no
+                // `.keyboardShortcut`: the terminal's priority key commands already own these chords and
+                // tmux commands are not idempotent (a second delivery would open two windows). A menu
+                // chord would add a second path whose double delivery can only be confirmed on a device
+                // (device checklist). Without a live or polling tmux the items are disabled.
+                ForEach(TmuxMenuState.items(shortcuts: model.shortcuts, availability: model.tmuxMenuAvailability)) { item in
+                    Button(item.title) { model.performTmuxMenuItem(id: item.id) }
+                        .disabled(!item.enabled)
+                }
             }
             CommandMenu("Session") {
                 Button("Disconnect") { disconnectSelected() }

@@ -14,7 +14,7 @@ struct TmuxMenuStateTests {
     }
 
     @Test func itemsEnabledWhenLiveOrPolling() {
-        #expect(items().allSatisfy(\.enabled))
+        #expect(items().allSatisfy { $0.enabled })
         #expect(TmuxMenuAvailability(.live) == .available)
         #expect(TmuxMenuAvailability(.polling) == .available)
         for state: TmuxMonitor.State in [.idle, .starting, .unavailable("x"), .ended(nil), .stopped] {
