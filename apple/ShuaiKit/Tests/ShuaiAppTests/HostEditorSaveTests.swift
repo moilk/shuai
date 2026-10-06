@@ -53,9 +53,9 @@ struct HostEditorSaveTests {
         #expect(r.passwordWrites == [id])
     }
 
-    @Test func retryUsesTheSameIDAcrossRebuilds() {
-        // The view keeps its save state in `@State`, so a rebuilt view value reuses it; the model
-        // is the same value carried across attempts.
+    @Test func retryUsesTheSameIDWithinOneSaveState() {
+        // One save state carried across attempts keeps its id and initial snapshot. (That the view
+        // keeps it in `@State` across rebuilds is not covered by a test.)
         let r = Recorder()
         var save = HostEditorSave(new: ["k"])
         let carried = save
@@ -120,6 +120,23 @@ struct HostEditorSaveTests {
         _ = r.run(&save, passwordDraft(), password: "pw")
         let second = r.run(&save, passwordDraft(), password: "pw")
         #expect(second == .failed(message: "Host saved, but the password could not be stored in the Keychain."))
+    }
+
+    @Test func discardMessageWarnsAboutAHalfSavedNewHost() {
+        let r = Recorder()
+        var save = HostEditorSave(new: [])
+        #expect(save.discardMessage == "Discard your changes?")
+        r.failPassword = PasswordStoreError(status: -1)
+        _ = r.run(&save, passwordDraft(), password: "pw")
+        #expect(save.discardMessage == "The host is already saved, but its password is not stored. Discard the remaining changes?")
+        #expect(save.keepsSavedNewHost)
+    }
+
+    @Test func discardMessageIsPlainWhenEditing() {
+        let p = HostProfile(name: "box", host: "example.invalid", username: "dev")
+        let save = HostEditorSave(editing: p)
+        #expect(save.discardMessage == "Discard your changes?")
+        #expect(!save.keepsSavedNewHost)
     }
 
     @Test func failedFirstWriteStaysUnpersisted() {

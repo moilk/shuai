@@ -102,7 +102,10 @@ final class ShuaiUITests: XCTestCase {
         app.buttons["Password"].firstMatch.tap()
         let again = app.secureTextFields.firstMatch
         XCTAssertTrue(again.waitForExistence(timeout: 5))
-        XCTAssertFalse((again.value as? String ?? "").isEmpty, "the typed password survives a pushed page")
+        // An empty secure field reports its placeholder as the value; typed text reports bullets.
+        let shown = again.value as? String ?? ""
+        XCTAssertNotEqual(shown, "Password", "the field is not empty: the typed password survives a pushed page")
+        XCTAssertTrue(shown.contains("•"), "the field shows bullets, got \(shown)")
 
         app.buttons["Cancel"].tap()
         XCTAssertTrue(app.buttons.matching(identifier: "discard-changes").firstMatch.waitForExistence(timeout: 5),
