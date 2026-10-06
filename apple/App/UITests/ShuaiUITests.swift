@@ -71,6 +71,45 @@ final class ShuaiUITests: XCTestCase {
     }
 
     @MainActor
+    func testPushingKeysKeepsThePasswordAndDirtyState() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+        XCTAssertTrue(app.textFields["host-name-field"].waitForExistence(timeout: 5))
+
+        let method = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Method'")).firstMatch
+        method.tap()
+        app.buttons["Password"].firstMatch.tap()
+        let secret = app.secureTextFields.firstMatch
+        XCTAssertTrue(secret.waitForExistence(timeout: 5))
+        secret.tap()
+        secret.typeText("hunter2")
+
+        method.tap()
+        app.buttons["SSH key"].firstMatch.tap()
+        let generate = app.buttons["editor-open-keys"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 5))
+        generate.tap()
+        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5))
+        app.navigationBars["Keys"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.textFields["host-name-field"].waitForExistence(timeout: 5))
+
+        method.tap()
+        app.buttons["Password"].firstMatch.tap()
+        let again = app.secureTextFields.firstMatch
+        XCTAssertTrue(again.waitForExistence(timeout: 5))
+        XCTAssertFalse((again.value as? String ?? "").isEmpty, "the typed password survives a pushed page")
+
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons.matching(identifier: "discard-changes").firstMatch.waitForExistence(timeout: 5),
+                      "still dirty after returning from Keys")
+    }
+
+    @MainActor
     func testSaveWithErrorsFocusesTheFirstInvalidField() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()

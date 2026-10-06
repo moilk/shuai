@@ -18,7 +18,7 @@ struct HostEditorDraftTests {
         #expect(HostValidationError.port.message == "Port must be 1–65535.")
         #expect(HostValidationError.username.message == "Enter a username.")
         #expect(HostValidationError.key.message == "Choose a key.")
-        #expect(HostValidationError.tmuxSessionName.message == "Use a name without ':' or '.'.")
+        #expect(HostValidationError.tmuxSessionName.message == "Enter a name without spaces at the ends, ':' or '.'.")
     }
 
     @Test func errorHiddenUntilTouched() {
@@ -119,6 +119,31 @@ struct HostEditorDraftTests {
         #expect(d.adoptingNewKey(before: ["a"], after: ["a"]).keyID == "")
         d.keyID = "a"
         #expect(d.adoptingNewKey(before: ["a"], after: ["a", "k2"]).keyID == "a")
+    }
+
+    @Test func newKeyNotAdoptedWhenAuthIsPassword() {
+        var d = HostEditorDraft(new: [])
+        d.authKind = .password
+        #expect(d.adoptingNewKey(before: [], after: ["k1"]).keyID == "")
+        d.authKind = .ask
+        #expect(d.adoptingNewKey(before: [], after: ["k1"]).keyID == "")
+    }
+
+    @Test func keyIDIgnoredByDirtyWhenAuthIsNotKey() {
+        let initial = HostEditorDraft(new: [])
+        var d = initial
+        d.keyID = "stale"
+        #expect(!HostEditorDirty.needsConfirmation(initial: initial, current: d, passwordTyped: false))
+        d.authKind = .key
+        #expect(HostEditorDirty.needsConfirmation(initial: initial, current: d, passwordTyped: false))
+    }
+
+    @Test func tmuxNameEdgeCasesAreInvalid() {
+        for bad in ["", " work", "work ", "a:b", "a.b"] {
+            var d = valid()
+            d.tmuxName = bad
+            #expect(d.errors.contains(.tmuxSessionName), "\(bad)")
+        }
     }
 
     @Test func defaultAuthPrefersKeyWhenKeysExist() {
