@@ -88,17 +88,60 @@ public enum NtfyServer {
         guard let c = URLComponents(string: t), t.allSatisfy({ !$0.isWhitespace }) else { return .invalid(.notAURL) }
         guard let scheme = c.scheme?.lowercased() else { return .invalid(.notAURL) }
         guard scheme == "https" || scheme == "http" else { return .invalid(.unsupportedScheme) }
-        guard let host = c.host, !host.isEmpty else { return .invalid(.missingHost) }
+        guard let rawHost = c.host, !rawHost.isEmpty else { return .invalid(.missingHost) }
         if c.user != nil || c.password != nil { return .invalid(.hasCredentials) }
         if c.query != nil || c.fragment != nil { return .invalid(.hasQueryOrFragment) }
-        var path = c.path
+        // The host must already be a plain DNS name, IPv4 address or bracketed IPv6 literal: no
+        // percent escapes, so an encoded `@`, `:` or `/` cannot turn into userinfo or a path
+        // when the URL is rebuilt.
+        if (c.percentEncodedHost ?? rawHost).contains("%") { return .invalid(.notAURL) }
+        if let port = c.port, !(1 ... 65535).contains(port) { return .invalid(.notAURL) }
+        guard let host = plainHost(rawHost) else { return .invalid(.notAURL) }
+        var path = c.percentEncodedPath
         while path.hasSuffix("/") { path.removeLast() }
-        var s = "\(scheme)://"
-        s += host.contains(":") ? "[\(host)]" : host
+        var s = "\(scheme)://\(host.wire)"
         if let p = c.port { s += ":\(p)" }
         s += path
-        guard let url = URL(string: s) else { return .invalid(.notAURL) }
+        // Round trip: the rebuilt URL must parse back to exactly the validated parts.
+        guard let url = URL(string: s), let r = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              r.user == nil, r.password == nil, r.query == nil, r.fragment == nil,
+              r.scheme?.lowercased() == scheme, r.port == c.port, r.percentEncodedPath == path,
+              r.host.flatMap(plainHost)?.bare == host.bare, !url.absoluteString.contains("@")
+        else { return .invalid(.notAURL) }
         return scheme == "https" ? .valid(url) : .insecure(url)
+    }
+
+    /// A host as `bare` (no brackets) and `wire` (as written in a URL).
+    private struct PlainHost {
+        let bare: String
+        let wire: String
+    }
+
+    /// Accepts a DNS name / IPv4 address, or an IPv6 literal (with or without the brackets
+    /// `URLComponents` may add); nil for anything else.
+    private static func plainHost(_ host: String) -> PlainHost? {
+        var bare = host
+        var bracketed = false
+        if bare.hasPrefix("[") || bare.hasSuffix("]") {
+            guard bare.hasPrefix("["), bare.hasSuffix("]") else { return nil }
+            bare = String(bare.dropFirst().dropLast())
+            bracketed = true
+        } else if bare.contains(":") {
+            bracketed = true
+        }
+        if bare.isEmpty { return nil }
+        if bracketed {
+            var addr = in6_addr()
+            guard bare.withCString({ inet_pton(AF_INET6, $0, &addr) }) == 1 else { return nil }
+            return PlainHost(bare: bare, wire: "[\(bare)]")
+        }
+        let forbidden: Set<Character> = ["@", ":", "/", "\\", "?", "#", "%", "[", "]"]
+        for ch in bare {
+            if forbidden.contains(ch) || ch.isWhitespace || ch.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
+                return nil
+            }
+        }
+        return PlainHost(bare: bare, wire: bare)
     }
 
     /// `ntfy://<host>/<topic>`: opens (and subscribes in) the official ntfy app. Not possible
