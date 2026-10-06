@@ -35,10 +35,13 @@ public final class SessionRegistry {
     }
 
     /// The (cached) controller for `host`. A profile edited while its session is not live gets a
-    /// fresh controller; a live session keeps running with its original settings.
+    /// fresh controller; a live session keeps running with its original settings. `lastConnectedAt`
+    /// is bookkeeping that every successful connect rewrites, so it does not count as an edit.
     public func controller(for host: HostProfile) -> SessionController {
         if let existing = controllers[host.id] {
-            if existing.profile == host { return existing }
+            var current = existing.profile
+            current.lastConnectedAt = host.lastConnectedAt
+            if current == host { return existing }
             switch existing.state {
             case .idle, .disconnected, .failed: existing.retire()
             default: return existing

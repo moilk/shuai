@@ -89,6 +89,23 @@ import ShuaiTerminal
         #expect(new.profile.name == "renamed")
     }
 
+    @Test func ownLastConnectedUpdateKeepsTheController() async throws {
+        let hosts = HostStore(fileURL: scratchURL("hosts.json"))
+        var enginesMade = 0
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")), hosts: hosts,
+            makeEngine: { _ in enginesMade += 1; return FakeEngine() })
+        let p = profile()
+        try hosts.add(p)
+        let c = registry.controller(for: p)
+        c.onConnected?()
+        #expect(hosts.host(id: p.id)?.lastConnectedAt != nil)
+        await c.disconnect()
+        #expect(registry.controller(for: hosts.host(id: p.id)!) === c)
+        #expect(enginesMade == 1)
+    }
+
     @Test func connectingMarksLastConnectedInTheHostStore() async throws {
         let (r, hosts, _) = make()
         let p = profile()
