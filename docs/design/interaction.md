@@ -188,9 +188,15 @@ the save progress in `@State`, because the sheet content is rebuilt whenever the
 
 `HostListView` renders `SidebarModel.rows` (pure, in `ShuaiApp/Sidebar/`): one `List(selection:)`
 of host, loading, session, window and pane rows. Only host rows are tagged for selection; tmux rows
-are plain buttons (the active one carries `.isSelected`). Indentation is `row.depth` times a
+are plain buttons. Indentation is `row.depth` times a
 `@ScaledMetric` step, capped at two levels at accessibility text sizes.
 
+- **Current location.** Hosts use the list's system selection. The one current location in the tmux
+  tree is secondary: the viewed session row has a light accent tint, a filled icon and `.isSelected`;
+  the active window and its active pane get the accent colour, weight, `.isSelected` and the
+  accessibility value `active` only inside the viewed session (`isCurrent` on `WindowRowModel` and
+  `PaneRowModel`). Other sessions' active windows look like any other window, however many sessions
+  are expanded.
 - **Defaults.** Hosts and the viewed session are expanded, other sessions collapsed. Collapsing
   never changes selection, and an agent needing attention never expands anything.
 - **Persistence.** `SidebarExpansionStore` keeps only the exceptions to the defaults, keyed by host
@@ -208,7 +214,7 @@ are plain buttons (the active one carries `.isSelected`). Indentation is `row.de
   Session rows offer Switch to Session and New Window; window and pane menus live in the shared
   `TmuxWindowMenu`/`TmuxPaneMenu`. New Window always targets the row's own session
   (`TmuxActions.newWindow(inSession:)`, which accepts only a known `$N` id).
-- **Accessibility text.** Window rows keep the accessibility value `active`/empty; the richer text
+- **Accessibility text.** Window rows keep the accessibility value `active`/empty (`active` only for the current window); the richer text
   (index, name, pane count, zoom, badge) is the label. The pane dot is decorative and hidden.
 
 ## Accessibility

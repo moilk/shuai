@@ -86,7 +86,8 @@ windows and panes offer rename, new window, split right/down and close (closing 
 Hosts and sessions have a chevron to collapse or expand their rows. A host and the session shown in
 the terminal start expanded, other sessions collapsed; collapsing never changes which host or window
 is selected, and the app never expands a row by itself. Your choices are remembered per host and
-session name. A session's context menu offers **Switch to Session** and **New Window** (the new
+session name. The session you are viewing is tinted, and only its active window and pane are
+highlighted. A session's context menu offers **Switch to Session** and **New Window** (the new
 window is created in that session, not in the one you are viewing). A host's context menu groups
 its AI items under **AI integration**; they are disabled with "Connect to this host first" until
 the host is connected.
