@@ -35,6 +35,8 @@ final class AppModel {
     let pushSettings: PushSettings
     let pushSync: PushSyncCoordinator
     let sessions: SessionRegistry
+    /// Which sidebar hosts/sessions differ from their default expansion (persisted).
+    let sidebarExpansion: SidebarExpansionStore
     let keyboard = HardwareKeyboardMonitor()
 
     var selection: UUID? {
@@ -84,6 +86,7 @@ final class AppModel {
         let keyStore: KeyStore
         let known: KnownHostsStore
         let pushDefaults: UserDefaults
+        let sidebarDefaults: UserDefaults
         if ephemeral {
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shuai-ui-\(UUID().uuidString)")
             hosts = HostStore(fileURL: dir.appendingPathComponent("hosts.json"))
@@ -93,6 +96,7 @@ final class AppModel {
             settings = AppSettings(defaults: UserDefaults(suiteName: "shuai-ui-\(UUID().uuidString)")!)
             pushDefaults = UserDefaults(suiteName: "shuai-ui-push-\(UUID().uuidString)")!
             pushSettings = PushSettings(defaults: pushDefaults, secrets: InMemoryPushSecretStore())
+            sidebarDefaults = UserDefaults(suiteName: "shuai-ui-sidebar-\(UUID().uuidString)")!
         } else {
             hosts = HostStore()
             keyStore = KeychainKeyStore()
@@ -101,7 +105,10 @@ final class AppModel {
             settings = AppSettings()
             pushDefaults = .standard
             pushSettings = PushSettings()
+            sidebarDefaults = .standard
         }
+        sidebarExpansion = SidebarExpansionStore(defaults: sidebarDefaults)
+        sidebarExpansion.prune(keeping: Set(hosts.hosts.map(\.id)))
         pushSync = PushSyncCoordinator(settings: pushSettings, defaults: pushDefaults)
         self.settings = settings
         keys = KeyLibrary(store: keyStore)
@@ -427,6 +434,7 @@ final class AppModel {
             engineBox.engines[host.id] = nil
             try? passwords.deletePassword(for: host.id)
             pushSync.forget(host: host.id)
+            sidebarExpansion.forget(host: host.id)
             try? hosts.delete(id: host.id)
             notices.removeAll(scope: .host(host.id))
             notices.retract(key: Notice.pushSyncKey(hostID: host.id))
