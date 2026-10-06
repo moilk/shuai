@@ -147,7 +147,7 @@ switcher and the AI-integration sheet. Opening a sheet resigns the terminal firs
 Keys is not a second sheet. Inside the host editor ("Generate a key" while the library is empty, `editor-open-keys`) and Settings
 ("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
 with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
-request (More menu > Keys…, the connection card's Open keys) presents Keys as its own sheet with Done.
+request (the app menu's Keys…, the connection card's Open keys) presents Keys as its own sheet with Done.
 
 
 
@@ -180,11 +180,22 @@ are plain buttons (the active one carries `.isSelected`). Indentation is `row.de
 
 ## Toolbar and menus
 
-The sidebar toolbar has three items: Quick Switcher (`quick-switcher-button`), Add Host `+`
-(`add-host-button`) and a More menu (`ellipsis.circle`, `more-menu`, spoken as "More") holding
-Settings… (`settings-button`) and Keys… (`keys-button`). High-frequency actions stay visible; the key
-library and settings are rarely used and live in More, which keeps the bar at three targets. Both
-menu items go through `AppModel.request`, so they obey the modal rules above.
+The sidebar uses the system bars (no custom floating buttons):
+
+- **Top.** The system sidebar toggle, the title "shuai" (`navigationTitle`) and one trailing item,
+  Quick Switcher (`quick-switcher-button`, magnifying glass).
+- **Bottom bar** (`.bottomBar` toolbar on the sidebar column): New Host with a plus icon and text
+  (`add-host-button`, 44 pt tall) leading, Settings (`settings-button`, gear, spoken "Settings")
+  trailing, with a flexible space between them. At accessibility text sizes New Host is icon-only and
+  keeps the accessibility label "Add Host". Settings opens the Settings sheet directly; there is no
+  menu.
+- **Keys** is not in the sidebar. It is reached through Settings > SSH > Keys, the app menu's Keys…,
+  the host editor's Open/Generate a key and the connection card's Open keys.
+
+All items go through `AppModel.request`, so they obey the modal rules above. Trade-off: while the
+software keyboard is up (the terminal is focused) it covers the sidebar's bottom bar. Hardware
+keyboard users use ⌘N, ⌘, and the menu bar; with the software keyboard, dismiss it (or tap a sidebar
+row) to reach the bar.
 
 The menu bar mirrors the same actions and the keyboard shortcuts for discoverability:
 
