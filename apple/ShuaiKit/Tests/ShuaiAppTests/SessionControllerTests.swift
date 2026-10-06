@@ -37,9 +37,11 @@ private struct Harness {
     let knownHosts = KnownHostsStore(fileURL: scratchURL("known_hosts"))
     let controller: SessionController
     let profile: HostProfile
+    let sink = RecordingNoticeSink()
 
     init(
         profile: HostProfile = HostProfile(name: "dev", host: host, username: "alice", auth: .password),
+        notices: (any NoticePosting)? = nil,
         maxAttempts: UInt32? = 3,
         sleep: @escaping @Sendable (UInt64) async throws -> Void = { _ in await Task.yield() },
         factory: FakeFactory = FakeFactory(),
@@ -50,7 +52,7 @@ private struct Harness {
         let keys = keys, passwords = passwords, knownHosts = knownHosts
         controller = SessionController(
             profile: profile, engine: engine, factory: factory, keys: keys, passwords: passwords,
-            knownHosts: knownHosts,
+            knownHosts: knownHosts, notices: notices ?? sink,
             makePolicy: { ReconnectPolicy(maxAttempts: maxAttempts, jitter: false) },
             sleep: sleep, now: now, redrawNudgeDelay: .milliseconds(1))
         try? passwords.setPassword("pw", for: profile.id)
@@ -446,9 +448,7 @@ private struct Harness {
         #expect(h.controller.title == "claude — repo")
         #expect(h.controller.windowTitle == "claude — repo")
         h.engine.onNotification?(TerminalNotification(title: "Claude", body: "done"))
-        #expect(h.controller.banner == TerminalNotification(title: "Claude", body: "done"))
-        h.controller.dismissBanner()
-        #expect(h.controller.banner == nil)
+        #expect(h.sink.posted.count == 1)
 
         let answered = Locked<Bool?>(nil)
         h.engine.onClipboardRequest?(ClipboardRequest(contents: "rm -rf", kind: .osc52Write) { allow in answered.with { $0 = allow } })
@@ -603,6 +603,187 @@ private struct Harness {
         #expect(await waitUntil { h.factory.attempts == 3 && h.controller.state == .connected })
     }
 
+    @Test func networkChangeDuringAReconnectAttemptAttachesOnlyOnce() async {
+        await expectSingleAttach { $0.networkChanged() }
+    }
+
+    @Test func foregroundDuringAReconnectAttemptAttachesOnlyOnce() async {
+        await expectSingleAttach { $0.appForegrounded() }
+    }
+
+    /// Attempt 2 stalls in the handshake, `nudge` restarts it as attempt 3, then attempt 2 completes late.
+    private func expectSingleAttach(_ nudge: (SessionController) -> Void) async {
+        let gate = Latch()
+        let factory = FakeFactory { n, _, _, _ in
+            if n == 2 { await gate.wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        nudge(h.controller)
+        #expect(await waitUntil { h.factory.attempts == 3 && h.controller.state == .connected })
+        gate.open()
+
+        let conns = h.factory.connections.get
+        let stale = conns[1]
+        #expect(await waitUntil { stale.disconnects.get == 1 })
+        #expect(stale.opens.get.isEmpty)
+        #expect(h.controller.state == .connected)
+
+        for c in conns { c.shell.emit("a") }
+        #expect(await waitUntil { h.engine.fedText.contains("a") })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(h.engine.fedText == "a")
+        h.engine.onInput?(Data("x".utf8))
+        #expect(await waitUntil { conns[2].shell.writtenText == "x" })
+        #expect(conns[1].shell.writes.get.isEmpty)
+        #expect(conns[0].shell.writes.get.isEmpty)
+    }
+
+    @Test func restartStormAttachesOnlyTheLastAttempt() async {
+        let gates = (0..<6).map { _ in Latch() }
+        let factory = FakeFactory { n, _, _, _ in
+            if (2...4).contains(n) { await gates[n].wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 3 })
+        h.controller.appForegrounded()
+        #expect(await waitUntil { h.factory.attempts == 4 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 5 && h.controller.state == .connected })
+        gates[3].open(); gates[2].open(); gates[4].open()
+
+        let conns = h.factory.connections.get
+        for stale in conns[1...3] {
+            #expect(await waitUntil { stale.disconnects.get == 1 })
+            #expect(stale.opens.get.isEmpty)
+        }
+        #expect(conns[4].opens.get.count == 1)
+        #expect(conns[4].disconnects.get == 0)
+
+        for c in conns { c.shell.emit("a") }
+        #expect(await waitUntil { h.engine.fedText.contains("a") })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(h.engine.fedText == "a")
+        #expect(h.controller.state == .connected)
+        #expect(h.factory.attempts == 5)
+
+        conns[4].end(.io)
+        #expect(await waitUntil { h.factory.attempts == 6 && h.controller.state == .connected })
+    }
+
+    @Test func userDisconnectWhileAStaleAttemptIsBlockedDoesNotResurrect() async {
+        let gate = Latch()
+        let factory = FakeFactory { n, _, _, _ in
+            if n == 2 { await gate.wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        await h.controller.disconnect()
+        gate.open()
+
+        let stale = h.factory.connections.get[1]
+        #expect(await waitUntil { stale.disconnects.get == 1 })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(stale.opens.get.isEmpty)
+        #expect(h.controller.state == .disconnected(exitStatus: nil))
+        #expect(h.factory.attempts == 2)
+    }
+
+    @Test func disconnectAfterARestartWhileBothAttemptsAreBlockedDoesNotResurrect() async {
+        let gates = (0..<4).map { _ in Latch() }
+        let factory = FakeFactory { n, _, _, _ in
+            if (2...3).contains(n) { await gates[n].wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 3 })
+        await h.controller.disconnect()
+        gates[3].open(); gates[2].open()
+
+        let conns = h.factory.connections.get
+        #expect(await waitUntil { conns[1].disconnects.get == 1 && conns[2].disconnects.get == 1 })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(conns[1].opens.get.isEmpty && conns[2].opens.get.isEmpty)
+        #expect(h.controller.state == .disconnected(exitStatus: nil))
+        #expect(h.factory.attempts == 3)
+    }
+
+    /// Releases the stale attempt and nudges in the same main-actor turn, in both orders.
+    @Test(arguments: 0..<20) func nudgeRacingTheStaleCompletionAttachesOnce(_ i: Int) async {
+        let gate = Latch()
+        let factory = FakeFactory { n, _, _, _ in
+            if n == 2 { await gate.wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        if i.isMultiple(of: 2) {
+            gate.open(); h.controller.networkChanged()
+        } else {
+            h.controller.networkChanged(); gate.open()
+        }
+        #expect(await waitUntil { h.controller.state == .connected })
+        try? await Task.sleep(for: .milliseconds(30))
+
+        let conns = h.factory.connections.get
+        let live = conns.dropFirst().filter { $0.disconnects.get == 0 }
+        #expect(live.count == 1)
+        for c in conns.dropFirst() where c.disconnects.get == 1 && !c.opens.get.isEmpty {
+            #expect(c.shell.closeCalls.get == 1)
+        }
+
+        for c in conns { c.shell.emit("a") }
+        #expect(await waitUntil { h.engine.fedText.contains("a") })
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(h.engine.fedText == "a")
+        #expect(h.controller.state == .connected)
+
+        live.first!.end(.io)
+        #expect(await waitUntil { h.controller.state == .connected && h.factory.attempts > conns.count })
+    }
+
+    /// Known gap: a superseded attempt that reaches its password prompt late replaces the live
+    /// attempt's pending prompt, which ends the session.
+    @Test func staleAttemptsPasswordPromptDoesNotEndTheLiveAttempt() async {
+        let key = newHostKey()
+        var profile = HostProfile(name: "dev", host: host, username: "alice", auth: .password)
+        profile.tmux.enabled = false
+        let gate = Latch()
+        let h = Harness(profile: profile, maxAttempts: nil, factory: FakeFactory { n, c, v, _ in
+            if n == 2 { await gate.wait() }
+            try await handshake(c, v, key: key)
+        })
+        try? h.knownHosts.add(host: host, port: 22, publicKeyLine: key)
+        try? h.passwords.deletePassword(for: profile.id)
+        let task = h.connectInBackground()
+        #expect(await waitUntil { h.controller.pendingPrompt != nil })
+        h.controller.answerPassword("pw")
+        await task.value
+        #expect(h.controller.state == .connected)
+
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        h.controller.networkChanged()
+        #expect(await waitUntil { h.factory.attempts == 3 && h.controller.pendingPrompt != nil })
+        gate.open()
+        try? await Task.sleep(for: .milliseconds(50))
+        await withKnownIssue("a stale attempt's prompt cancels the live attempt's prompt") {
+            #expect(h.controller.state != .disconnected(exitStatus: nil))
+        }
+    }
+
     @Test func manualReconnectFromFailedConnectsAgain() async {
         let h = Harness(factory: FakeFactory { n, _, _, _ in
             if n == 1 { throw FfiSshError.Timeout }
@@ -652,8 +833,8 @@ private struct Harness {
         failTmux(conn)
         #expect(await waitUntil { conn.opens.get.count == 2 })
         guard case .shell = conn.opens.get[1] else { Issue.record("fallback must be a plain shell"); return }
-        #expect(await waitUntil { h.controller.notice != nil })
-        #expect(h.controller.notice == SessionController.tmuxMissingNotice)
+        #expect(await waitUntil { !h.sink.active.isEmpty })
+        #expect(h.sink.active.first?.text == SessionController.tmuxMissingNotice)
         #expect(SessionController.tmuxMissingNotice == "tmux not found on host \u{2014} using plain shell (sessions won't persist)")
         #expect(h.controller.state == .connected)
         #expect(h.factory.attempts == 1 && conn.disconnects.get == 0)
@@ -661,8 +842,6 @@ private struct Harness {
         #expect(await waitUntil(timeout: .seconds(20)) { conn.shell.writtenText == "ls\r" })
         conn.shell.emit("file\r\n")
         #expect(await waitUntil { h.engine.fedText.contains("file") })
-        h.controller.dismissNotice()
-        #expect(h.controller.notice == nil)
     }
 
     @Test func inputTypedWhileTheFallbackShellOpensIsReplayedIntoIt() async {
@@ -674,7 +853,7 @@ private struct Harness {
         let dead = conn.shell
         failTmux(conn)
         // The notice is set before the plain shell exists: this is the window where typing used to be dropped.
-        #expect(await waitUntil { h.controller.notice != nil && conn.opens.get.count == 2 })
+        #expect(await waitUntil { !h.sink.active.isEmpty && conn.opens.get.count == 2 })
         h.controller.sendInput("ls")
         h.controller.sendInput("\r")
         gate.open()
@@ -688,7 +867,7 @@ private struct Harness {
         let h = Harness()
         await h.controller.connect()
         failTmux(h.factory.last!, status: 127, text: nil)
-        #expect(await waitUntil { h.controller.notice != nil })
+        #expect(await waitUntil { !h.sink.active.isEmpty })
         #expect(h.controller.state == .connected)
     }
 
@@ -696,7 +875,7 @@ private struct Harness {
         let h = Harness()
         await h.controller.connect()
         failTmux(h.factory.last!, status: nil, text: "sh: 1: tmux: not found\r\n")
-        #expect(await waitUntil { h.controller.notice != nil })
+        #expect(await waitUntil { !h.sink.active.isEmpty })
         #expect(h.controller.state == .connected)
     }
 
@@ -705,7 +884,7 @@ private struct Harness {
         await h.controller.connect()
         failTmux(h.factory.last!, status: 0, text: nil)
         #expect(await waitUntil { h.controller.state == .disconnected(exitStatus: 0) })
-        #expect(h.controller.notice == nil)
+        #expect(h.sink.active.isEmpty)
         #expect(h.factory.last!.opens.get.count == 1)
     }
 
@@ -717,7 +896,7 @@ private struct Harness {
         conn.shell.emit(.exit(status: 127, signal: nil))
         conn.shell.emit(.closed(reason: .remote))
         #expect(await waitUntil { h.controller.state == .disconnected(exitStatus: 127) })
-        #expect(h.controller.notice == nil)
+        #expect(h.sink.active.isEmpty)
     }
 
     @Test func noFallbackNoticeWhenTmuxIsDisabled() async {
@@ -727,7 +906,7 @@ private struct Harness {
         await h.controller.connect()
         failTmux(h.factory.last!)
         #expect(await waitUntil { h.controller.state == .disconnected(exitStatus: 127) })
-        #expect(h.controller.notice == nil)
+        #expect(h.sink.active.isEmpty)
     }
 
     @Test func startupCommandIsTypedIntoTheFallbackShell() async {
@@ -743,11 +922,145 @@ private struct Harness {
         let h = Harness()
         await h.controller.connect()
         failTmux(h.factory.last!)
-        #expect(await waitUntil { h.controller.notice != nil })
+        #expect(await waitUntil { !h.sink.active.isEmpty })
         h.factory.last!.end(.io)
         #expect(await waitUntil { h.factory.attempts == 2 && h.controller.state == .connected })
         guard case .shell = h.factory.last!.opens.get[0] else { Issue.record("expected a plain shell on reconnect"); return }
-        #expect(h.controller.notice == SessionController.tmuxMissingNotice)
+        #expect(h.sink.active.first?.text == SessionController.tmuxMissingNotice)
+    }
+
+    // MARK: notices
+
+    @Test func oscNotificationPostsHostScopedTerminalNotice() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "Claude", body: "done"))
+        let n = h.sink.posted.last
+        #expect(n?.source == .terminal)
+        #expect(n?.scope == .host(h.profile.id))
+        #expect(n?.key == "osc:\(h.profile.id.uuidString)")
+        #expect(n?.symbol == "bell")
+        #expect(n?.accessibilityIdentifier == "notification-banner")
+    }
+
+    @Test func oscNoticeIsAttributedToHostNotRemoteTitle() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "prod: needs approval", body: "go"))
+        let n = h.sink.posted.last
+        #expect(n?.title == "dev \u{00B7} Terminal")
+        #expect(n?.text == "prod: needs approval: go")
+    }
+
+    @Test func oscTitleOnlyUsesTitleAsText() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "build finished", body: ""))
+        #expect(h.sink.posted.last?.text == "build finished")
+    }
+
+    @Test func oscInvisibleOnlyTitleStillShowsHost() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "\u{200B}\u{202E}", body: "ping"))
+        #expect(h.sink.posted.last?.title == "dev \u{00B7} Terminal")
+        #expect(h.sink.posted.last?.text == "ping")
+    }
+
+    @Test func oscNoticeIsInfoSeverity() async {
+        let h = Harness()
+        await h.controller.connect()
+        h.engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        #expect(h.sink.posted.last?.severity == .info)
+    }
+
+    @Test func oscFloodWithVaryingTextReplacesInPlace() async {
+        let clock = FakeClock()
+        let center = NoticeCenter(now: { clock.now }, sleep: { try await clock.sleep($0) })
+        let h = Harness(notices: center)
+        center.setFocus(.host(h.profile.id))
+        await h.controller.connect()
+        for i in 0..<30 { h.engine.onNotification?(TerminalNotification(title: "n", body: "\(i)")) }
+        #expect(center.queue.count == 1)
+        #expect(center.queue.visible.first?.text == "n: 29")
+        #expect(center.queue.visible.first?.count == 1)
+    }
+
+    @Test func oscFloodCoalescesUnderOneKey() async {
+        let clock = FakeClock()
+        let center = NoticeCenter(now: { clock.now }, sleep: { try await clock.sleep($0) })
+        let h = Harness(notices: center)
+        center.setFocus(.host(h.profile.id))
+        await h.controller.connect()
+        for _ in 0..<50 { h.engine.onNotification?(TerminalNotification(title: "Claude", body: "done")) }
+        #expect(center.queue.visible.count == 1)
+        #expect(center.queue.visible.first?.count == 50)
+    }
+
+    @Test func oscNoticeTextIsSanitizedAndCapped() async {
+        let h = Harness()
+        await h.controller.connect()
+        let hostile = "\u{202E}evil\u{0007}\n" + String(repeating: "x", count: 5000)
+        h.engine.onNotification?(TerminalNotification(title: hostile, body: hostile))
+        let n = h.sink.posted.last
+        #expect(n != nil)
+        #expect((n?.text.count ?? Int.max) <= Notice.textLimit)
+        #expect(n?.title == "dev \u{00B7} Terminal")
+        #expect(n?.text.unicodeScalars.contains { $0.value == 0x202E || $0.value == 0x07 || $0.value == 0x0A } == false)
+    }
+
+    @Test func tmuxMissingPostsStickyWarning() async {
+        let h = Harness()
+        await h.controller.connect()
+        failTmux(h.factory.last!)
+        #expect(await waitUntil { !h.sink.active.isEmpty })
+        let n = h.sink.active.first
+        #expect(n?.severity == .warning)
+        #expect(n?.source == .session)
+        #expect(n?.scope == .host(h.profile.id))
+        #expect(n?.key == "tmux-missing:\(h.profile.id.uuidString)")
+        #expect(n?.lifetime == .sticky)
+        #expect(n?.text == SessionController.tmuxMissingNotice)
+    }
+
+    @Test func freshConnectRetractsTmuxMissing() async {
+        let h = Harness()
+        await h.controller.connect()
+        failTmux(h.factory.last!)
+        let key = "tmux-missing:\(h.profile.id.uuidString)"
+        #expect(await waitUntil { h.sink.active.contains { $0.key == key } })
+        await h.controller.disconnect()
+        #expect(h.sink.active.contains { $0.key == key }) // survives the disconnect
+        await h.controller.connect()
+        #expect(h.sink.retractedKeys.contains(key))
+        #expect(!h.sink.active.contains { $0.key == key })
+    }
+
+    @Test func tmuxMissingNoticesOfTwoHostsCoexist() async {
+        let clock = FakeClock()
+        let center = NoticeCenter(now: { clock.now }, sleep: { try await clock.sleep($0) })
+        let a = Harness(notices: center), b = Harness(notices: center)
+        for h in [a, b] {
+            await h.controller.connect()
+            failTmux(h.factory.last!)
+        }
+        #expect(await waitUntil { center.queue.count == 2 })
+        await b.controller.disconnect()
+        await b.controller.connect()
+        #expect(center.queue.allNotices.map(\.key) == ["tmux-missing:\(a.profile.id.uuidString)"])
+    }
+
+    @Test func retiredControllerRetractsItsKeysAndPostsNothingMore() async {
+        let h = Harness()
+        await h.controller.connect()
+        failTmux(h.factory.last!)
+        #expect(await waitUntil { !h.sink.active.isEmpty })
+        h.controller.retire()
+        #expect(h.sink.active.isEmpty)
+        let before = h.sink.events.count
+        h.engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        await h.controller.tmuxActions.run { throw TmuxError.notRunning }
+        #expect(h.sink.events.count == before)
     }
 
     // MARK: teardown

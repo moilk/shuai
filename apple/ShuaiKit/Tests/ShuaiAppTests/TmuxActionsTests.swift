@@ -25,7 +25,9 @@ import Testing
         ].joined(separator: "\n") + "\n"
     }
 
-    func rig(withClient: Bool = true) async -> (FakeControlServer, TmuxMonitor, TmuxActions) {
+    func rig(
+        withClient: Bool = true, hostID: UUID = UUID(), notices: (any NoticePosting)? = nil
+    ) async -> (FakeControlServer, TmuxMonitor, TmuxActions) {
         let conn = FakeConnection()
         let server = FakeControlServer(panes: Self.panes)
         if withClient { server.clients.with { $0 = clients() } }
@@ -33,7 +35,7 @@ import Testing
         conn.execStreamSetup.with { $0 = { exec, _ in server.install(on: exec) } }
         let monitor = TmuxMonitor(sessionName: "main", debounce: .milliseconds(10))
         await monitor.start(on: conn)
-        return (server, monitor, TmuxActions(monitor: monitor))
+        return (server, monitor, TmuxActions(monitor: monitor, notices: notices.map { NoticeRoute(hostID: hostID, poster: $0) }))
     }
 
     func sent(_ server: FakeControlServer) -> [String] {
@@ -240,10 +242,56 @@ import Testing
         await monitor.stop()
     }
 
-    @Test func failuresSurfaceAsLastErrorFromTheFireAndForgetEntryPoint() async {
-        let (_, monitor, actions) = await rig(withClient: false)
+    @Test func tmuxRunFailurePostsErrorNotice() async {
+        let sink = RecordingNoticeSink()
+        let id = UUID()
+        let (_, monitor, actions) = await rig(withClient: false, hostID: id, notices: sink)
         await actions.run { try await actions.switchSession("$1") }
-        #expect(actions.lastError != nil)
+        let n = sink.posted.last
+        #expect(sink.posted.count == 1)
+        #expect(n?.severity == .error)
+        #expect(n?.source == .tmux)
+        #expect(n?.scope == .host(id))
+        #expect(n?.key == "tmux-error:\(id.uuidString)")
+        #expect(n?.text == TmuxActions.describe(TmuxError.noPtyClient))
+        await monitor.stop()
+    }
+
+    @Test func tmuxErrorTextHasHomePathsCollapsed() async {
+        let sink = RecordingNoticeSink()
+        let (_, monitor, actions) = await rig(notices: sink)
+        await actions.run { throw TmuxError.commandFailed("no such file /home/someone/proj") }
+        #expect(sink.posted.last?.text == "no such file ~/proj")
+        await monitor.stop()
+    }
+
+    @Test func retiredActionsPostNothing() async {
+        let sink = RecordingNoticeSink()
+        let (_, monitor, actions) = await rig(withClient: false, notices: sink)
+        actions.retire()
+        await actions.run { try await actions.switchSession("$1") }
+        #expect(sink.posted.isEmpty)
+        await monitor.stop()
+    }
+
+    @Test func tmuxErrorKeysAreNamespacedPerHost() async {
+        let sink = RecordingNoticeSink()
+        let a = UUID(), b = UUID()
+        let (_, ma, actionsA) = await rig(withClient: false, hostID: a, notices: sink)
+        let (_, mb, actionsB) = await rig(withClient: false, hostID: b, notices: sink)
+        await actionsA.run { try await actionsA.switchSession("$1") }
+        await actionsB.run { try await actionsB.switchSession("$1") }
+        #expect(sink.posted.map(\.key) == ["tmux-error:\(a.uuidString)", "tmux-error:\(b.uuidString)"])
+        #expect(sink.active.count == 2)
+        await ma.stop()
+        await mb.stop()
+    }
+
+    @Test func successfulRunPostsNothing() async {
+        let sink = RecordingNoticeSink()
+        let (_, monitor, actions) = await rig(notices: sink)
+        await actions.run { try await actions.selectWindow("@5") }
+        #expect(sink.posted.isEmpty)
         await monitor.stop()
     }
 

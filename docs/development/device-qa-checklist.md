@@ -58,6 +58,15 @@ keyboard**, using Pinyin - Simplified.
 - [ ] **C3 Network loss**: airplane mode for 20 seconds, then off. The app shows reconnecting and
   recovers automatically.
 
+- [ ] **C4 Airplane mode mid-session**: with output on screen, enable airplane mode. A strip under the
+  window tabs shows "Reconnecting" with attempt, countdown and "typing paused"; the old output stays
+  readable and scrollable. **Retry now** and **Cancel** work (Cancel ends the loop).
+- [ ] **C5 Connect failures**: a wrong password shows a card with **Edit host**; a missing key shows
+  **Open keys**; both offer **Retry**. Running `exit 3` shows a "Session ended (exit status 3)" strip
+  with **Reconnect**.
+- [ ] **C6 Narrow widths**: in Slide Over and a narrow split, the strip, notices and permission cards
+  stay inside the view and tappable.
+
 ## D. Claude integration and notifications
 
 Prerequisite: **Enable AI integration…** done for the host, `claude` running in tmux.
@@ -74,6 +83,23 @@ Prerequisite: **Enable AI integration…** done for the host, `claude` running i
   shows only host and `session › window index` (no window name by default).
 - [ ] **D6 Deep link**: tapping that notification opens shuai, connects the host and selects the
   right pane.
+
+## E. Notices and accessibility
+
+- [ ] **E1 No tmux**: on a host without tmux, the warning notice is sticky and survives switching
+  hosts and back.
+- [ ] **E2 Repeated OSC 9**: `for i in 1 2 3; do printf '\e]9;hi\a'; done` gives one "<host> · Terminal"
+  notice with ×N.
+- [ ] **E3 Hostile OSC body**: a very long body, bidi overrides and ANSI colour codes in an OSC 9
+  message show capped, clean text.
+- [ ] **E4 Layering**: with a permission card pending, the card is never covered, and the notices and
+  the connection strip stay tappable beside it.
+- [ ] **E5 Agent banner**: when Claude finishes or waits in another session, a banner appears; tapping
+  it jumps to that session (no UI test covers this).
+- [ ] **E6 VoiceOver**: the status indicator reads "<host>: Reconnecting" while reconnecting; a notice
+  reads its severity first (for example "Warning. ...").
+- [ ] **E7 Dynamic Type**: at the largest sizes the strip and cards stay legible, wrap instead of
+  clipping, and keep full-height buttons.
 
 ## Reporting
 

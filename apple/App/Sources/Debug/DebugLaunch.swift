@@ -10,7 +10,12 @@ import ShuaiTerminal
 ///   imported from that path on the Mac (the simulator can read host paths), a host profile is
 ///   created (or reused by name) and selected, which connects it.
 /// - `-debugAutoAcceptHostKey`: answers the TOFU prompt with "trust" (scripted runs only).
+/// - `-debugConnectionState <reconnecting|failed|disconnected>`: shows that connection state in the
+///   views without a server (a fixed `ConnectionPresentation`; the session controller is untouched
+///   and does not connect).
 /// - `-debugSendAfterConnect <text>`: types `text` + Enter shortly after the session attaches.
+/// - `-debugNoticeTimeScale <n>`: notices last `n` times longer (default 1), so UI tests on a slow
+///   runner can still find a transient notice.
 enum DebugLaunch {
     private static let args = ProcessInfo.processInfo.arguments
 
@@ -26,6 +31,31 @@ enum DebugLaunch {
     static var agentFixture: Bool { args.contains("-debugAgentFixture") }
     static var autoAccept: Bool { args.contains("-debugAutoAcceptHostKey") }
     static var sendAfterConnect: String? { value(of: "-debugSendAfterConnect") }
+    static var connectionState: String? { value(of: "-debugConnectionState") }
+
+    /// `-debugNoticeTimeScale`: an integer >= 1, else 1.
+    static var noticeTimeScale: UInt64 { value(of: "-debugNoticeTimeScale").flatMap(UInt64.init).map { max($0, 1) } ?? 1 }
+
+    /// The notice clock slowed by `noticeTimeScale`: time advances `n` times slower, sleeps last `n` times longer.
+    static func slowedNoticeTime(
+        now: @escaping @Sendable () -> UInt64, sleep: @escaping @Sendable (UInt64) async throws -> Void
+    ) -> (@Sendable () -> UInt64, @Sendable (UInt64) async throws -> Void) {
+        let scale = min(noticeTimeScale, 1_000_000)
+        guard scale > 1 else { return (now, sleep) }
+        return ({ now() / scale }, { ms in try await sleep(ms.multipliedReportingOverflow(by: scale).partialValue) })
+    }
+
+    /// The presentation shown instead of the controller's, or nil without `-debugConnectionState`.
+    static func connectionPresentation(hostName: String, target: String) -> ConnectionPresentation? {
+        let state: SessionState
+        switch connectionState {
+        case "reconnecting": state = .reconnecting(attempt: 2, nextRetryAt: Date().addingTimeInterval(3600))
+        case "failed": state = .failed(SessionError(kind: .network, message: "Connection refused"))
+        case "disconnected": state = .disconnected(exitStatus: 0)
+        default: return nil
+        }
+        return ConnectionPresentation.make(state, hostName: hostName, target: target)
+    }
 
     private struct HostFile: Decodable {
         var name: String

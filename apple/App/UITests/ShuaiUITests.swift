@@ -42,10 +42,10 @@ final class ShuaiUITests: XCTestCase {
     // MARK: tmux (fixture topology, no server)
 
     @MainActor
-    private func launchWithTmuxFixture() -> XCUIApplication {
+    private func launchWithTmuxFixture(extraArguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting", "-debugTmuxFixture"]
+        app.launchArguments = ["-uiTesting", "-debugTmuxFixture"] + extraArguments
         app.launch()
         return app
     }
@@ -155,7 +155,7 @@ final class ShuaiUITests: XCTestCase {
 
     @MainActor
     func testDeepLinkToAMissingPaneOrHostShowsAFriendlyNotice() throws {
-        let app = launchWithTmuxFixture()
+        let app = launchWithTmuxFixture(extraArguments: ["-debugNoticeTimeScale", "10"])
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         app.open(URL(string: "shuai://open?host=\(Self.fixtureHost)&pane=%2599")!)
         // The notice is transient: match its text in the query itself instead of re-reading it later.
@@ -215,10 +215,10 @@ final class ShuaiUITests: XCTestCase {
     // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
 
     @MainActor
-    private func launchWithAgentFixture() -> XCUIApplication {
+    private func launchWithAgentFixture(extraArguments: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting", "-debugAgentFixture"]
+        app.launchArguments = ["-uiTesting", "-debugAgentFixture"] + extraArguments
         app.launch()
         return app
     }
@@ -269,6 +269,27 @@ final class ShuaiUITests: XCTestCase {
         waitForExpectations(timeout: 10)
     }
 
+    /// A notice posted while a permission card is pending stays reachable: its dismiss button can be
+    /// tapped and the card is untouched.
+    @MainActor
+    func testNoticeCanBeDismissedWhileAPermissionCardIsPending() throws {
+        let app = launchWithAgentFixture(extraArguments: ["-debugNoticeTimeScale", "10"])
+        let card = app.descendants(matching: .any)["permission-card"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 12))
+        app.open(URL(string: "shuai://open?host=00000000-0000-4000-8000-000000000000&pane=%250")!)
+        let notice = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'session-notice' AND label CONTAINS 'not in Shuai'")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 10))
+        let dismiss = app.buttons["notice-dismiss"].firstMatch
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+        XCTAssertFalse(notice.frame.intersects(card.frame), "notice \(notice.frame) clear of the card column \(card.frame)")
+        XCTAssertTrue(dismiss.isHittable, "the card column does not cover the notice")
+        dismiss.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: notice)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(card.exists, "the permission card stays")
+    }
+
     /// With the software keyboard up the docked accessory bar is used (above the keyboard); the
     /// floating bar must not appear over the terminal text.
     @MainActor
@@ -307,5 +328,62 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         XCTAssertTrue(first.label.contains("shell"), "waiting window first, got: \(first.label)")
         XCTAssertTrue(first.label.contains("Needs permission"), "row shows the agent state: \(first.label)")
+    }
+
+    // MARK: connection states (fixed presentation, no server)
+
+    @MainActor
+    private func launchWithConnectionState(_ state: String) -> XCUIApplication {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-debugTmuxFixture", "-debugConnectionState", state]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    func testReconnectingIsAStripThatLeavesTheTerminalUsable() throws {
+        let app = launchWithConnectionState("reconnecting")
+        let strip = app.descendants(matching: .any)["reconnect-overlay"]
+        XCTAssertTrue(strip.waitForExistence(timeout: 10), "reconnect strip: \(app.debugDescription)")
+        XCTAssertTrue(app.buttons["retry-now"].exists)
+        XCTAssertTrue(app.buttons["cancel-reconnect"].exists)
+        XCTAssertTrue(app.buttons["retry-now"].isHittable)
+        XCTAssertGreaterThanOrEqual(app.buttons["retry-now"].frame.height, 44, "tap target height")
+        XCTAssertGreaterThanOrEqual(app.buttons["cancel-reconnect"].frame.height, 44, "tap target height")
+        XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable, "no scrim over the terminal")
+    }
+
+    @MainActor
+    func testFailedShowsTheErrorCardWithRetry() throws {
+        let app = launchWithConnectionState("failed")
+        XCTAssertTrue(app.descendants(matching: .any)["connection-error"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["retry-connect"].exists)
+    }
+
+    @MainActor
+    func testDisconnectedIsAStripWithReconnect() throws {
+        let app = launchWithConnectionState("disconnected")
+        XCTAssertTrue(app.descendants(matching: .any)["disconnected-card"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["reconnect-session"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].firstMatch.isHittable)
+    }
+
+    /// Permission cards own the trailing column; the strip's actions stay beside them, tappable.
+    @MainActor
+    func testStripActionsStayTappableNextToPermissionCards() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-debugAgentFixture", "-debugConnectionState", "reconnecting"]
+        app.launch()
+        let stack = app.descendants(matching: .any)["permission-stack"]
+        XCTAssertTrue(stack.waitForExistence(timeout: 15), "permission cards pending")
+        let retry = app.buttons["retry-now"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 10), "strip shown with the agent fixture")
+        XCTAssertTrue(retry.isHittable)
+        let cards = app.descendants(matching: .any)["permission-card"].firstMatch
+        XCTAssertTrue(cards.exists)
+        XCTAssertLessThanOrEqual(app.buttons["cancel-reconnect"].frame.maxX, cards.frame.minX, "no overlap with the cards")
+        XCTAssertLessThanOrEqual(retry.frame.maxX, cards.frame.minX)
     }
 }

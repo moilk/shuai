@@ -16,11 +16,15 @@ public final class SessionRegistry {
     @ObservationIgnored private let makeEngine: @MainActor (HostProfile) -> any TerminalEngine
     /// Agent monitors of every host (nil: no AI integration, e.g. most tests).
     @ObservationIgnored public let agentHub: AgentHub?
+    /// Where controllers post session, tmux and terminal notices (nil: none shown, e.g. most tests).
+    @ObservationIgnored private let notices: (any NoticePosting)?
 
     public init(
         factory: ConnectionFactory, keys: KeyStore, passwords: PasswordStore, knownHosts: KnownHostsStore,
-        hosts: HostStore, makeEngine: @escaping @MainActor (HostProfile) -> any TerminalEngine, agentHub: AgentHub? = nil
+        hosts: HostStore, makeEngine: @escaping @MainActor (HostProfile) -> any TerminalEngine, agentHub: AgentHub? = nil,
+        notices: (any NoticePosting)? = nil
     ) {
+        self.notices = notices
         self.agentHub = agentHub
         self.factory = factory
         self.keys = keys
@@ -31,18 +35,22 @@ public final class SessionRegistry {
     }
 
     /// The (cached) controller for `host`. A profile edited while its session is not live gets a
-    /// fresh controller; a live session keeps running with its original settings.
+    /// fresh controller; a live session keeps running with its original settings. `lastConnectedAt`
+    /// is bookkeeping that every successful connect rewrites, so it does not count as an edit.
     public func controller(for host: HostProfile) -> SessionController {
         if let existing = controllers[host.id] {
-            if existing.profile == host { return existing }
+            var current = existing.profile
+            current.lastConnectedAt = host.lastConnectedAt
+            if current == host { return existing }
             switch existing.state {
-            case .idle, .disconnected, .failed: break
+            case .idle, .disconnected, .failed: existing.retire()
             default: return existing
             }
         }
         let engine = makeEngine(host)
         let controller = SessionController(
-            profile: host, engine: engine, factory: factory, keys: keys, passwords: passwords, knownHosts: knownHosts)
+            profile: host, engine: engine, factory: factory, keys: keys, passwords: passwords, knownHosts: knownHosts,
+            notices: notices)
         let id = host.id
         controller.onConnected = { [weak hosts] in try? hosts?.markConnected(id: id) }
         if let hub = agentHub {
@@ -73,6 +81,7 @@ public final class SessionRegistry {
     public func remove(id: UUID) async {
         defer { agentHub?.removeHost(id: id) }
         guard let c = controllers.removeValue(forKey: id) else { return }
+        c.retire()
         await c.disconnect()
     }
 

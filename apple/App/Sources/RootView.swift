@@ -34,12 +34,8 @@ struct RootView: View {
         .overlay(alignment: .bottom) { NotificationOptInBanner() }
         .overlay(alignment: .top) {
             // Without a selected host there is no terminal screen to show notices (e.g. a link to an unknown host).
-            if let message = model.transientNotice, model.selection.flatMap({ model.hosts.host(id: $0) }) == nil {
-                NoticeView(text: message) { model.transientNotice = nil }
-                    .task(id: message) {
-                        try? await Task.sleep(for: .seconds(NoticeView.transientSeconds))
-                        model.transientNotice = nil
-                    }
+            if model.selection.flatMap({ model.hosts.host(id: $0) }) == nil {
+                NoticeStackView().padding()
             }
         }
         .sheet(isPresented: $model.showSettings) { SettingsView() }
@@ -176,8 +172,9 @@ struct HostRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Circle().fill(color).frame(width: 10, height: 10)
-                .accessibilityLabel(label)
+            Image(systemName: status.symbol)
+                .foregroundStyle(status.tint)
+                .accessibilityLabel(status.label)
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.name).font(.headline)
                 Text(host.displayTarget).font(.caption).foregroundStyle(.secondary)
@@ -204,7 +201,7 @@ struct HostRow: View {
     private var agentSymbol: String {
         switch agent {
         case .installed: "sparkles"
-        case .outdated: "arrow.triangle.2.circlepath"
+        case .outdated: "arrow.up.circle"
         default: "sparkles.slash"
         }
     }
@@ -214,26 +211,6 @@ struct HostRow: View {
         case .installed: .secondary
         case .outdated: .orange
         default: .secondary
-        }
-    }
-
-    private var color: Color {
-        switch status {
-        case .off: .gray.opacity(0.5)
-        case .busy: .yellow
-        case .connected: .green
-        case .warning: .orange
-        case .error: .red
-        }
-    }
-
-    private var label: String {
-        switch status {
-        case .off: "Not connected"
-        case .busy: "Connecting"
-        case .connected: "Connected"
-        case .warning: "Reconnecting"
-        case .error: "Connection failed"
         }
     }
 }

@@ -37,7 +37,9 @@ final class AppModel {
     let sessions: SessionRegistry
     let keyboard = HardwareKeyboardMonitor()
 
-    var selection: UUID?
+    var selection: UUID? {
+        didSet { notices.setFocus(selection.map { .host($0) }) }
+    }
     var editor: HostEditorTarget?
     var showSettings = false
     var showKeys = false
@@ -52,8 +54,8 @@ final class AppModel {
     var badges: any PaneBadgeProvider { agentHub }
     var agentInstall: AgentInstallRequest?
     var showNotificationExplainer = false
-    /// A short message for the main screen (e.g. nothing needs attention).
-    var transientNotice: String?
+    /// Every transient message the app shows; views only render `notices.queue`.
+    let notices: NoticeCenter
     var appActive = true
     @ObservationIgnored private var lastAttentionKey: FfiSessionKey?
     @ObservationIgnored private let notifier: LocalNotifier?
@@ -98,6 +100,20 @@ final class AppModel {
         let viewingBox = viewing
         let hub = AgentHub(banners: AttentionBannerQueue(isSuppressed: { key in viewingBox.check(key) }))
         agentHub = hub
+        let banners = hub.banners
+        // One clock for both: system uptime and `SuspendingClock` both stop while the device sleeps.
+        var noticeNow: @Sendable () -> UInt64 = { UInt64(ProcessInfo.processInfo.systemUptime * 1000) }
+        var noticeSleep: @Sendable (UInt64) async throws -> Void = { ms in
+            try await Task.sleep(for: .milliseconds(ms), clock: .suspending)
+        }
+        #if DEBUG
+        (noticeNow, noticeSleep) = DebugLaunch.slowedNoticeTime(now: noticeNow, sleep: noticeSleep)
+        #endif
+        notices = NoticeCenter(
+            now: noticeNow,
+            sleep: noticeSleep,
+            onDismiss: { AgentNotices.dismissed($0, in: banners) },
+            onExpire: { AgentNotices.dismissed($0, in: banners) })
         notifier = ephemeral ? nil : LocalNotifier()
         sessions = SessionRegistry(
             factory: LiveConnectionFactory(), keys: keyStore, passwords: passwords, knownHosts: known, hosts: hosts,
@@ -107,9 +123,10 @@ final class AppModel {
                     theme: settings.theme.terminalTheme)
                 box.engines[host.id] = engine
                 return engine
-            }, agentHub: hub)
+            }, agentHub: hub, notices: notices)
         engineBox = box
         selection = hosts.hosts.first?.id
+        notices.setFocus(selection.map { .host($0) })
         viewing.check = { [weak self] key in MainActor.assumeIsolated { self?.isViewing(key) ?? false } }
         hub.onLiveChanges = { [weak self] id, changes in self?.handleLive(profileID: id, changes: changes) }
         // Local-notification taps take the same path as `shuai://` links (and ntfy pushes).
@@ -218,7 +235,7 @@ final class AppModel {
     }
 
     private func apply(_ outcome: DeepLinkOutcome) {
-        if case .notice(let message) = outcome { transientNotice = message }
+        if let notice = Notice.deepLink(outcome) { notices.post(notice) }
     }
 
     func jump(to target: AttentionTarget) async {
@@ -229,7 +246,7 @@ final class AppModel {
     /// ⌘⇧A: the next agent session that wants you.
     func jumpNextAttention() {
         guard let t = agentHub.nextNeedingAttention(after: lastAttentionKey) else {
-            transientNotice = "No agent needs your attention."
+            notices.post(.noAttention)
             return
         }
         lastAttentionKey = t.key
@@ -247,6 +264,11 @@ final class AppModel {
     }
 
     private func handleLive(profileID: UUID, changes: [FfiTrackerChange]) {
+        AgentNotices.sync(queue: agentHub.banners, center: notices) { [agentHub, hosts] banner in
+            let target = agentHub.target(for: banner.key)
+            let name = target.flatMap { hosts.host(id: $0.profileID)?.name } ?? banner.key.host
+            return (name, target?.session)
+        }
         let hostName = hosts.host(id: profileID)?.name ?? "host"
         for change in changes {
             let session = agentHub.target(for: change.sessionKey)?.session
@@ -294,10 +316,11 @@ final class AppModel {
     func syncNotificationSettings(host: HostProfile) {
         guard let remote = sessions.existingController(for: host.id)?.agentRemote else { return }
         Task {
-            switch await pushSync.syncNow(host: host, remote: remote) {
-            case .synced: transientNotice = "Notification settings synced to \(host.name)."
-            case .upToDate: break
-            case .failed(let m): transientNotice = "Could not sync to \(host.name): \(m)"
+            let result = await pushSync.syncNow(host: host, remote: remote)
+            if let notice = Notice.pushSync(result, hostName: host.name, hostID: host.id, redacting: syncSecrets) {
+                notices.post(notice)
+            } else {
+                notices.retract(key: Notice.pushSyncKey(hostID: host.id))
             }
         }
     }
@@ -318,17 +341,20 @@ final class AppModel {
             return (host, remote)
         }
         guard !targets.isEmpty else {
-            transientNotice = "No connected host has the AI integration. Settings sync when one connects."
+            notices.apply(Notice.pushSyncSummary([], redacting: []))
             return
         }
         Task {
-            var failures: [String] = []
+            var results: [(hostID: UUID, hostName: String, outcome: PushSyncOutcome)] = []
             for (host, remote) in targets {
-                if case .failed(let m) = await pushSync.syncNow(host: host, remote: remote) { failures.append("\(host.name): \(m)") }
+                results.append((host.id, host.name, await pushSync.syncNow(host: host, remote: remote)))
             }
-            transientNotice = failures.isEmpty ? "Notification settings synced." : "Could not sync: " + failures.joined(separator: "; ")
+            notices.apply(Notice.pushSyncSummary(results, redacting: syncSecrets))
         }
     }
+
+    /// Values that must never appear in a notice.
+    private var syncSecrets: [String] { [pushSettings.topic, pushSettings.token] }
 
     func closeAgentInstall() {
         let req = agentInstall
@@ -362,6 +388,8 @@ final class AppModel {
             try? passwords.deletePassword(for: host.id)
             pushSync.forget(host: host.id)
             try? hosts.delete(id: host.id)
+            notices.removeAll(scope: .host(host.id))
+            notices.retract(key: Notice.pushSyncKey(hostID: host.id))
             if selection == host.id { selection = hosts.hosts.first?.id }
         }
     }

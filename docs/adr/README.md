@@ -10,5 +10,6 @@
 | [0005](0005-status-only-push-ntfy.md) | Status-only background push through ntfy |
 | [0006](0006-tmux-control-side-channel.md) | Render tmux in one terminal, observe it through a control-mode side channel |
 | [0007](0007-programmatic-brand-icon.md) | Generate the app icon programmatically from a traced master glyph |
+| [0008](0008-notice-center.md) | One notice center for transient in-app messages |
 
 New ADRs follow [ADR 0000](0000-record-architecture-decisions.md).

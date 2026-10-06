@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShuaiCore
 import ShuaiPlatform
+import ShuaiTerminal
 @testable import ShuaiApp
 
 @MainActor @Suite struct SessionRegistryTests {
@@ -13,6 +14,50 @@ import ShuaiPlatform
             knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")), hosts: hosts,
             makeEngine: { _ in FakeEngine() })
         return (registry, hosts, factory)
+    }
+
+    @Test func controllersPostToTheRegistryNotices() {
+        let sink = RecordingNoticeSink()
+        let engine = FakeEngine()
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")),
+            hosts: HostStore(fileURL: scratchURL("hosts.json")), makeEngine: { _ in engine }, notices: sink)
+        let p = profile()
+        _ = registry.controller(for: p)
+        engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        #expect(sink.posted.last?.scope == .host(p.id))
+    }
+
+    @Test func removingAHostRetractsItsNoticesAndSilencesTheController() async {
+        let sink = RecordingNoticeSink()
+        let engine = FakeEngine()
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")),
+            hosts: HostStore(fileURL: scratchURL("hosts.json")), makeEngine: { _ in engine }, notices: sink)
+        let p = profile()
+        _ = registry.controller(for: p)
+        await registry.remove(id: p.id)
+        let id = p.id.uuidString
+        #expect(["tmux-missing:\(id)", "osc:\(id)", "tmux-error:\(id)"].allSatisfy(sink.retractedKeys.contains))
+        let before = sink.events.count
+        engine.onNotification?(TerminalNotification(title: "t", body: "b"))
+        #expect(sink.events.count == before)
+    }
+
+    @Test func replacingAControllerRetractsTheOldOnesNotices() {
+        let sink = RecordingNoticeSink()
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")),
+            hosts: HostStore(fileURL: scratchURL("hosts.json")), makeEngine: { _ in FakeEngine() }, notices: sink)
+        var p = profile()
+        let old = registry.controller(for: p)
+        p.name = "renamed"
+        let new = registry.controller(for: p)
+        #expect(old !== new)
+        #expect(sink.retractedKeys.contains("tmux-missing:\(p.id.uuidString)"))
     }
 
     private func profile(_ name: String = "dev") -> HostProfile {
@@ -42,6 +87,23 @@ import ShuaiPlatform
         let new = r.controller(for: p)
         #expect(new !== old)
         #expect(new.profile.name == "renamed")
+    }
+
+    @Test func ownLastConnectedUpdateKeepsTheController() async throws {
+        let hosts = HostStore(fileURL: scratchURL("hosts.json"))
+        var enginesMade = 0
+        let registry = SessionRegistry(
+            factory: FakeFactory(), keys: InMemoryKeyStore(), passwords: InMemoryPasswordStore(),
+            knownHosts: KnownHostsStore(fileURL: scratchURL("known_hosts")), hosts: hosts,
+            makeEngine: { _ in enginesMade += 1; return FakeEngine() })
+        let p = profile()
+        try hosts.add(p)
+        let c = registry.controller(for: p)
+        c.onConnected?()
+        #expect(hosts.host(id: p.id)?.lastConnectedAt != nil)
+        await c.disconnect()
+        #expect(registry.controller(for: hosts.host(id: p.id)!) === c)
+        #expect(enginesMade == 1)
     }
 
     @Test func connectingMarksLastConnectedInTheHostStore() async throws {

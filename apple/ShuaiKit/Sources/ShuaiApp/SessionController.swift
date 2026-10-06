@@ -23,12 +23,9 @@ public final class SessionController {
     public private(set) var pendingPrompt: SessionPrompt?
     /// Terminal title (OSC 0/2); see `windowTitle`.
     public private(set) var title = ""
-    /// Latest OSC 9/777 notification, shown as an in-app banner.
-    public private(set) var banner: TerminalNotification?
     /// OSC 52 / unsafe paste awaiting the user's decision.
     public var pendingClipboard: ClipboardRequest?
-    /// Non-blocking info banner (e.g. tmux missing on the host); cleared by `dismissNotice()` or the next fresh `connect()`.
-    public private(set) var notice: String?
+    /// Text of the sticky notice posted when tmux is missing on the host.
     public static let tmuxMissingNotice = "tmux not found on host \u{2014} using plain shell (sessions won't persist)"
     /// A tmux that fails to start prints at most a short error; anything longer is a real session.
     static let tmuxProbeBytes = 1024
@@ -59,6 +56,9 @@ public final class SessionController {
     @ObservationIgnored private let sleep: @Sendable (UInt64) async throws -> Void
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let redrawNudgeDelay: Duration
+    @ObservationIgnored private let notices: (any NoticePosting)?
+    /// Set by the registry when the controller is removed or replaced: it posts nothing afterwards.
+    @ObservationIgnored private var isRetired = false
 
     // Live transport
     private enum Command: Sendable {
@@ -112,6 +112,7 @@ public final class SessionController {
         keys: KeyStore,
         passwords: PasswordStore,
         knownHosts: KnownHostsStore,
+        notices: (any NoticePosting)? = nil,
         makePolicy: @escaping @Sendable () -> ReconnectPolicy = { ReconnectPolicy(maxAttempts: nil, jitter: true) },
         sleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(for: .milliseconds($0)) },
         now: @escaping @Sendable () -> Date = { Date() },
@@ -127,12 +128,13 @@ public final class SessionController {
         self.sleep = sleep
         self.now = now
         self.redrawNudgeDelay = redrawNudgeDelay
+        self.notices = notices
         let monitor = TmuxMonitor(sessionName: profile.tmux.sessionName, ptySize: { [engine] in
             let g = engine.gridSize
             return g.isValid ? (UInt32(g.cols), UInt32(g.rows)) : (80, 24)
         })
         tmux = monitor
-        tmuxActions = TmuxActions(monitor: monitor)
+        tmuxActions = TmuxActions(monitor: monitor, notices: notices.map { NoticeRoute(hostID: profile.id, poster: $0) })
         wireEngine()
     }
 
@@ -158,12 +160,30 @@ public final class SessionController {
             }
         }
         engine.onTitleChange = { [weak self] t in MainActor.assumeIsolated { self?.title = t } }
-        engine.onNotification = { [weak self] n in MainActor.assumeIsolated { self?.banner = n } }
+        engine.onNotification = { [weak self] n in MainActor.assumeIsolated { self?.postTerminalNotification(n) } }
         engine.onClipboardRequest = { [weak self] r in MainActor.assumeIsolated { self?.pendingClipboard = r } }
     }
 
-    public func dismissBanner() { banner = nil }
-    public func dismissNotice() { notice = nil }
+    private var tmuxMissingKey: String { "tmux-missing:\(profile.id.uuidString)" }
+    private var oscKey: String { "osc:\(profile.id.uuidString)" }
+
+    /// The host entry is gone or replaced: withdraw this controller's notices and post no more.
+    public func retire() {
+        notices?.retract(key: tmuxMissingKey)
+        notices?.retract(key: oscKey)
+        notices?.retract(key: TmuxActions.errorKey(hostID: profile.id))
+        isRetired = true
+        tmuxActions.retire()
+    }
+
+    /// OSC 9/777 from the remote: untrusted, attributed to the host (`Notice.terminal`). One key
+    /// per host, so a flood coalesces into a single notice.
+    private func postTerminalNotification(_ n: TerminalNotification) {
+        guard !isRetired,
+              let notice = Notice.terminal(title: n.title, body: n.body, hostName: profile.name, hostID: profile.id)
+        else { return }
+        notices?.post(notice)
+    }
 
     /// Types text into the remote (debug scripting, tests).
     public func sendInput(_ text: String) { enqueue(.write(Data(text.utf8))) }
@@ -188,7 +208,7 @@ public final class SessionController {
         generation += 1
         let gen = generation
         tmuxUnavailable = false
-        notice = nil
+        notices?.retract(key: tmuxMissingKey)
         passwordCancelled = false
         state = .connecting
         do {
@@ -408,6 +428,16 @@ public final class SessionController {
             throw Cancelled()
         }
 
+        // A shell or connection still installed is replaced: close it so only one PTY feeds the engine.
+        if shell != nil || connection != nil {
+            await teardownTransport()
+            guard gen == generation else {
+                await newShell.close()
+                await conn.disconnect()
+                throw Cancelled()
+            }
+        }
+
         connection = conn
         startShell(newShell, gen: gen, tmuxAttempt: useTmux)
         closedTask = Task { [weak self] in
@@ -520,7 +550,9 @@ public final class SessionController {
     private func fallBackToPlainShell(gen: Int) async {
         guard gen == generation, let conn = connection else { return }
         tmuxUnavailable = true
-        notice = Self.tmuxMissingNotice
+        if !isRetired { notices?.post(Notice(
+            severity: .warning, source: .session, scope: .host(profile.id), text: Self.tmuxMissingNotice,
+            symbol: "exclamationmark.triangle", key: tmuxMissingKey, lifetime: .sticky)) }
         inputDuringSwitch = []
         defer { inputDuringSwitch = nil }
         await stopTmuxMonitor()
@@ -678,7 +710,13 @@ public final class SessionController {
         }
     }
 
+    /// One reconnect attempt. Attempts can overlap (a network change restarts one while its
+    /// handshake is still running and the SSH layer ignores cancellation), so each claims a new
+    /// `generation`: an attempt that is superseded, or that finds the session already reattached,
+    /// disconnects its own connection and never attaches a shell.
     private func reconnectOnce() async throws {
+        guard isReconnecting else { return }
+        generation += 1
         let gen = generation
         passwordCancelled = false
         do {

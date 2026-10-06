@@ -46,15 +46,6 @@ struct BannerContentTests {
         #expect(c.message == "")
     }
 
-    @Test func terminalNotificationsShareTheShape() {
-        let c = BannerContent.make(title: "Build", body: "finished", hostName: "dev")
-        #expect(c.title == "Build")
-        #expect(c.message == "finished")
-        let untitled = BannerContent.make(title: "", body: "just text", hostName: "dev")
-        #expect(untitled.title == "dev")
-        #expect(untitled.message == "just text")
-    }
-
     @Test func permissionBannersAreNotShownAsBannersTheCardsCoverThem() {
         #expect(!BannerContent.isShownAsBanner(banner(.permission(requestId: "r", tool: "Bash", preview: "ls"))))
         #expect(BannerContent.isShownAsBanner(banner(.needsInput)))

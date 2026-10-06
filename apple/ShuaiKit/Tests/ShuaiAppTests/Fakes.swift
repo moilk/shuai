@@ -298,3 +298,53 @@ func scratchURL(_ name: String) -> URL {
         .appendingPathComponent("shuai-app-tests-\(UUID().uuidString)")
         .appendingPathComponent(name)
 }
+
+/// Deterministic clock: `sleep` suspends until `advance` moves time past the deadline.
+final class FakeClock: @unchecked Sendable {
+    private struct Sleeper {
+        let id: Int
+        let deadline: UInt64
+        let cont: CheckedContinuation<Void, Error>
+    }
+    private let lock = NSLock()
+    private var nowMs: UInt64 = 0
+    private var sleepers: [Sleeper] = []
+    private var nextId = 0
+    private var _requested: [UInt64] = []
+
+    var now: UInt64 { lock.lock(); defer { lock.unlock() }; return nowMs }
+    var requested: [UInt64] { lock.lock(); defer { lock.unlock() }; return _requested }
+    var sleeping: Int { lock.lock(); defer { lock.unlock() }; return sleepers.count }
+
+    func sleep(_ ms: UInt64) async throws {
+        let id: Int = lock.withLock { nextId += 1; return nextId }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                lock.lock()
+                _requested.append(ms)
+                if Task.isCancelled {
+                    lock.unlock()
+                    c.resume(throwing: CancellationError())
+                    return
+                }
+                sleepers.append(Sleeper(id: id, deadline: nowMs + ms, cont: c))
+                lock.unlock()
+            }
+        } onCancel: {
+            lock.lock()
+            let s = sleepers.first { $0.id == id }
+            sleepers.removeAll { $0.id == id }
+            lock.unlock()
+            s?.cont.resume(throwing: CancellationError())
+        }
+    }
+
+    func advance(_ ms: UInt64) {
+        lock.lock()
+        nowMs += ms
+        let due = sleepers.filter { $0.deadline <= nowMs }
+        sleepers.removeAll { $0.deadline <= nowMs }
+        lock.unlock()
+        for s in due { s.cont.resume() }
+    }
+}
