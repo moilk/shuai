@@ -46,7 +46,14 @@ final class AppModel {
     /// Any modal sheet driven by the model is up.
     var hasSheetOpen: Bool { router.current != nil }
     /// Seam for the host editor's unsaved-changes guard: a dirty modal is never replaced.
-    private var modalIsDirty: Bool { false }
+    private var modalIsDirty: Bool {
+        switch router.current {
+        case .newHost?, .editHost?: editorIsDirty
+        default: false
+        }
+    }
+    /// The open host editor holds unsaved input (reported by the editor itself).
+    @ObservationIgnored var editorIsDirty = false
     /// Sidebar visibility (the window tab strip shows while the sidebar is collapsed).
     var columnVisibility: NavigationSplitViewVisibility = .all
     /// Hardware shortcuts delivered while the terminal has focus.
