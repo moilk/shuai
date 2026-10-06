@@ -100,6 +100,10 @@ Prerequisite: **Enable AI integration…** done for the host, `claude` running i
   reads its severity first (for example "Warning. ...").
 - [ ] **E7 Dynamic Type**: at the largest sizes the strip and cards stay legible, wrap instead of
   clipping, and keep full-height buttons.
+- [ ] **E8 Live text size**: with the software keyboard up, change the text size from Control Center.
+  The accessory bar resizes (keys at least 44 pt tall, larger text up to the cap) and the first
+  terminal row stays visible. Repeat in portrait, landscape and a narrow Stage Manager window, and
+  while switching between software and hardware keyboard (docked and floating bar).
 
 ## Reporting
 
