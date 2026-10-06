@@ -603,6 +603,44 @@ private struct Harness {
         #expect(await waitUntil { h.factory.attempts == 3 && h.controller.state == .connected })
     }
 
+    @Test func networkChangeDuringAReconnectAttemptAttachesOnlyOnce() async {
+        await expectSingleAttach { $0.networkChanged() }
+    }
+
+    @Test func foregroundDuringAReconnectAttemptAttachesOnlyOnce() async {
+        await expectSingleAttach { $0.appForegrounded() }
+    }
+
+    /// Attempt 2 stalls in the handshake, `nudge` restarts it as attempt 3, then attempt 2 completes late.
+    private func expectSingleAttach(_ nudge: (SessionController) -> Void) async {
+        let gate = Latch()
+        let factory = FakeFactory { n, _, _, _ in
+            if n == 2 { await gate.wait() }
+        }
+        let h = Harness(maxAttempts: nil, factory: factory)
+        await h.controller.connect()
+        h.factory.last!.end(.io)
+        #expect(await waitUntil { h.factory.attempts == 2 })
+        nudge(h.controller)
+        #expect(await waitUntil { h.factory.attempts == 3 && h.controller.state == .connected })
+        gate.open()
+
+        let conns = h.factory.connections.get
+        let stale = conns[1]
+        #expect(await waitUntil { stale.disconnects.get == 1 })
+        #expect(stale.opens.get.isEmpty)
+        #expect(h.controller.state == .connected)
+
+        for c in conns { c.shell.emit("a") }
+        #expect(await waitUntil { h.engine.fedText.contains("a") })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(h.engine.fedText == "a")
+        h.engine.onInput?(Data("x".utf8))
+        #expect(await waitUntil { conns[2].shell.writtenText == "x" })
+        #expect(conns[1].shell.writes.get.isEmpty)
+        #expect(conns[0].shell.writes.get.isEmpty)
+    }
+
     @Test func manualReconnectFromFailedConnectsAgain() async {
         let h = Harness(factory: FakeFactory { n, _, _, _ in
             if n == 1 { throw FfiSshError.Timeout }
