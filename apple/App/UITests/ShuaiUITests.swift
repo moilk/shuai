@@ -331,10 +331,44 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(target.isHittable, "\(target) not reachable after \(swipes) swipes\n\(app.debugDescription)")
     }
 
+    /// Opens the sidebar's More menu and taps the item (`settings-button`, `keys-button`).
+    @MainActor
+    private func openMoreMenuItem(_ app: XCUIApplication, _ id: String) {
+        let more = app.buttons["more-menu"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5), "More menu missing\n\(app.debugDescription)")
+        more.tap()
+        let item = app.buttons[id]
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "\(id) missing from the More menu\n\(app.debugDescription)")
+        item.tap()
+    }
+
+    @MainActor
+    func testToolbarShowsSearchPlusAndMore() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["quick-switcher-button"].exists)
+        XCTAssertTrue(app.buttons["add-host-button"].exists)
+        XCTAssertTrue(app.buttons["more-menu"].exists)
+        XCTAssertFalse(app.buttons["settings-button"].exists, "Settings lives in the More menu")
+        XCTAssertFalse(app.buttons["keys-button"].exists, "Keys lives in the More menu")
+    }
+
+    @MainActor
+    func testMoreMenuOpensSettingsAndKeys() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        openMoreMenuItem(app, "settings-button")
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["more-menu"].waitForExistence(timeout: 5))
+        openMoreMenuItem(app, "keys-button")
+        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5))
+    }
+
     @MainActor
     private func openPushSettings(_ app: XCUIApplication) {
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openMoreMenuItem(app, "settings-button")
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["push-settings-link"]
         scrollSheet(app, until: link)
@@ -346,7 +380,7 @@ final class ShuaiUITests: XCTestCase {
     func testNotificationSettingsShowTopicAndTestButton() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openMoreMenuItem(app, "settings-button")
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
         let link = app.buttons["push-settings-link"]
@@ -386,7 +420,7 @@ final class ShuaiUITests: XCTestCase {
     func testSettingsFirstPageShowsPushSummaryWithoutTheTopic() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openMoreMenuItem(app, "settings-button")
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["push-settings-link"]
         scrollSheet(app, until: link)
@@ -655,7 +689,7 @@ final class ShuaiUITests: XCTestCase {
     func testKeysFromSettingsOpens() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        openMoreMenuItem(app, "settings-button")
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["settings-keys-link"]
         scrollSheet(app, until: link)
