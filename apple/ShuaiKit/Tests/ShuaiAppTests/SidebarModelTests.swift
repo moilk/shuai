@@ -229,4 +229,59 @@ import Testing
         e.toggle(.host(hostID), default: true)
         #expect(kinds(rows(input(topology: topology(), waiting: 3), e, badges: b)) == ["host"])
     }
+
+    // MARK: current location
+
+    func bothExpanded() -> SidebarExpansion {
+        var e = SidebarExpansion()
+        e.toggle(.session(host: hostID, name: "work"), default: false)
+        return e
+    }
+
+    /// Like `topology()`, but the second session's window has two panes so its panes are listed too.
+    func twoSessionTopology() -> FfiTopology {
+        let base = topology()
+        let work = FfiTmuxSession(id: "$1", name: "work", attached: 0, windows: [
+            FfiTmuxWindow(id: "@5", index: 0, name: "edit", active: true, flags: "*", panes: [
+                pane("%5", 0, active: false), pane("%6", 1, active: true),
+            ]),
+        ])
+        return FfiTopology(sessions: [base.sessions[0], work])
+    }
+
+    func windows(_ r: [SidebarRow]) -> [WindowRowModel] { r.compactMap { if case .window(let w) = $0 { w } else { nil } } }
+    func panes(_ r: [SidebarRow]) -> [PaneRowModel] { r.compactMap { if case .pane(let p) = $0 { p } else { nil } } }
+
+    @Test func onlyTheViewedSessionsWindowIsCurrent() {
+        let w = windows(rows(input(topology: topology(), viewed: "$0"), bothExpanded()))
+        #expect(w.map(\.row.id) == ["@0", "@1", "@5"])
+        #expect(w.filter { $0.isCurrent }.map(\.row.id) == ["@1"])
+    }
+
+    @Test func onlyTheViewedSessionsActivePaneIsCurrent() {
+        let p = panes(rows(input(topology: twoSessionTopology(), viewed: "$0"), bothExpanded()))
+        #expect(p.map(\.row.id) == ["%1", "%2", "%5", "%6"])
+        #expect(p.filter { $0.isCurrent }.map(\.row.id) == ["%2"])
+    }
+
+    @Test func switchingSessionsMovesTheCurrentWindow() {
+        let r = rows(input(topology: twoSessionTopology(), viewed: "$1"), bothExpanded())
+        let sessions = r.compactMap { if case .session(let s) = $0 { s } else { nil } }
+        #expect(sessions.map(\.row.viewed) == [false, true])
+        #expect(windows(r).filter { $0.isCurrent }.map(\.row.id) == ["@5"])
+        #expect(panes(r).filter { $0.isCurrent }.map(\.row.id) == ["%6"])
+    }
+
+    @Test func windowValueIsActiveOnlyInTheViewedSession() {
+        let w = windows(rows(input(topology: topology(), viewed: "$0"), bothExpanded()))
+        #expect(w.map(\.accessibilityValue) == ["", "active", ""])
+        let p = panes(rows(input(topology: twoSessionTopology(), viewed: "$0"), bothExpanded()))
+        #expect(p.map(\.accessibilityValue) == ["", "active", "", ""])
+    }
+
+    @Test func noViewedSessionMeansNothingIsCurrent() {
+        let r = rows(input(topology: twoSessionTopology(), viewed: nil), bothExpanded())
+        #expect(!windows(r).contains { $0.isCurrent })
+        #expect(!panes(r).contains { $0.isCurrent })
+    }
 }

@@ -5,171 +5,206 @@ struct HostEditorView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
 
-    private enum AuthKind: String, CaseIterable, Identifiable {
-        case key = "SSH key", password = "Password", ask = "Ask each time"
-        var id: String { rawValue }
-    }
-
     private enum EditorPage: Hashable { case keys }
 
-    private let original: HostProfile?
-    @State private var id: UUID
-    @State private var name: String
-    @State private var host: String
-    @State private var portText: String
-    @State private var username: String
-    @State private var authKind: AuthKind
-    @State private var keyID: String
-    @State private var password = ""
-    @State private var tmuxEnabled: Bool
-    @State private var tmuxName: String
-    @State private var startup: String
-    @State private var attemptedSave = false
-    @State private var saveError: String?
+    private static let keyRow = "editor-key-row"
 
-    init(target: HostEditorTarget) {
+    private let editing: Bool
+    /// Stable for the editor's lifetime: the sheet content is rebuilt when the app model changes,
+    /// so the host id, the initial snapshot and the save progress live in `@State`.
+    @State private var save: HostEditorSave
+    @State private var draft: HostEditorDraft
+    @State private var validation = HostEditorValidation()
+    /// Held only here and written only to the Keychain; never part of the draft.
+    @State private var password = ""
+    @State private var saveError: String?
+    @State private var confirmDiscard = false
+    @State private var scrollTarget: String?
+    @State private var announcement: Task<Void, Never>?
+    @FocusState private var focus: HostValidationError?
+
+    init(target: HostEditorTarget, keyIDs: [String] = []) {
+        let s: HostEditorSave
         switch target {
         case .new:
-            original = nil
-            let p = HostProfile(name: "", host: "", username: "")
-            _id = State(initialValue: p.id)
-            _name = State(initialValue: "")
-            _host = State(initialValue: "")
-            _portText = State(initialValue: "22")
-            _username = State(initialValue: "")
-            _authKind = State(initialValue: .ask)
-            _keyID = State(initialValue: "")
-            _tmuxEnabled = State(initialValue: true)
-            _tmuxName = State(initialValue: "shuai")
-            _startup = State(initialValue: "")
+            editing = false
+            s = HostEditorSave(new: keyIDs)
         case .edit(let p):
-            original = p
-            _id = State(initialValue: p.id)
-            _name = State(initialValue: p.name)
-            _host = State(initialValue: p.host)
-            _portText = State(initialValue: String(p.port))
-            _username = State(initialValue: p.username)
-            switch p.auth {
-            case .key(let k): _authKind = State(initialValue: .key); _keyID = State(initialValue: k)
-            case .password: _authKind = State(initialValue: .password); _keyID = State(initialValue: "")
-            case .ask: _authKind = State(initialValue: .ask); _keyID = State(initialValue: "")
-            }
-            _tmuxEnabled = State(initialValue: p.tmux.enabled)
-            _tmuxName = State(initialValue: p.tmux.sessionName)
-            _startup = State(initialValue: p.startupCommand ?? "")
+            editing = true
+            s = HostEditorSave(editing: p)
         }
+        _save = State(initialValue: s)
+        _draft = State(initialValue: s.initial)
     }
 
-    private var profile: HostProfile {
-        let auth: HostAuth = switch authKind {
-        case .key: .key(keyID: keyID)
-        case .password: .password
-        case .ask: .ask
-        }
-        let cmd = startup.trimmingCharacters(in: .whitespacesAndNewlines)
-        return HostProfile(
-            id: id, name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            host: host.trimmingCharacters(in: .whitespacesAndNewlines), port: Int(portText) ?? 0,
-            username: username.trimmingCharacters(in: .whitespacesAndNewlines), auth: auth,
-            tmux: TmuxPrefs(enabled: tmuxEnabled, sessionName: tmuxName),
-            startupCommand: cmd.isEmpty ? nil : cmd, lastConnectedAt: original?.lastConnectedAt)
+    private var isDirty: Bool {
+        HostEditorDirty.needsConfirmation(initial: save.initial, current: draft, passwordTyped: !password.isEmpty)
     }
-
-    private var errors: Set<HostValidationError> { Set(profile.validationErrors) }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Server") {
-                    field("Name", text: $name, error: .name, message: "Enter a name.", id: "host-name-field")
-                    field("Host or IP", text: $host, error: .host, message: "Enter a host name or IP address without spaces.", id: "host-address-field", keyboard: .URL)
-                    field("Port", text: $portText, error: .port, message: "Port must be 1–65535.", id: "host-port-field", keyboard: .numberPad)
-                    field("Username", text: $username, error: .username, message: "Enter a username.", id: "host-user-field")
-                }
-                Section("Authentication") {
-                    Picker("Method", selection: $authKind) {
-                        ForEach(AuthKind.allCases) { Text($0.rawValue).tag($0) }
+            ScrollViewReader { proxy in
+                form
+                    .onChange(of: scrollTarget) { _, target in
+                        guard let target else { return }
+                        withAnimation { proxy.scrollTo(target, anchor: .center) }
+                        scrollTarget = nil
                     }
-                    switch authKind {
-                    case .key:
-                        if model.keys.items.isEmpty {
-                            Text("No keys yet. Generate or import one in Keys.").foregroundStyle(.secondary)
-                            NavigationLink("Open Keys", value: EditorPage.keys)
-                                .accessibilityIdentifier("editor-open-keys")
-                        } else {
-                            Picker("Key", selection: $keyID) {
-                                Text("Choose…").tag("")
-                                ForEach(model.keys.items) { Text($0.name).tag($0.id) }
-                            }
-                            if attemptedSave, errors.contains(.key) { errorText("Choose a key.") }
-                        }
-                    case .password:
-                        SecureField(original == nil ? "Password" : "Password (leave empty to keep)", text: $password)
-                            .textContentType(.password)
-                    case .ask:
-                        Text("You are asked for the password every time you connect.").font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                Section {
-                    Toggle("Attach to tmux", isOn: $tmuxEnabled)
-                    if tmuxEnabled {
-                        field("Session name", text: $tmuxName, error: .tmuxSessionName, message: "Use a name without ':' or '.'.", id: "host-tmux-field")
-                    }
-                    TextField("Startup command (optional)", text: $startup)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                } header: {
-                    Text("Session")
-                } footer: {
-                    Text("`tmux new -A -s NAME` keeps your session alive across disconnects. The startup command runs when the session is created.")
-                }
-                if let saveError { Section { errorText(saveError) } }
             }
             .navigationDestination(for: EditorPage.self) { _ in KeysView(placement: .pushed) }
-            .navigationTitle(original == nil ? "New Host" : "Edit Host")
+            .navigationTitle(editing ? "Edit Host" : "New Host")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { if isDirty { confirmDiscard = true } else { close() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).accessibilityIdentifier("save-host-button")
+                    Button("Save", action: attemptSave).accessibilityIdentifier("save-host-button")
                 }
             }
-            .onDisappear { password = "" }
+            .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                Button("Discard Changes", role: .destructive) { discard() }
+                    .accessibilityIdentifier("discard-changes")
+                // No `.cancel` role: iPad's popover presentation omits cancel-role buttons.
+                Button("Keep Editing") {}
+                    .accessibilityIdentifier("keep-editing")
+            } message: {
+                Text(save.discardMessage)
+            }
+            .interactiveDismissDisabled(isDirty)
+            .onChange(of: focus) { old, _ in
+                if let old { validation.blur(old) }
+            }
+            .onChange(of: model.keys.items.map(\.id)) { old, new in
+                draft = draft.adoptingNewKey(before: old, after: new)
+            }
+            .onChange(of: isDirty, initial: true) { _, dirty in model.editorIsDirty = dirty }
+        }
+        // On the stack itself: its root content disappears when a page is pushed, the stack only
+        // when the sheet goes away.
+        .onDisappear {
+            announcement?.cancel()
+            password = ""
+            model.editorIsDirty = false
+        }
+    }
+
+    private var form: some View {
+        Form {
+            Section("Server") {
+                field("Name", text: $draft.name, error: .name, id: "host-name-field")
+                field("Host or IP", text: $draft.host, error: .host, id: "host-address-field", keyboard: .URL)
+                field("Port", text: $draft.portText, error: .port, id: "host-port-field", keyboard: .numberPad)
+                field("Username", text: $draft.username, error: .username, id: "host-user-field")
+            }
+            Section("Authentication") {
+                Picker("Method", selection: $draft.authKind) {
+                    ForEach(HostEditorDraft.AuthKind.allCases) { Text($0.rawValue).tag($0) }
+                }
+                switch draft.authKind {
+                case .key:
+                    if model.keys.items.isEmpty {
+                        Text("No keys yet.").foregroundStyle(.secondary).id(Self.keyRow)
+                        errorLabel(.key)
+                        NavigationLink("Generate a key", value: EditorPage.keys)
+                            .accessibilityIdentifier("editor-open-keys")
+                    } else {
+                        Picker("Key", selection: $draft.keyID) {
+                            Text("Choose…").tag("")
+                            ForEach(model.keys.items) { Text($0.name).tag($0.id) }
+                        }
+                        .id(Self.keyRow)
+                        errorLabel(.key)
+                    }
+                case .password:
+                    SecureField(editing ? "Password (leave empty to keep)" : "Password", text: $password)
+                        .textContentType(.password)
+                case .ask:
+                    Text("You are asked for the password every time you connect.").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Toggle("Attach to tmux", isOn: $draft.tmuxEnabled)
+                if draft.tmuxEnabled {
+                    field("Session name", text: $draft.tmuxName, error: .tmuxSessionName, id: "host-tmux-field")
+                }
+                TextField("Startup command (optional)", text: $draft.startup)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            } header: {
+                Text("Session")
+            } footer: {
+                Text("`tmux new -A -s NAME` keeps your session alive across disconnects. The startup command runs when the session is created.")
+            }
+            if let saveError { Section { errorText(saveError) } }
         }
     }
 
     @ViewBuilder
     private func field(
-        _ title: String, text: Binding<String>, error: HostValidationError, message: String, id: String,
+        _ title: String, text: Binding<String>, error: HostValidationError, id: String,
         keyboard: UIKeyboardType = .default
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             TextField(title, text: text)
                 .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(keyboard)
+                .focused($focus, equals: error)
                 .accessibilityIdentifier(id)
-            if attemptedSave, errors.contains(error) { errorText(message) }
+            errorLabel(error)
         }
     }
 
-    private func errorText(_ s: String) -> some View {
-        Text(s).font(.caption).foregroundStyle(.red)
+    @ViewBuilder
+    private func errorLabel(_ error: HostValidationError) -> some View {
+        if let message = validation.visibleMessage(for: error, in: draft) { errorText(message) }
     }
 
-    private func save() {
-        attemptedSave = true
-        guard errors.isEmpty else { return }
-        let p = profile
-        do {
-            if original == nil { try model.hosts.add(p) } else { try model.hosts.update(p) }
-            switch authKind {
-            case .password:
-                if !password.isEmpty { try model.passwords.setPassword(password, for: p.id) }
-                password = ""
-            case .key, .ask: try? model.passwords.deletePassword(for: p.id)
+    private func errorText(_ s: String) -> some View {
+        Label(s, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red)
+    }
+
+    private func discard() {
+        // A new host that an earlier Save already stored stays; make it reachable.
+        if save.keepsSavedNewHost, model.selection == nil { model.selection = save.id }
+        close()
+    }
+
+    private func close() {
+        password = ""
+        model.editorIsDirty = false
+        dismiss()
+    }
+
+    private func attemptSave() {
+        saveError = nil
+        if let first = validation.attemptSave(draft) {
+            // The key choice is a picker, which takes no text focus: scroll to it instead.
+            if first == .key { scrollTarget = Self.keyRow } else { focus = first }
+            let message = first.message
+            // Let VoiceOver finish announcing the focus change before the message.
+            announcement?.cancel()
+            announcement = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled else { return }
+                AccessibilityNotification.Announcement(message).post()
             }
+            return
+        }
+        let result = save.attempt(
+            draft, password: password, lastConnectedAt: model.hosts.host(id: save.id)?.lastConnectedAt,
+            writeHost: { p, step in
+                switch step {
+                case .add: try model.hosts.add(p)
+                case .update: try model.hosts.update(p)
+                }
+            },
+            setPassword: { pw, id in try model.passwords.setPassword(pw, for: id) },
+            deletePassword: { id in _ = try? model.passwords.deletePassword(for: id) })
+        switch result {
+        case .saved(let p):
             if model.selection == nil { model.selection = p.id }
-            dismiss()
-        } catch {
-            saveError = "Could not save: \(error)"
+            close()
+        case .failed(let message):
+            saveError = message
         }
     }
 }

@@ -35,6 +35,8 @@ final class AppModel {
     let pushSettings: PushSettings
     let pushSync: PushSyncCoordinator
     let sessions: SessionRegistry
+    /// Which sidebar hosts/sessions differ from their default expansion (persisted).
+    let sidebarExpansion: SidebarExpansionStore
     let keyboard = HardwareKeyboardMonitor()
 
     var selection: UUID? {
@@ -46,7 +48,14 @@ final class AppModel {
     /// Any modal sheet driven by the model is up.
     var hasSheetOpen: Bool { router.current != nil }
     /// Seam for the host editor's unsaved-changes guard: a dirty modal is never replaced.
-    private var modalIsDirty: Bool { false }
+    private var modalIsDirty: Bool {
+        switch router.current {
+        case .newHost?, .editHost?: editorIsDirty
+        default: false
+        }
+    }
+    /// The open host editor holds unsaved input (reported by the editor itself).
+    @ObservationIgnored var editorIsDirty = false
     /// Sidebar visibility (the window tab strip shows while the sidebar is collapsed).
     var columnVisibility: NavigationSplitViewVisibility = .all
     /// Hardware shortcuts delivered while the terminal has focus.
@@ -77,6 +86,7 @@ final class AppModel {
         let keyStore: KeyStore
         let known: KnownHostsStore
         let pushDefaults: UserDefaults
+        let sidebarDefaults: UserDefaults
         if ephemeral {
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shuai-ui-\(UUID().uuidString)")
             hosts = HostStore(fileURL: dir.appendingPathComponent("hosts.json"))
@@ -86,6 +96,7 @@ final class AppModel {
             settings = AppSettings(defaults: UserDefaults(suiteName: "shuai-ui-\(UUID().uuidString)")!)
             pushDefaults = UserDefaults(suiteName: "shuai-ui-push-\(UUID().uuidString)")!
             pushSettings = PushSettings(defaults: pushDefaults, secrets: InMemoryPushSecretStore())
+            sidebarDefaults = UserDefaults(suiteName: "shuai-ui-sidebar-\(UUID().uuidString)")!
         } else {
             hosts = HostStore()
             keyStore = KeychainKeyStore()
@@ -94,7 +105,10 @@ final class AppModel {
             settings = AppSettings()
             pushDefaults = .standard
             pushSettings = PushSettings()
+            sidebarDefaults = .standard
         }
+        sidebarExpansion = SidebarExpansionStore(defaults: sidebarDefaults)
+        sidebarExpansion.prune(keeping: Set(hosts.hosts.map(\.id)))
         pushSync = PushSyncCoordinator(settings: pushSettings, defaults: pushDefaults)
         self.settings = settings
         keys = KeyLibrary(store: keyStore)
@@ -178,8 +192,27 @@ final class AppModel {
         return outcome != .ignored
     }
 
+    /// Whether a menu item for `route` would do anything right now (no non-replaceable modal in the way).
+    func canRequest(_ route: ModalRoute) -> Bool {
+        if route == .quickSwitcher { return router.current == nil }
+        return router.canPresent(route, currentIsDirty: modalIsDirty)
+    }
+
+    /// The selected host's tmux availability for the menu bar's tmux menu.
+    var tmuxMenuAvailability: TmuxMenuAvailability {
+        guard let id = selection, let host = hosts.host(id: id) else { return .unavailable }
+        return TmuxMenuAvailability(sessions.controller(for: host).tmux.state)
+    }
+
+    /// Runs a tmux menu item for the selected host.
+    func performTmuxMenuItem(id: String) {
+        guard let hostID = selection, let host = hosts.host(id: hostID) else { return }
+        handleShortcut(id: id, host: host)
+    }
+
     /// The sheet went away (button or swipe): run the route's cleanup and clear it.
     func dismissModal() {
+        editorIsDirty = false
         switch router.current {
         case .quickSwitcher: closeQuickSwitcher(activated: false)
         case .agentInstall: closeAgentInstall()
@@ -419,6 +452,7 @@ final class AppModel {
             engineBox.engines[host.id] = nil
             try? passwords.deletePassword(for: host.id)
             pushSync.forget(host: host.id)
+            sidebarExpansion.forget(host: host.id)
             try? hosts.delete(id: host.id)
             notices.removeAll(scope: .host(host.id))
             notices.retract(key: Notice.pushSyncKey(hostID: host.id))

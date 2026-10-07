@@ -4,19 +4,27 @@
 
 ## 1. Add a host
 
-Tap **+** in the sidebar toolbar (or press ⌘N, "New Host"). Enter a name, host or IP, port and
+Tap **New Host** in the sidebar's bottom bar (or press ⌘N). Settings is the gear next to it, or ⌘,.
+Enter a name, host or IP, port and
 user name, then pick an authentication method:
 
-- **SSH key**: a key from the app's key library.
+- **SSH key**: a key from the app's key library. With keys in the library a new host defaults to
+  this method (the key is preselected when there is only one); without keys it defaults to
+  **Ask each time**, and **Generate a key** opens the key library.
 - **Password**: stored in the Keychain.
 - **Ask each time**: asked on every connect, kept in memory only and cleared on disconnect. The
   prompt appears only *after* the server's host key has been verified.
 
 Keyboard-interactive authentication (for example one-time codes) is answered in a prompt.
 
+A field's problem is shown under it when you leave the field, and disappears as soon as it is
+fixed. **Save** stays available: with problems it moves to the first invalid field and announces it
+to VoiceOver. **Cancel** with unsaved changes asks whether to discard them, and swiping the sheet
+down does nothing while there are unsaved changes.
+
 ## 2. Keys
 
-Open the key library with the key icon in the toolbar (or Settings > Keys, or Open Keys in the host editor; Back returns to where you were), then
+Open the key library from Settings > **Keys** (or the app menu's Keys…, or Generate a key in the host editor; Back returns to where you were), then
 **Add Key**:
 
 - **Generate ed25519 key** / **Generate ECDSA P-256 key**: created on the iPad.
@@ -75,6 +83,21 @@ creates it otherwise. An optional **Startup command** runs only when the session
 The sidebar shows host > tmux session > window > pane and stays in sync with the server through a
 separate control channel; see [tmux integration](../design/tmux-integration.md). Context menus on
 windows and panes offer rename, new window, split right/down and close (closing always asks).
+
+Hosts and sessions have a chevron to collapse or expand their rows. A host and the session shown in
+the terminal start expanded, other sessions collapsed; collapsing never changes which host or window
+is selected, and the app never expands a row by itself. Your choices are remembered per host and
+session name. The session you are viewing is tinted, and only its active window and pane are
+highlighted. A session's context menu offers **Switch to Session** and **New Window** (the new
+window is created in that session, not in the one you are viewing). A host's context menu groups
+its AI items under **AI integration**; they are disabled with "Connect to this host first" until
+the host is connected.
+
+With the sidebar collapsed, a window tab strip appears above the terminal: one tab per window of the
+viewed session (the active one highlighted), a **+** button for a new window, and a stack button on
+the left that lists the host's tmux sessions (the viewed one is checked) to switch session or add a
+window. Touch and hold a tab for the same window menu as in the sidebar. Tabs and buttons are at
+least 44 pt and grow with the text size.
 
 ## 5. Keyboard bars
 

@@ -111,6 +111,19 @@ public final class TmuxActions {
         try await monitor.run(tmuxNewWindow(session: sessionName, cwd: cwd, name: nil))
     }
 
+    /// A new window in the session `$N` (not necessarily the viewed one), starting in that session's
+    /// active pane directory. Unknown or malformed ids are rejected before anything is sent.
+    public func newWindow(inSession id: String) async throws {
+        let digits = id.dropFirst()
+        guard id.hasPrefix("$"), !digits.isEmpty, digits.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }),
+            let session = monitor.topology?.sessions.first(where: { $0.id == id })
+        else { throw TmuxError.invalidTarget(id) }
+        let window = session.windows.first(where: \.active) ?? session.windows.first
+        let pane = window.flatMap { $0.panes.first(where: \.active) ?? $0.panes.first }
+        let cwd = pane.map(\.currentPath).flatMap { $0.isEmpty ? nil : $0 }
+        try await monitor.run(tmuxNewWindow(session: session.name, cwd: cwd, name: nil))
+    }
+
     public func renameWindow(_ id: String, to name: String) async throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

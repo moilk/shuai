@@ -34,178 +34,220 @@ struct TmuxLoadingRow: View {
             ProgressView().controlSize(.small)
             Text("Loading tmux\u{2026}").font(.caption).foregroundStyle(.secondary)
         }
-        .padding(.leading, 20)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("tmux-loading")
     }
 }
 
-/// Session -> windows -> panes (when a window has several) of one connected host, inline in the
-/// host list. Tapping selects it in tmux (and shows the host's terminal).
-struct TmuxHostTree: View {
+/// Window actions shared by sidebar rows and tabs. "New Window" targets the window's own session.
+struct TmuxWindowMenu: View {
     @Environment(AppModel.self) private var model
-    let host: HostProfile
-    let controller: SessionController
-
-    @State private var renaming: Renaming?
-    @State private var newName = ""
-
-    struct Renaming: Identifiable {
-        let id: String
-        let current: String
-    }
+    let host: UUID
+    let sessionID: String
+    let window: TmuxTree.WindowRow
+    let rename: () -> Void
 
     var body: some View {
-        let actions = controller.tmuxActions
-        let sessions = controller.tmux.topology.map {
-            TmuxTree.sessions(topology: $0, viewedSessionID: controller.tmux.viewedSessionID, host: host.id, badges: model.badges)
-        } ?? []
-        ForEach(sessions) { session in
-            Button { select { try await actions.switchSession(session.id) } } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: session.viewed ? "rectangle.stack.fill" : "rectangle.stack")
-                        .foregroundStyle(session.viewed ? Color.accentColor : .secondary)
-                    Text(session.name).font(.subheadline.weight(.semibold))
-                    Spacer()
-                    BadgeView(badge: session.badge)
-                }
+        Button("Rename\u{2026}", systemImage: "pencil", action: rename)
+        Button("New Window", systemImage: "plus.rectangle") {
+            model.runTmux(host: host) { try await $0.newWindow(inSession: sessionID) }
+        }
+        if let pane = window.activePaneID {
+            Button("Split Right", systemImage: "rectangle.split.2x1") {
+                model.runTmux(host: host) { try await $0.split(pane: pane, horizontal: true) }
             }
-            .buttonStyle(.plain)
-            .padding(.leading, 20)
-            .accessibilityIdentifier("tmux-session-\(session.name)")
-
-            ForEach(session.windows) { window in
-                windowRow(window, in: session, actions: actions)
-                ForEach(window.panes) { pane in
-                    Button { select { try await actions.selectPane(pane.id) } } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: pane.active && window.active ? "circle.fill" : "circle")
-                                .font(.system(size: 6))
-                                .foregroundStyle(pane.active ? Color.accentColor : .secondary)
-                            Text(pane.title).font(.caption).lineLimit(1)
-                            Spacer()
-                            BadgeView(badge: pane.badge)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 64)
-                    .accessibilityIdentifier("tmux-pane-\(pane.id)")
-                    .contextMenu {
-                        Button("Split Right", systemImage: "rectangle.split.2x1") { select { try await actions.split(pane: pane.id, horizontal: true) } }
-                        Button("Split Down", systemImage: "rectangle.split.1x2") { select { try await actions.split(pane: pane.id, horizontal: false) } }
-                        Button("Close Pane", systemImage: "xmark.square", role: .destructive) {
-                            model.selection = host.id
-                            actions.requestKillPane(pane.id)
-                        }
-                    }
-                }
+            Button("Split Down", systemImage: "rectangle.split.1x2") {
+                model.runTmux(host: host) { try await $0.split(pane: pane, horizontal: false) }
             }
         }
-        .alert("Rename Window", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+        if let pane = window.activePaneID, window.paneCount > 1 {
+            Button("Close Pane", systemImage: "xmark.square", role: .destructive) {
+                model.requestKill(host: host) { $0.requestKillPane(pane) }
+            }
+        }
+        Button("Close Window", systemImage: "xmark.rectangle", role: .destructive) {
+            model.requestKill(host: host) { $0.requestKillWindow(window.id) }
+        }
+    }
+}
+
+/// Actions of one pane row.
+struct TmuxPaneMenu: View {
+    @Environment(AppModel.self) private var model
+    let host: UUID
+    let paneID: String
+
+    var body: some View {
+        Button("Split Right", systemImage: "rectangle.split.2x1") {
+            model.runTmux(host: host) { try await $0.split(pane: paneID, horizontal: true) }
+        }
+        Button("Split Down", systemImage: "rectangle.split.1x2") {
+            model.runTmux(host: host) { try await $0.split(pane: paneID, horizontal: false) }
+        }
+        Button("Close Pane", systemImage: "xmark.square", role: .destructive) {
+            model.requestKill(host: host) { $0.requestKillPane(paneID) }
+        }
+    }
+}
+
+/// Actions of one session row.
+struct TmuxSessionMenu: View {
+    @Environment(AppModel.self) private var model
+    let host: UUID
+    let sessionID: String
+
+    var body: some View {
+        Button("Switch to Session", systemImage: "rectangle.stack") {
+            model.runTmux(host: host) { try await $0.switchSession(sessionID) }
+        }
+        Button("New Window", systemImage: "plus.rectangle") {
+            model.runTmux(host: host) { try await $0.newWindow(inSession: sessionID) }
+        }
+    }
+}
+
+extension AppModel {
+    /// Makes `host`'s terminal the visible one, then runs the tmux action; failures become notices.
+    func runTmux(host: UUID, _ body: @escaping @MainActor (TmuxActions) async throws -> Void) {
+        selection = host
+        guard let actions = sessions.existingController(for: host)?.tmuxActions else { return }
+        Task { await actions.run { try await body(actions) } }
+    }
+
+    /// Selects `host`, then asks for a confirmed kill (the dialog lives on the terminal screen).
+    func requestKill(host: UUID, _ ask: @MainActor (TmuxActions) -> Void) {
+        selection = host
+        if let actions = sessions.existingController(for: host)?.tmuxActions { ask(actions) }
+    }
+}
+
+/// A pending window rename (the alert's target).
+struct WindowRenaming: Identifiable {
+    let host: UUID
+    let windowID: String
+    var id: String { windowID }
+}
+
+extension View {
+    /// The "Rename Window" alert shared by sidebar rows and window tabs; the owner sets `renaming`
+    /// and `newName` (the current name) from the menu's rename action.
+    func windowRenameAlert(renaming: Binding<WindowRenaming?>, newName: Binding<String>) -> some View {
+        modifier(WindowRenameAlert(renaming: renaming, newName: newName))
+    }
+}
+
+private struct WindowRenameAlert: ViewModifier {
+    @Environment(AppModel.self) private var model
+    @Binding var renaming: WindowRenaming?
+    @Binding var newName: String
+
+    func body(content: Content) -> some View {
+        content.alert("Rename Window", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName).accessibilityIdentifier("rename-window-field")
             Button("Rename") {
-                if let r = renaming { select { try await actions.renameWindow(r.id, to: newName) } }
+                if let r = renaming {
+                    let name = newName
+                    model.runTmux(host: r.host) { try await $0.renameWindow(r.windowID, to: name) }
+                }
                 renaming = nil
             }
             Button("Cancel", role: .cancel) { renaming = nil }
         }
     }
-
-    @ViewBuilder
-    private func windowRow(_ window: TmuxTree.WindowRow, in session: TmuxTree.SessionRow, actions: TmuxActions) -> some View {
-        Button { select { try await actions.selectWindow(window.id) } } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "macwindow")
-                    .foregroundStyle(window.active && session.viewed ? Color.accentColor : .secondary)
-                Text(window.title)
-                    .font(.subheadline)
-                    .fontWeight(window.active ? .semibold : .regular)
-                    .lineLimit(1)
-                if window.zoomed { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2).foregroundStyle(.secondary) }
-                Spacer()
-                if window.paneCount > 1 {
-                    Text("\(window.paneCount)").font(.caption2).foregroundStyle(.secondary)
-                        .accessibilityLabel("\(window.paneCount) panes")
-                }
-                BadgeView(badge: window.badge)
-            }
-        }
-        .buttonStyle(.plain)
-        .padding(.leading, 40)
-        .accessibilityIdentifier("tmux-window-\(window.id)")
-        .accessibilityValue(window.active ? "active" : "")
-        .contextMenu {
-            Button("Rename…", systemImage: "pencil") {
-                newName = window.name
-                renaming = Renaming(id: window.id, current: window.name)
-            }
-            Button("New Window", systemImage: "plus.rectangle") { select { try await actions.newWindow() } }
-            if let pane = window.activePaneID {
-                Button("Split Right", systemImage: "rectangle.split.2x1") { select { try await actions.split(pane: pane, horizontal: true) } }
-                Button("Split Down", systemImage: "rectangle.split.1x2") { select { try await actions.split(pane: pane, horizontal: false) } }
-            }
-            if let pane = window.activePaneID, window.paneCount > 1 {
-                Button("Close Pane", systemImage: "xmark.square", role: .destructive) {
-                    model.selection = host.id
-                    actions.requestKillPane(pane)
-                }
-            }
-            Button("Close Window", systemImage: "xmark.rectangle", role: .destructive) {
-                model.selection = host.id
-                actions.requestKillWindow(window.id)
-            }
-        }
-    }
-
-    /// Makes this host's terminal the visible one, then runs the tmux action.
-    private func select(_ body: @escaping @MainActor () async throws -> Void) {
-        model.selection = host.id
-        let actions = controller.tmuxActions
-        Task { await actions.run(body) }
-    }
 }
 
-/// Compact horizontal window strip above the terminal (shown while the sidebar is collapsed).
+/// Window strip above the terminal (shown while the sidebar is collapsed): a session menu, one tab
+/// per window of the viewed session and a new-window button. Targets are at least 44 pt and the
+/// strip grows with Dynamic Type.
 struct WindowTabStrip: View {
     @Environment(AppModel.self) private var model
     let host: HostProfile
     let controller: SessionController
+    @State private var renaming: WindowRenaming?
+    @State private var newName = ""
+    @ScaledMetric(relativeTo: .body) private var minTarget: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var hPadding: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var spacing: CGFloat = 4
 
     var body: some View {
         let actions = controller.tmuxActions
-        if let session = actions.viewedSession {
-            let rows = TmuxTree.windowRows(of: session, host: host.id, badges: model.badges)
+        if let topology = controller.tmux.topology, let session = actions.viewedSession {
+            let strip = TabStripModel(topology: topology, viewedSessionID: session.id, host: host.id, badges: model.badges)
             HStack(spacing: 0) {
+                sessionMenu(strip)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(rows) { w in
-                            Button { Task { await actions.run { try await actions.selectWindow(w.id) } } } label: {
-                                HStack(spacing: 4) {
-                                    Text(w.title).lineLimit(1)
-                                    if w.zoomed { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2) }
-                                    BadgeView(badge: w.badge)
-                                }
-                                .font(.footnote.weight(w.active ? .semibold : .regular))
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(w.active ? Color.accentColor.opacity(0.25) : Color.clear, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("window-tab-\(w.id)")
-                            .accessibilityValue(w.active ? "active" : "")
-                        }
+                    HStack(spacing: spacing) {
+                        ForEach(strip.tabs) { tab in tabButton(tab, actions: actions, sessionID: session.id) }
                     }
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, spacing * 2)
                 }
-                Button { Task { await actions.run { try await actions.newWindow() } } } label: { Image(systemName: "plus") }
-                    .padding(.horizontal, 10)
-                    .accessibilityLabel("New Window")
-                    .accessibilityIdentifier("window-tab-new")
+                Button { Task { await actions.run { try await actions.newWindow() } } } label: {
+                    Image(systemName: "plus")
+                        .frame(minWidth: minTarget, minHeight: minTarget)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("New Window")
+                .accessibilityIdentifier("window-tab-new")
             }
-            .frame(height: 34)
             .background(.bar)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("window-tab-strip")
+            .windowRenameAlert(renaming: $renaming, newName: $newName)
         }
+    }
+
+    private func sessionMenu(_ strip: TabStripModel) -> some View {
+        Menu {
+            ForEach(strip.sessions) { entry in
+                Button {
+                    model.runTmux(host: host.id) { try await $0.switchSession(entry.id) }
+                } label: {
+                    if entry.isViewed {
+                        Label(entry.name, systemImage: "checkmark")
+                    } else {
+                        Text(verbatim: entry.name)
+                    }
+                }
+            }
+            Divider()
+            if let id = strip.viewedSessionID {
+                Button("New Window", systemImage: "plus.rectangle") {
+                    model.runTmux(host: host.id) { try await $0.newWindow(inSession: id) }
+                }
+            }
+        } label: {
+            Image(systemName: "rectangle.stack")
+                .frame(minWidth: minTarget, minHeight: minTarget)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Session: \(strip.viewedSessionName ?? "")")
+        .accessibilityIdentifier("window-tab-session-menu")
+    }
+
+    private func tabButton(_ tab: TabStripModel.Tab, actions: TmuxActions, sessionID: String) -> some View {
+        let w = tab.row
+        return Button { Task { await actions.run { try await actions.selectWindow(w.id) } } } label: {
+            HStack(spacing: spacing) {
+                Text(w.title).lineLimit(1)
+                if w.zoomed { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2) }
+                BadgeView(badge: w.badge)
+            }
+            .font(.subheadline.weight(w.active ? .semibold : .regular))
+            .padding(.horizontal, hPadding)
+            .frame(minHeight: minTarget)
+            .background(w.active ? Color.accentColor.opacity(0.25) : Color.clear, in: Capsule())
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            TmuxWindowMenu(host: host.id, sessionID: sessionID, window: w) {
+                newName = w.name
+                renaming = WindowRenaming(host: host.id, windowID: w.id)
+            }
+        }
+        .accessibilityLabel(tab.label)
+        .accessibilityIdentifier("window-tab-\(w.id)")
+        .accessibilityValue(tab.value)
     }
 }
 

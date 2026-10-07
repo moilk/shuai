@@ -6,23 +6,26 @@ shuai is not on screen, the `shuai-agent` on your server can push notifications 
 
 ## Set up
 
-1. In shuai: Settings > Background notifications > turn on **Push notifications (ntfy)**. The
-   server defaults to `https://ntfy.sh` and a random private topic is generated
+1. In shuai: open Settings, then **Background push (ntfy)** (its row shows `Off` or
+   `On · <server host>`), and turn on **Push notifications**. The server defaults to `https://ntfy.sh` and a random private topic is generated
    (`shuai-` + 26 base32 characters, 128 random bits). Topic and access token are stored in the
-   Keychain.
+   Keychain. The topic is shown masked (`shuai-••••…wxyz`); tap **Show** to see all of it.
 2. Install the official **ntfy** app from the App Store, then tap **Open in ntfy app** in shuai to
-   subscribe to the topic (or subscribe manually with **Copy topic**).
+   subscribe to the topic (or subscribe manually with **Copy topic**, which works without showing
+   the topic; the copy stays on this device's pasteboard for two minutes; it is
+   also offered to your other devices through Universal Clipboard, and a copy pasted there is not
+   removed).
 3. Tap **Send test notification**.
 4. Get the settings onto your hosts. They are written to `~/.shuai/config.toml` by **Enable AI
    integration…**, automatically on connect when they changed, by **Sync to connected hosts** in
    Settings, and by **Sync notification settings** in a host's menu. A new topic or toggling push
    reaches connected hosts immediately.
 
-Optional settings in the same section:
+Optional settings on the same page:
 
 - **Server**: your own ntfy server, plus an access token if it requires one. An `http://` server
   shows a cleartext warning.
-- **New topic**: rotates the topic (resubscribe in the ntfy app afterwards).
+- **New topic…**: rotates the topic (resubscribe in the ntfy app afterwards).
 - **Include tmux window names**: off by default, see below.
 
 ## When a push is sent

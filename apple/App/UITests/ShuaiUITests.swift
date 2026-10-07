@@ -39,6 +39,98 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["alice@example.invalid"].exists)
     }
 
+    @MainActor
+    func testCancelWithChangesAsksToDiscard() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+
+        let name = app.textFields["host-name-field"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("unsaved-host")
+
+        app.buttons["Cancel"].tap()
+        let keep = app.buttons.matching(identifier: "keep-editing").firstMatch
+        XCTAssertTrue(app.buttons["discard-changes"].waitForExistence(timeout: 5), "unsaved input asks before closing")
+        XCTAssertTrue(keep.exists)
+        keep.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "Keep Editing leaves the sheet open")
+        XCTAssertEqual(name.value as? String, "unsaved-host")
+
+        app.buttons["Cancel"].tap()
+        let discard = app.buttons.matching(identifier: "discard-changes").firstMatch
+        XCTAssertTrue(discard.waitForExistence(timeout: 5))
+        discard.tap()
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 5), "Discard Changes closes the editor")
+        XCTAssertFalse(app.staticTexts["unsaved-host"].exists)
+    }
+
+    @MainActor
+    func testPushingKeysKeepsThePasswordAndDirtyState() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+        XCTAssertTrue(app.textFields["host-name-field"].waitForExistence(timeout: 5))
+
+        let method = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Method'")).firstMatch
+        method.tap()
+        app.buttons["Password"].firstMatch.tap()
+        let secret = app.secureTextFields.firstMatch
+        XCTAssertTrue(secret.waitForExistence(timeout: 5))
+        secret.tap()
+        secret.typeText("hunter2")
+
+        method.tap()
+        app.buttons["SSH key"].firstMatch.tap()
+        let generate = app.buttons["editor-open-keys"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 5))
+        generate.tap()
+        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5))
+        app.navigationBars["Keys"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.textFields["host-name-field"].waitForExistence(timeout: 5))
+
+        method.tap()
+        app.buttons["Password"].firstMatch.tap()
+        let again = app.secureTextFields.firstMatch
+        XCTAssertTrue(again.waitForExistence(timeout: 5))
+        // An empty secure field reports its placeholder as the value; typed text reports bullets.
+        let shown = again.value as? String ?? ""
+        XCTAssertNotEqual(shown, "Password", "the field is not empty: the typed password survives a pushed page")
+        XCTAssertTrue(shown.contains("•"), "the field shows bullets, got \(shown)")
+
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons.matching(identifier: "discard-changes").firstMatch.waitForExistence(timeout: 5),
+                      "still dirty after returning from Keys")
+    }
+
+    @MainActor
+    func testSaveWithErrorsFocusesTheFirstInvalidField() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+
+        let save = app.buttons["save-host-button"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+        XCTAssertTrue(app.staticTexts["Enter a name."].waitForExistence(timeout: 3))
+        let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
+        let focused = expectation(for: hasFocus, evaluatedWith: app.textFields["host-name-field"])
+        wait(for: [focused], timeout: 5)
+    }
+
     // MARK: tmux (fixture topology, no server)
 
     @MainActor
@@ -64,6 +156,24 @@ final class ShuaiUITests: XCTestCase {
         app.buttons["quick-switcher-button"].tap()
         _ = field.waitForExistence(timeout: 5)
         return field
+    }
+
+    @MainActor
+    func testOnlyTheViewedSessionShowsACurrentWindow() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-session-main"].waitForExistence(timeout: 10))
+        // Read the session rows before expanding: with scratch expanded the list can push rows off a small screen.
+        XCTAssertTrue(app.buttons["tmux-session-main"].isSelected, "the viewed session is marked")
+        XCTAssertFalse(app.buttons["tmux-session-scratch"].isSelected)
+        XCTAssertEqual(app.buttons["tmux-window-@1"].value as? String, "active")
+        XCTAssertTrue(app.buttons["tmux-window-@1"].isSelected)
+        let toggle = app.buttons["tmux-session-toggle-scratch"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        let other = app.buttons["tmux-window-@5"]
+        XCTAssertTrue(other.waitForExistence(timeout: 5), "scratch window")
+        XCTAssertNotEqual(other.value as? String, "active", "a window of a session that is not viewed is not current")
+        XCTAssertFalse(other.isSelected)
     }
 
     @MainActor
@@ -134,6 +244,37 @@ final class ShuaiUITests: XCTestCase {
     }
 
     @MainActor
+    func testCollapsingASessionHidesItsWindows() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        let toggle = app.buttons["tmux-session-toggle-main"]
+        XCTAssertTrue(toggle.exists, "session chevron")
+        XCTAssertGreaterThanOrEqual(toggle.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(toggle.frame.height, 44)
+        toggle.tap()
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-window-@1"])
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-window-@0"])
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-pane-%1"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.buttons["tmux-session-main"].exists, "the session row stays")
+        app.buttons["tmux-session-toggle-main"].tap()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 5), "windows return")
+        XCTAssertTrue(app.buttons["tmux-window-@0"].exists)
+    }
+
+    @MainActor
+    func testHostMenuExplainsDisabledAIItems() throws {
+        let app = launchWithTmuxFixture()
+        let row = app.staticTexts["host-row-fixture-host"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5), "host menu is open")
+        let hint = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Connect to this host first'")).firstMatch
+        XCTAssertTrue(hint.waitForExistence(timeout: 5), "disabled AI items say why: \(app.debugDescription)")
+    }
+
+    @MainActor
     func testConfirmingCloseRunsTheKill() throws {
         let app = launchWithTmuxFixture()
         let pane = app.buttons["tmux-pane-%1"]
@@ -193,8 +334,8 @@ final class ShuaiUITests: XCTestCase {
 
     /// Scrolls the list inside the open sheet (not the whole app) until `target` is hittable; bounded.
     @MainActor
-    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, maxSwipes: Int = 12) {
-        let bar = app.navigationBars["Settings"]
+    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, title: String = "Settings", maxSwipes: Int = 12) {
+        let bar = app.navigationBars[title]
         let sheetX = bar.frame.midX
         let lists = app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex
         let list = lists.first { $0.frame.minX <= sheetX && sheetX <= $0.frame.maxX && $0.frame.width < app.frame.width * 0.95 }
@@ -209,25 +350,173 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(target.isHittable, "\(target) not reachable after \(swipes) swipes\n\(app.debugDescription)")
     }
 
+    /// The software keyboard (up while the terminal is focused) covers the sidebar bottom bar, so
+    /// tests that use the bar first move focus out of the terminal by tapping the host row.
+    @MainActor
+    private func hideSoftwareKeyboard(_ app: XCUIApplication) {
+        guard app.keyboards.count > 0 else { return }
+        app.staticTexts["host-row-fixture-host"].tap()
+        let gone = expectation(for: NSPredicate(format: "count == 0"), evaluatedWith: app.keyboards)
+        if XCTWaiter().wait(for: [gone], timeout: 3) != .completed {
+            // Landscape: the keyboard's dismiss key sits at its trailing bottom corner. The key's own
+            // frame is reported off screen by the simulator, so tap the corner of the keyboard frame.
+            let frame = app.keyboards.firstMatch.frame
+            let window = app.windows.firstMatch
+            let corner = CGVector(dx: (frame.maxX - 40) / window.frame.width, dy: (frame.maxY - 50) / window.frame.height)
+            window.coordinate(withNormalizedOffset: corner).tap()
+        }
+        for id in ["add-host-button", "settings-button"] {
+            let hittable = expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: app.buttons[id])
+            wait(for: [hittable], timeout: 5)
+        }
+    }
+
+    /// Taps the sidebar bottom bar's Settings button.
+    @MainActor
+    private func tapSettings(_ app: XCUIApplication) {
+        hideSoftwareKeyboard(app)
+        let button = app.buttons["settings-button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "settings-button missing\n\(app.debugDescription)")
+        button.tap()
+    }
+
+    @MainActor
+    func testSidebarTopHasOnlyQuickSwitcher() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        XCTAssertTrue(app.buttons["quick-switcher-button"].exists)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.exists, "New Host is in the bottom bar")
+        XCTAssertTrue(settings.exists, "Settings is in the bottom bar")
+        let hostRow = app.buttons["tmux-window-@1"].frame
+        let list = app.collectionViews.firstMatch.frame
+        XCTAssertGreaterThan(add.frame.minY, list.midY, "New Host sits in the lower half of the sidebar")
+        XCTAssertGreaterThan(settings.frame.minY, list.midY, "Settings sits in the lower half of the sidebar")
+        XCTAssertGreaterThan(add.frame.minY, hostRow.maxY, "the bottom bar sits below the rows")
+        XCTAssertLessThan(settings.frame.maxX, app.frame.width / 2, "the bottom bar is in the sidebar column")
+        XCTAssertFalse(app.buttons["more-menu"].exists, "the More menu is retired")
+        XCTAssertFalse(app.buttons["keys-button"].exists, "Keys lives in Settings and the app menu")
+    }
+
+    @MainActor
+    func testSettingsButtonOpensSettingsDirectly() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        tapSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), "one tap opens Settings, no menu")
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 5))
+    }
+
+    /// New Host is custom content sized to 44 pt. Settings is the system's icon-only glass button,
+    /// which reports 36 pt: a taller frame on it makes the whole bar report as not hittable.
+    @MainActor
+    func testSidebarBottomBarTargetsAreAtLeast44pt() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(add.isHittable, "add-host-button hittable")
+        XCTAssertTrue(settings.isHittable, "settings-button hittable")
+        XCTAssertGreaterThanOrEqual(add.frame.height, 44, "add-host-button tap target height")
+        XCTAssertGreaterThanOrEqual(settings.frame.height, 36, "settings-button is the system bar button size")
+    }
+
+    @MainActor
+    func testSidebarBottomBarAtAccessibilitySizeStillWorks() throws {
+        let app = launchWithTmuxFixture(
+            extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(add.isHittable)
+        XCTAssertTrue(settings.isHittable)
+        XCTAssertEqual(add.label, "Add Host", "icon-only keeps its accessibility label")
+        XCTAssertFalse(app.staticTexts["New Host"].exists, "New Host is icon-only at accessibility sizes")
+        XCTAssertFalse(add.frame.intersects(settings.frame), "buttons never overlap")
+    }
+
+    @MainActor
+    func testSidebarBottomBarPassesTheAccessibilityAudit() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        let bar = app.buttons["add-host-button"].frame.union(app.buttons["settings-button"].frame).insetBy(dx: -1, dy: -1)
+        try app.performAccessibilityAudit(for: [.dynamicType, .hitRegion, .sufficientElementDescription]) { issue in
+            // Only the bottom bar is audited here; other screens have their own owners.
+            guard let frame = issue.element?.frame else { return true }
+            return !bar.contains(frame)
+        }
+    }
+
+    @MainActor
+    private func openPushSettings(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        tapSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Background push (ntfy)"].waitForExistence(timeout: 5))
+    }
+
     @MainActor
     func testNotificationSettingsShowTopicAndTestButton() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Background push (ntfy)"].waitForExistence(timeout: 5))
         // top to bottom, so scrolling for the next target never passes an earlier one
-        scrollSheet(app, until: app.textFields["push-server-field"])
-        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
         let topic = app.staticTexts["push-topic"]
-        scrollSheet(app, until: topic)
-        // the row's label is "Topic, <topic>" (LabeledContent)
-        let value = topic.label.components(separatedBy: ", ").last ?? ""
-        XCTAssertNotNil(value.wholeMatch(of: /shuai-[a-z2-7]{26}/), topic.label)
-        scrollSheet(app, until: app.buttons["push-send-test"])
-        XCTAssertTrue(app.buttons["push-send-test"].exists)
-        scrollSheet(app, until: app.buttons["push-open-ntfy"])
+        scrollSheet(app, until: topic, title: "Background push (ntfy)")
+        // masked by default: the label never matches the full topic
+        XCTAssertNil(topic.label.firstMatch(of: /shuai-[a-z2-7]{26}/), "topic must be masked: \(topic.label)")
+        let reveal = app.buttons["push-topic-reveal"]
+        XCTAssertTrue(reveal.isHittable)
+        reveal.tap()
+        let revealed = app.staticTexts["push-topic"]
+        XCTAssertNotNil(revealed.label.firstMatch(of: /shuai-[a-z2-7]{26}/), revealed.label)
+        scrollSheet(app, until: app.buttons["push-open-ntfy"], title: "Background push (ntfy)")
         XCTAssertTrue(app.buttons["push-open-ntfy"].exists)
+        scrollSheet(app, until: app.buttons["push-send-test"], title: "Background push (ntfy)")
+        XCTAssertTrue(app.buttons["push-send-test"].exists)
+        scrollSheet(app, until: app.textFields["push-server-field"], title: "Background push (ntfy)")
+        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
+    }
+
+    @MainActor
+    func testCopyTopicStillWorks() throws {
+        let app = launchWithTmuxFixture()
+        openPushSettings(app)
+        let copy = app.buttons["push-copy-topic"]
+        scrollSheet(app, until: copy, title: "Background push (ntfy)")
+        XCTAssertEqual(copy.label, "Copy topic")
+        copy.tap()
+        XCTAssertEqual(app.buttons["push-copy-topic"].label, "Copied")
+    }
+
+    @MainActor
+    func testSettingsFirstPageShowsPushSummaryWithoutTheTopic() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        tapSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        XCTAssertTrue(link.label.contains("Background push"), link.label)
+        XCTAssertFalse(link.label.contains("shuai-"), link.label)
+        XCTAssertFalse(String(describing: link.value ?? "").contains("shuai-"))
+        XCTAssertFalse(app.staticTexts["push-topic"].exists, "the topic row lives on the push page only")
     }
 
     // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)
@@ -258,6 +547,19 @@ final class ShuaiUITests: XCTestCase {
         // host row: waiting count
         let waiting = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'waiting for you'")).firstMatch
         XCTAssertTrue(waiting.waitForExistence(timeout: 5), "host row shows the waiting count")
+    }
+
+    @MainActor
+    func testCollapsedHostKeepsTheWaitingBadge() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@0"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 10))
+        let toggle = app.buttons["host-toggle-fixture-host"]
+        XCTAssertTrue(toggle.exists, "host chevron")
+        toggle.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["tmux-window-@0"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.descendants(matching: .any)["host-aggregate-badge"].waitForExistence(timeout: 5), "badge stays on the collapsed host")
     }
 
     @MainActor
@@ -423,6 +725,56 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(dismiss.frame.height, 44, "tap target height")
     }
 
+    // MARK: window tab strip (sidebar collapsed)
+
+    @MainActor
+    private func launchWithCollapsedSidebar() -> XCUIApplication {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugSidebarCollapsed"])
+        XCTAssertTrue(app.descendants(matching: .any)["window-tab-strip"].waitForExistence(timeout: 10), "tab strip")
+        return app
+    }
+
+    @MainActor
+    func testWindowTabStripTargetsAreAtLeast44pt() throws {
+        let app = launchWithCollapsedSidebar()
+        let ids = ["window-tab-@0", "window-tab-@1", "window-tab-new", "window-tab-session-menu"]
+        for id in ids {
+            let element = app.buttons[id]
+            XCTAssertTrue(element.waitForExistence(timeout: 5), id)
+            XCTAssertTrue(element.isHittable, "\(id) hittable")
+            XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(id) height")
+            XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(id) width")
+        }
+        XCTAssertEqual(app.buttons["window-tab-@1"].value as? String, "active")
+        XCTAssertEqual(app.buttons["window-tab-@0"].value as? String, "")
+    }
+
+    @MainActor
+    func testSessionMenuListsSessionsInTheTabStrip() throws {
+        let app = launchWithCollapsedSidebar()
+        let menu = app.buttons["window-tab-session-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        XCTAssertEqual(menu.label, "Session: main")
+        menu.tap()
+        XCTAssertTrue(app.buttons["main"].waitForExistence(timeout: 5), "viewed session listed")
+        XCTAssertTrue(app.buttons["scratch"].exists, "other session listed")
+    }
+
+    @MainActor
+    func testTabLongPressOffersTheWindowMenu() throws {
+        let app = launchWithCollapsedSidebar()
+        let tab = app.buttons["window-tab-@0"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 5))
+        tab.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Rename\u{2026}"].waitForExistence(timeout: 5), "menu offers Rename")
+        let close = app.buttons["Close Window"]
+        XCTAssertTrue(close.exists, "menu offers Close Window")
+        close.tap()
+        XCTAssertTrue(app.buttons["confirm-kill"].waitForExistence(timeout: 5), "closing asks first")
+        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        XCTAssertTrue(tab.exists)
+    }
+
     @MainActor
     func testConnectionStripPassesTheAccessibilityAudit() throws {
         let app = launchWithConnectionState("reconnecting")
@@ -521,7 +873,7 @@ final class ShuaiUITests: XCTestCase {
     func testKeysFromSettingsOpens() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["settings-keys-link"]
         scrollSheet(app, until: link)
