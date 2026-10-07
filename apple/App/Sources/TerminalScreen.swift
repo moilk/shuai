@@ -12,7 +12,10 @@ struct TerminalScreen: View {
     var body: some View {
         let controller = model.sessions.controller(for: host)
         if let engine = model.engine(for: host) {
+            // A new controller (an edited profile) brings a new engine; the representable hosts
+            // `engine.view` once, so the view is rebuilt with the controller.
             TerminalSessionView(controller: controller, engine: engine, host: host)
+                .id(ObjectIdentifier(controller))
         }
     }
 }
