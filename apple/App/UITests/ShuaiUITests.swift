@@ -856,6 +856,59 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(always.isSelected)
     }
 
+    // MARK: full screen
+
+    /// ⌃⌘F is delivered by the terminal's key command, so the terminal must have focus. The first
+    /// chord after a launch is sometimes dropped by the simulator, so it is retried once.
+    @MainActor
+    private func enterFullScreen(_ app: XCUIApplication) {
+        let handle = app.descendants(matching: .any)["full-screen-handle"]
+        for _ in 0 ..< 2 {
+            app.descendants(matching: .any)["terminal-view"].firstMatch.tap()
+            app.typeKey("f", modifierFlags: [.control, .command])
+            if handle.waitForExistence(timeout: 4) { return }
+        }
+        XCTFail("full screen handle did not appear\n\(app.debugDescription)")
+    }
+
+    @MainActor
+    func testFullScreenChordHidesTheNavigationBarAndShowsTheHandle() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.descendants(matching: .any)["connection-status"].waitForExistence(timeout: 10), "navigation bar before")
+        enterFullScreen(app)
+        XCTAssertFalse(app.descendants(matching: .any)["connection-status"].exists, "navigation bar hidden")
+        let handle = app.buttons["full-screen-handle"]
+        XCTAssertGreaterThanOrEqual(handle.frame.height, 44, "handle height")
+        XCTAssertGreaterThanOrEqual(handle.frame.width, 44, "handle width")
+        XCTAssertGreaterThan(handle.frame.midX, app.frame.width / 2, "handle is at the trailing edge")
+        XCTAssertFalse(app.staticTexts["host-row-fixture-host"].exists, "sidebar collapsed")
+    }
+
+    @MainActor
+    func testFullScreenHandleMenuExitsAndRestoresTheSidebar() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.staticTexts["host-row-fixture-host"].waitForExistence(timeout: 10))
+        enterFullScreen(app)
+        app.buttons["full-screen-handle"].tap()
+        for id in ["full-screen-show-sidebar", "full-screen-quick-switcher", "full-screen-exit"] {
+            XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5), id)
+        }
+        app.buttons["full-screen-exit"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["connection-status"].waitForExistence(timeout: 5), "navigation bar back")
+        XCTAssertTrue(app.staticTexts["host-row-fixture-host"].waitForExistence(timeout: 5), "sidebar restored")
+        XCTAssertFalse(app.buttons["full-screen-handle"].exists, "handle gone")
+    }
+
+    @MainActor
+    func testFullScreenHandleDocksIntoTheTabStripWhenItIsShown() throws {
+        let app = launchWithCollapsedSidebar()
+        enterFullScreen(app)
+        let strip = app.descendants(matching: .any)["window-tab-strip"]
+        XCTAssertTrue(strip.exists, "strip stays in full screen")
+        let handle = app.buttons["full-screen-handle"]
+        XCTAssertTrue(strip.frame.contains(handle.frame), "handle sits inside the strip")
+    }
+
     @MainActor
     func testSessionMenuListsSessionsInTheTabStrip() throws {
         let app = launchWithCollapsedSidebar()
