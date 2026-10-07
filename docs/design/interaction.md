@@ -109,9 +109,10 @@ column of up to 380 pt. While cards are pending, the strip and the notices reser
 a 10 pt gap, so their buttons stay tappable. When fewer than 280 pt would remain for them
 (`NoticeLayout`), they take the full width at the bottom of the terminal area instead.
 
-The window toolbar shows the status indicator (symbol, spoken as "{host}: {status label}" with the
-hint "Opens the connection menu", identifier `connection-status`, at least 36 pt) as the label of a
-menu; the host list row uses the same symbol and label. The menu starts with a non-interactive
+The window toolbar shows the status indicator (symbol plus a small down arrow that marks it as a
+menu, so an error symbol (a red cross) does not read as a close button; spoken as
+"{host}: {status label}" with the hint "Opens the connection menu", identifier
+`connection-status`, at least 36 pt) as the label of a menu; the host list row uses the same symbol and label. The menu starts with a non-interactive
 header (host name and status label), then Disconnect (`disconnect-button`, destructive) while
 connected, otherwise Reconnect (`connect-button`). There is no separate disconnect button, so no
 single tap disconnects; ⌘W and ⌘R in the Session menu stay. Connection action
