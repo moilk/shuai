@@ -67,14 +67,8 @@ reaching the handle menu.
 
 Not scheduled, in no particular order:
 
-- A reconnect attempt that was replaced can still show its password prompt late; that answers the
-  live attempt's prompt with nothing and ends the session (marked `withKnownIssue` in
-  `SessionControllerTests`).
 - Loss detection takes about 45 to 60 seconds (keepalive 15 s, three misses). Shortening it trades
   speed against false drops on unstable networks.
-- Editing a host profile while it is disconnected creates a new session controller and engine that
-  the terminal view does not pick up (`TerminalContainerRepresentable.updateUIView` ignores a new
-  engine), so the screen stays on the old engine until the host is reselected.
 - Time-based tests can fail on a loaded runner: `TmuxMonitorTests` (`silentAttachProbeTimesOutRetriesThenEnds`
   asserts a wall-clock bound, `slowAttachProbeStillSucceedsOnALaterAttempt` uses 40 ms timeouts).
   UI tests that failed once and passed on rerun: `testAddHostAppearsInSidebar` (simulator keyboard

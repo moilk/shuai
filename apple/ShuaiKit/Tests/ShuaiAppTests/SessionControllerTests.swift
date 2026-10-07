@@ -754,8 +754,8 @@ private struct Harness {
         #expect(await waitUntil { h.controller.state == .connected && h.factory.attempts > conns.count })
     }
 
-    /// Known gap: a superseded attempt that reaches its password prompt late replaces the live
-    /// attempt's pending prompt, which ends the session.
+    /// A superseded attempt that reaches its password prompt late leaves the live attempt's pending
+    /// prompt alone.
     @Test func staleAttemptsPasswordPromptDoesNotEndTheLiveAttempt() async {
         let key = newHostKey()
         var profile = HostProfile(name: "dev", host: host, username: "alice", auth: .password)
@@ -779,9 +779,8 @@ private struct Harness {
         #expect(await waitUntil { h.factory.attempts == 3 && h.controller.pendingPrompt != nil })
         gate.open()
         try? await Task.sleep(for: .milliseconds(50))
-        await withKnownIssue("a stale attempt's prompt cancels the live attempt's prompt") {
-            #expect(h.controller.state != .disconnected(exitStatus: nil))
-        }
+        #expect(h.controller.state != .disconnected(exitStatus: nil))
+        #expect(h.controller.pendingPrompt != nil)
     }
 
     @Test func manualReconnectFromFailedConnectsAgain() async {
