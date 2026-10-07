@@ -456,8 +456,10 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertLessThan(title.frame.midX, list.midX, "the title sits in the left half of the sidebar")
         XCTAssertLessThan(title.frame.maxX, search.frame.minX, "the title is left of Quick Switcher")
         XCTAssertEqual(title.label, "shuai")
-        // Not flush with the sidebar's edge: it lines up with the host row's capsule below it.
-        XCTAssertGreaterThanOrEqual(title.frame.minX - list.minX, 14, "the title keeps a leading inset")
+        // Not flush with the sidebar's edge. The system's own inset differs by OS (about 4 pt on iOS 26,
+        // about 12 pt on iOS 27) and the title adds 8 pt on top. 10 pt holds on both; it only tells the
+        // padding apart on iOS 26 (4 pt without it), on iOS 27 the system inset alone already passes.
+        XCTAssertGreaterThanOrEqual(title.frame.minX - list.minX, 10, "the title keeps a leading inset")
     }
 
     /// New Host and Settings are icon-only and sit together at the trailing side of the sidebar.
