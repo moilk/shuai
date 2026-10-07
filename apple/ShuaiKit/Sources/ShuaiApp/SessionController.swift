@@ -212,8 +212,8 @@ public final class SessionController {
         passwordCancelled = false
         state = .connecting
         do {
-            let auth = try buildAuth()
-            let conn = try await open(auth: auth)
+            let auth = try buildAuth(gen: gen)
+            let conn = try await open(auth: auth, gen: gen)
             guard gen == generation else { await conn.disconnect(); return }
             try await attach(conn, gen: gen, reconnecting: false)
         } catch is Cancelled {
@@ -312,7 +312,10 @@ public final class SessionController {
         }
     }
 
-    fileprivate func askHostKey(_ challenge: HostKeyChallenge) async -> Bool {
+    /// Prompts belong to the attempt (`gen`) that raised them: a superseded attempt is refused
+    /// without touching the live attempt's pending prompt.
+    fileprivate func askHostKey(_ challenge: HostKeyChallenge, gen: Int) async -> Bool {
+        guard gen == generation else { return false }
         resolvePending()
         let accepted: Bool = await withCheckedContinuation { c in
             pendingAnswer = .bool(c)
@@ -332,7 +335,8 @@ public final class SessionController {
         }
     }
 
-    private func askPassword() async -> String? {
+    private func askPassword(gen: Int) async -> String? {
+        guard gen == generation else { return nil }
         resolvePending()
         return await withCheckedContinuation { c in
             pendingAnswer = .string(c)
@@ -341,7 +345,10 @@ public final class SessionController {
         }
     }
 
-    fileprivate func askKeyboardInteractive(name: String, instructions: String, prompts: [FfiKbdPrompt]) async -> [String]? {
+    fileprivate func askKeyboardInteractive(
+        name: String, instructions: String, prompts: [FfiKbdPrompt], gen: Int
+    ) async -> [String]? {
+        guard gen == generation else { return nil }
         resolvePending()
         return await withCheckedContinuation { c in
             pendingAnswer = .strings(c)
@@ -354,7 +361,7 @@ public final class SessionController {
 
     /// Builds the credential list without any user interaction: a password that has to be typed is
     /// requested lazily by the SSH layer (`PasswordBridge`), i.e. only after the host key was trusted.
-    private func buildAuth() throws -> [FfiAuth] {
+    private func buildAuth(gen: Int) throws -> [FfiAuth] {
         var auth: [FfiAuth] = []
         switch profile.auth {
         case .key(let id):
@@ -366,33 +373,33 @@ public final class SessionController {
             if let stored = (try? passwords.password(for: profile.id)) ?? nil {
                 auth.append(.password(password: stored))
             } else {
-                auth.append(.passwordPrompt(prompter: PasswordBridge(controller: self)))
+                auth.append(.passwordPrompt(prompter: PasswordBridge(controller: self, gen: gen)))
             }
         case .ask:
-            auth.append(.passwordPrompt(prompter: PasswordBridge(controller: self)))
+            auth.append(.passwordPrompt(prompter: PasswordBridge(controller: self, gen: gen)))
         }
-        auth.append(.keyboardInteractive(prompter: KbdBridge(controller: self)))
+        auth.append(.keyboardInteractive(prompter: KbdBridge(controller: self, gen: gen)))
         return auth
     }
 
-    fileprivate func passwordFromUser() async -> String? {
+    fileprivate func passwordFromUser(gen: Int) async -> String? {
         if let sessionPassword { return sessionPassword }
-        guard let pw = await askPassword() else {
-            passwordCancelled = true
+        guard let pw = await askPassword(gen: gen) else {
+            if gen == generation { passwordCancelled = true }
             return nil
         }
         if profile.auth == .ask { sessionPassword = pw }
         return pw
     }
 
-    private func open(auth: [FfiAuth]) async throws -> RemoteConnection {
+    private func open(auth: [FfiAuth], gen: Int) async throws -> RemoteConnection {
         let config = FfiConnectConfig(
             host: profile.host.trimmingCharacters(in: .whitespaces), port: UInt16(clamping: profile.port),
             username: profile.username, auth: auth, keepaliveSecs: 15, connectTimeoutSecs: 15, authTimeoutSecs: 90)
         let tofu = TOFUVerifier(
             store: knownHosts,
-            decide: { [weak self] in await self?.askHostKey($0) ?? false },
-            decideChanged: { [weak self] in await self?.askHostKey($0) ?? false })
+            decide: { [weak self] in await self?.askHostKey($0, gen: gen) ?? false },
+            decideChanged: { [weak self] in await self?.askHostKey($0, gen: gen) ?? false })
         if !isReconnecting { state = .connecting }
         return try await factory.connect(config: config, verifier: SessionVerifier(tofu: tofu, controller: self))
     }
@@ -720,8 +727,8 @@ public final class SessionController {
         let gen = generation
         passwordCancelled = false
         do {
-            let auth = try buildAuth()
-            let conn = try await open(auth: auth)
+            let auth = try buildAuth(gen: gen)
+            let conn = try await open(auth: auth, gen: gen)
             guard gen == generation else { await conn.disconnect(); throw Cancelled() }
             try await attach(conn, gen: gen, reconnecting: true)
         } catch is Cancelled {
@@ -761,16 +768,24 @@ private final class SessionVerifier: HostKeyVerifierCallback, @unchecked Sendabl
 
 private final class PasswordBridge: PasswordPromptCallback, @unchecked Sendable {
     private weak var controller: SessionController?
-    init(controller: SessionController) { self.controller = controller }
+    private let gen: Int
+    init(controller: SessionController, gen: Int) {
+        self.controller = controller
+        self.gen = gen
+    }
 
-    func password() async -> String? { await controller?.passwordFromUser() }
+    func password() async -> String? { await controller?.passwordFromUser(gen: gen) }
 }
 
 private final class KbdBridge: KbdPrompterCallback, @unchecked Sendable {
     private weak var controller: SessionController?
-    init(controller: SessionController) { self.controller = controller }
+    private let gen: Int
+    init(controller: SessionController, gen: Int) {
+        self.controller = controller
+        self.gen = gen
+    }
 
     func respond(name: String, instructions: String, prompts: [FfiKbdPrompt]) async -> [String]? {
-        await controller?.askKeyboardInteractive(name: name, instructions: instructions, prompts: prompts)
+        await controller?.askKeyboardInteractive(name: name, instructions: instructions, prompts: prompts, gen: gen)
     }
 }
