@@ -225,6 +225,24 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(pane.exists)
     }
 
+    @MainActor
+    func testConfirmingCloseRunsTheKill() throws {
+        let app = launchWithTmuxFixture()
+        let pane = app.buttons["tmux-pane-%1"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 10))
+        pane.press(forDuration: 1.0)
+        let close = app.buttons["Close Pane"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        let confirm = app.buttons["confirm-kill"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        confirm.tap()
+        // the fixture's monitor is idle, so a kill that really runs reports this notice
+        let notice = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'session-notice' AND label CONTAINS 'tmux is not connected.'")).firstMatch
+        XCTAssertTrue(notice.waitForExistence(timeout: 5), "confirming Close runs the kill: \(app.debugDescription)")
+    }
+
     // MARK: deep links (shuai://open?host=&pane=, what an ntfy push click opens)
 
     private static let fixtureHost = "5B0F1C00-0000-4000-8000-00000000F1E1"
