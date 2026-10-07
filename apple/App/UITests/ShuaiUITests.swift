@@ -432,7 +432,13 @@ final class ShuaiUITests: XCTestCase {
             // Only this strip is audited here. Other screens (host list, accessory bar, terminal
             // surface) have their own owners; an issue outside the strip is not a failure.
             guard let frame = issue.element?.frame else { return true }
-            return !strip.contains(frame)
+            let inScope = strip.contains(frame)
+            if inScope {
+                // Name the element behind a failure so a CI-only audit finding can be traced.
+                let e = issue.element
+                XCTContext.runActivity(named: "AUDIT in-scope issue: type=\(issue.auditType.rawValue) id=\(e?.identifier ?? "-") label=\(e?.label ?? "-") elementType=\(e?.elementType.rawValue ?? 0) frame=\(frame) strip=\(strip) detail=\(issue.detailedDescription)") { _ in }
+            }
+            return !inScope
         }
     }
 
