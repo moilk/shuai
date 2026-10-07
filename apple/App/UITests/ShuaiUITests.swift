@@ -409,10 +409,10 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 5))
     }
 
-    /// New Host is custom content sized to 44 pt. Settings is the system's icon-only glass button,
-    /// which reports 36 pt: a taller frame on it makes the whole bar report as not hittable.
+    /// Both bottom-bar buttons are the system's icon-only bar buttons, which report 36 pt: a taller
+    /// frame on them makes the whole bar report as not hittable.
     @MainActor
-    func testSidebarBottomBarTargetsAreAtLeast44pt() throws {
+    func testSidebarBottomBarTargetsAreAtLeast36pt() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         hideSoftwareKeyboard(app)
@@ -421,8 +421,10 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         XCTAssertTrue(add.isHittable, "add-host-button hittable")
         XCTAssertTrue(settings.isHittable, "settings-button hittable")
-        XCTAssertGreaterThanOrEqual(add.frame.height, 44, "add-host-button tap target height")
-        XCTAssertGreaterThanOrEqual(settings.frame.height, 36, "settings-button is the system bar button size")
+        XCTAssertGreaterThanOrEqual(add.frame.height, 36, "add-host-button tap target height")
+        XCTAssertGreaterThanOrEqual(add.frame.width, 36, "add-host-button tap target width")
+        XCTAssertGreaterThanOrEqual(settings.frame.height, 36, "settings-button tap target height")
+        XCTAssertGreaterThanOrEqual(settings.frame.width, 36, "settings-button tap target width")
     }
 
     @MainActor
@@ -436,9 +438,53 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         XCTAssertTrue(add.isHittable)
         XCTAssertTrue(settings.isHittable)
-        XCTAssertEqual(add.label, "Add Host", "icon-only keeps its accessibility label")
+        XCTAssertEqual(add.label, "New Host", "icon-only keeps its accessibility label")
         XCTAssertFalse(app.staticTexts["New Host"].exists, "New Host is icon-only at accessibility sizes")
         XCTAssertFalse(add.frame.intersects(settings.frame), "buttons never overlap")
+    }
+
+    /// The brand title is a leading toolbar item, left of the trailing Quick Switcher.
+    @MainActor
+    func testSidebarTitleIsLeadingAndLeftOfTheQuickSwitcher() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        let title = app.staticTexts["sidebar-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "sidebar-title missing\n\(app.debugDescription)")
+        let search = app.buttons["quick-switcher-button"]
+        XCTAssertTrue(search.exists)
+        let list = app.collectionViews.firstMatch.frame
+        XCTAssertLessThan(title.frame.midX, list.midX, "the title sits in the left half of the sidebar")
+        XCTAssertLessThan(title.frame.maxX, search.frame.minX, "the title is left of Quick Switcher")
+        XCTAssertEqual(title.label, "shuai")
+    }
+
+    /// New Host and Settings are icon-only and sit together at the trailing side of the sidebar.
+    @MainActor
+    func testBottomBarButtonsAreIconOnlyAndTrailing() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        let list = app.collectionViews.firstMatch.frame
+        XCTAssertGreaterThan(add.frame.midX, list.midX, "New Host is in the right half of the sidebar")
+        XCTAssertGreaterThan(settings.frame.midX, list.midX, "Settings is in the right half of the sidebar")
+        XCTAssertLessThan(add.frame.maxX, settings.frame.minX, "New Host is left of Settings")
+        XCTAssertEqual(add.label, "New Host")
+        XCTAssertFalse(app.staticTexts["New Host"].exists, "no text capsule in the bar")
+    }
+
+    /// The status indicator is the label of the connection menu; nothing disconnects with one tap.
+    /// The fixture has no live connection, so the menu offers Reconnect.
+    @MainActor
+    func testStatusIndicatorOpensAConnectionMenu() throws {
+        let app = launchWithTmuxFixture()
+        let status = app.buttons["connection-status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 10), "connection-status is a button\n\(app.debugDescription)")
+        XCTAssertFalse(app.buttons["disconnect-button"].exists, "no top-level Disconnect button")
+        XCTAssertFalse(app.buttons["connect-button"].exists, "no top-level Connect button")
+        status.tap()
+        XCTAssertTrue(app.buttons["connect-button"].waitForExistence(timeout: 5), "the menu offers Reconnect\n\(app.debugDescription)")
+        XCTAssertFalse(app.buttons["disconnect-button"].exists)
     }
 
     @MainActor
