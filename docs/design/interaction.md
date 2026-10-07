@@ -295,6 +295,18 @@ strip `accessory-claude-<key>`). Ctrl and Alt expose their state as the accessib
 On for the next key, Locked) and carry the selected trait when armed; a one-shot modifier also gets
 a 2 pt border besides its fill, and a locked one the lock glyph, so state never relies on colour.
 
+### Accessory bar Dynamic Type
+
+Sizes come from `AccessoryBarMetrics` (pure, unit-tested). The key font is the 15 pt medium
+monospaced face scaled with `UIFontMetrics(forTextStyle: .body)` and capped at 22 pt. A row is at
+least 44 pt tall; that minimum scales with the (capped) text size, because a font capped at 22 pt
+never outgrows 44 pt by itself. The docked bar is two rows plus a 4 pt gap and 4 pt insets (100 pt
+at the default size, 88 pt before 44 pt rows); the floating bar is one row plus the insets. Key
+minimum width scales the same way. Rows scroll horizontally when the keys no longer fit. On a
+content-size change the bar rebuilds its button fonts, updates its height and the terminal view
+reloads its input views, so the keyboard guide (and with it the terminal's bottom edge) picks up the
+new height while the keyboard is up. Key order, mappings and sent bytes do not depend on the size.
+
 ## Chrome policy
 
 `ChromePolicy.decide(ChromeInputs)` in `ShuaiApp` is the single decision for which chrome surrounds

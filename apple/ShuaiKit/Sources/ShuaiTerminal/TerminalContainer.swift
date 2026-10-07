@@ -38,10 +38,12 @@ public final class TerminalContainerView: UIView {
             addSubview(bar)
             let width = bar.widthAnchor.constraint(equalToConstant: 780)
             width.priority = .defaultHigh
+            let height = bar.heightAnchor.constraint(equalToConstant: bar.intrinsicContentSize.height)
+            (bar as? KeyboardAccessoryBar)?.heightConstraint = height
             NSLayoutConstraint.activate([
                 bar.centerXAnchor.constraint(equalTo: centerXAnchor),
                 bar.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor, constant: -8),
-                bar.heightAnchor.constraint(equalToConstant: 44),
+                height,
                 bar.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -24),
                 width,
             ])

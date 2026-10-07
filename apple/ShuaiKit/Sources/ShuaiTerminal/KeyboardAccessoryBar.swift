@@ -29,17 +29,80 @@ public final class KeyboardAccessoryBar: UIView {
 
     public init(style: Style) {
         self.style = style
-        let height: CGFloat = style == .docked ? 88 : 44
-        super.init(frame: CGRect(x: 0, y: 0, width: 600, height: height))
+        super.init(frame: .zero)
+        frame = CGRect(x: 0, y: 0, width: 600, height: barHeight)
         autoresizingMask = style == .docked ? [.flexibleWidth] : []
         build()
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (bar: KeyboardAccessoryBar, _) in
+            // One turn later: the rest of the UI (SwiftUI) lays itself out for the new text size
+            // first, so rebuilding the bar and reloading the input views does not delay it.
+            DispatchQueue.main.async { [weak bar] in bar?.contentSizeChanged() }
+        }
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override public var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: style == .docked ? 88 : 44)
+        CGSize(width: UIView.noIntrinsicMetric, height: barHeight)
+    }
+
+    // MARK: - Dynamic Type
+
+    /// Called after a text size change so the host can re-run input view layout.
+    public var onBarHeightChanged: (() -> Void)?
+    /// Height constraint installed by a host that pins the bar (floating bar); kept in sync.
+    public weak var heightConstraint: NSLayoutConstraint?
+
+    private var scaledFont: UIFont {
+        let base = UIFont.monospacedSystemFont(ofSize: CGFloat(AccessoryBarMetrics.baseFontSize), weight: .medium)
+        return UIFontMetrics(forTextStyle: .body).scaledFont(
+            for: base, maximumPointSize: CGFloat(AccessoryBarMetrics.maxFontSize), compatibleWith: traitCollection)
+    }
+
+    private var rowHeight: Double {
+        AccessoryBarMetrics.rowHeight(
+            lineHeight: Double(scaledFont.lineHeight),
+            scale: Double(UIFontMetrics(forTextStyle: .body).scaledValue(for: 1, compatibleWith: traitCollection)))
+    }
+
+    /// Bar height for the current text size.
+    var barHeight: CGFloat {
+        CGFloat(style == .docked
+            ? AccessoryBarMetrics.dockedHeight(rowHeight: rowHeight)
+            : AccessoryBarMetrics.floatingHeight(rowHeight: rowHeight))
+    }
+
+    /// Minimum key width: scales with the text, never below the 40 pt it had before.
+    private var minKeyWidth: CGFloat {
+        max(40, CGFloat(AccessoryBarMetrics.minRowHeight) * scaledFont.pointSize
+            / CGFloat(AccessoryBarMetrics.baseFontSize))
+    }
+
+    private func fontTransformer() -> UIConfigurationTextAttributesTransformer {
+        UIConfigurationTextAttributesTransformer { [weak self] attributes in
+            var attributes = attributes
+            attributes.font = self?.scaledFont
+                ?? UIFont.monospacedSystemFont(ofSize: CGFloat(AccessoryBarMetrics.baseFontSize), weight: .medium)
+            return attributes
+        }
+    }
+
+    private func contentSizeChanged() {
+        for button in buttons.values {
+            var config = button.configuration ?? .gray()
+            config.titleTextAttributesTransformer = fontTransformer()
+            button.configuration = config
+            for constraint in button.constraints where constraint.firstAttribute == .width && constraint.relation == .greaterThanOrEqual {
+                constraint.constant = minKeyWidth
+            }
+        }
+        refreshModifierButtons()
+        heightConstraint?.constant = barHeight
+        invalidateIntrinsicContentSize()
+        frame.size.height = barHeight
+        setNeedsLayout()
+        // EXPERIMENT: no input-view reload on a text-size change (bisecting the strip audit failure on CI)
     }
 
     /// Adopt sticky state held by the terminal view (a typed key spent a one-shot).
@@ -133,16 +196,12 @@ public final class KeyboardAccessoryBar: UIView {
         config.cornerStyle = .medium
         config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10)
         if let tint { config.baseForegroundColor = tint }
-        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { c in
-            var c = c
-            c.font = UIFont.monospacedSystemFont(ofSize: 15, weight: .medium)
-            return c
-        }
+        config.titleTextAttributesTransformer = fontTransformer()
         let button = UIButton(configuration: config)
         button.accessibilityLabel = item.spokenLabel
         button.accessibilityIdentifier = item.accessibilityIdentifier
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 40).isActive = true
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: minKeyWidth).isActive = true
         if AccessoryBarModel.isRepeatable(item) {
             button.addAction(UIAction { [weak self] _ in self?.beginRepeat(item) }, for: .touchDown)
             button.addAction(UIAction { [weak self] _ in self?.endRepeat() },
@@ -198,11 +257,7 @@ public final class KeyboardAccessoryBar: UIView {
             }
             config.cornerStyle = .medium
             config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10)
-            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { c in
-                var c = c
-                c.font = UIFont.monospacedSystemFont(ofSize: 15, weight: .medium)
-                return c
-            }
+            config.titleTextAttributesTransformer = fontTransformer()
             button.configuration = config
             button.accessibilityValue = state.accessibilityValue
             if state == .off {

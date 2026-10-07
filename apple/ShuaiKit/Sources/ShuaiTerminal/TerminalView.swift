@@ -131,6 +131,13 @@ public final class TerminalView: UITerminalView {
         let bar = KeyboardAccessoryBar(style: style)
         bar.onKey = { [weak self] stroke in self?.deliver(stroke) }
         bar.onModifiersChanged = { [weak self] model in self?.mirrorSticky(model) }
+        if style == .docked {
+            // A new docked height only takes effect once the system re-reads the input accessory view.
+            bar.onBarHeightChanged = { [weak self] in
+                guard let self, isFirstResponder else { return }
+                reloadInputViews()
+            }
+        }
         setStickyModifierChangeHandler { [weak self] in self?.libStickyChanged() }
         return bar
     }
@@ -152,10 +159,12 @@ public final class TerminalView: UITerminalView {
         if !floatingBarInstalled {
             bar.translatesAutoresizingMaskIntoConstraints = false
             addSubview(bar)
+            let height = bar.heightAnchor.constraint(equalToConstant: bar.intrinsicContentSize.height)
+            bar.heightConstraint = height
             NSLayoutConstraint.activate([
                 bar.centerXAnchor.constraint(equalTo: centerXAnchor),
                 bar.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -12),
-                bar.heightAnchor.constraint(equalToConstant: 44),
+                height,
                 bar.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -24),
                 bar.widthAnchor.constraint(equalToConstant: 780).withPriority(.defaultHigh),
             ])
