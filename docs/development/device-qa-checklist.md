@@ -119,12 +119,23 @@ Prerequisite: **Enable AI integration…** done for the host, `claude` running i
   back. ⌘N and ⌘, work with a hardware keyboard.
 - [ ] **F2 Portrait overlay sidebar**: in portrait the sidebar is an overlay; the bottom bar sits at
   its bottom, above the home indicator, and New Host and Settings open their sheets.
-- [ ] **F3 Narrowest Stage Manager width**: both bottom-bar items stay visible and tappable (New Host
-  does not truncate into the gear).
+- [ ] **F3 Narrowest Stage Manager width**: both bottom-bar items stay visible and tappable (the two
+  icons never overlap).
 - [ ] **F4 VoiceOver order**: Sidebar toggle, Quick Switcher, then the rows, then "New Host" and
-  "Settings" last. At the largest Dynamic Type, New Host is icon-only and still read as "Add Host".
+  "Settings" last; both are icon-only at every text size and read by name.
 - [ ] **F5 Full Keyboard Access**: Tab reaches Quick Switcher, the rows, New Host and Settings; Space
   activates them.
+
+## G. Header, bottom bar and connection menu
+
+- [ ] **G1 Header**: the sidebar's "shuai" is left-aligned, larger and bold, with no centred title,
+  lined up with the host rows (not flush with the sidebar edge), clear of the sidebar toggle and
+  Quick Switcher, including at the largest Dynamic Type.
+- [ ] **G2 Bottom bar edge**: New Host (+) and Settings (gear) sit together at the trailing side,
+  clear of the screen edge on iPadOS 26, and are easy to hit.
+- [ ] **G3 Connection menu**: the top-right status icon, with its small down arrow, opens a menu with
+  the host and state and Disconnect (connected) or Reconnect; nothing disconnects with a single tap
+  on the icon, and in the failed state the red cross does not read as a close button.
 
 ## Reporting
 

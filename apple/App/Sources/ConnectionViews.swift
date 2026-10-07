@@ -147,9 +147,19 @@ struct StatusIndicator: View {
     let presentation: ConnectionPresentation
 
     var body: some View {
-        Image(systemName: presentation.symbol)
-            .foregroundStyle(presentation.tone.tint)
-            .accessibilityLabel(presentation.accessibilityLabel)
-            .accessibilityIdentifier("connection-status")
+        // The small arrow marks this as a menu: on its own, an error symbol (a red cross) in the
+        // corner reads as a close button.
+        HStack(spacing: 3) {
+            Image(systemName: presentation.symbol)
+                .foregroundStyle(presentation.tone.tint)
+            Image(systemName: "chevron.down")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+        .frame(minWidth: 36, minHeight: 36)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityIdentifier("connection-status")
     }
 }

@@ -5,7 +5,6 @@ import SwiftUI
 /// the only selectable rows; tmux rows are buttons that act on tmux.
 struct HostListView: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var pendingDelete: HostProfile?
     @State private var renaming: WindowRenaming?
     @State private var newName = ""
@@ -34,20 +33,24 @@ struct HostListView: View {
                 }
             }
         }
-        .navigationTitle("shuai")
+        // The brand sits leading as a toolbar item; the system's centred title is empty.
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            brandToolbarItem
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.openQuickSwitcher() } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
                     .accessibilityIdentifier("quick-switcher-button")
             }
-            // System bottom bar: New Host leads, Settings trails. Keys stays reachable through Settings,
-            // the app menu, the host editor and the connection card.
-            ToolbarItem(placement: .bottomBar) { newHostButton }
+            // System bottom bar: a flexible space, then New Host and Settings together at the trailing
+            // side. Keys stays reachable through Settings, the app menu, the host editor and the
+            // connection card.
             if #available(iOS 26, *) {
                 ToolbarSpacer(.flexible, placement: .bottomBar)
             } else {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
+            ToolbarItem(placement: .bottomBar) { newHostButton }
             ToolbarItem(placement: .bottomBar) { settingsButton }
         }
         .confirmationDialog(
@@ -65,19 +68,21 @@ struct HostListView: View {
         .windowRenameAlert(renaming: $renaming, newName: $newName)
     }
 
-    private var newHostButton: some View {
-        Button { model.request(.newHost) } label: {
-            if typeSize.isAccessibilitySize {
-                Image(systemName: "plus")
-            } else {
-                // An explicit HStack: the bottom bar renders a `Label` icon-only.
-                HStack(spacing: 6) { Image(systemName: "plus"); Text("New Host") }
-            }
+    /// The brand title without the glass capsule iOS 26 draws around toolbar items.
+    @ToolbarContentBuilder
+    private var brandToolbarItem: some ToolbarContent {
+        if #available(iOS 26, *) {
+            ToolbarItem(placement: .topBarLeading) { SidebarBrandTitle() }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { SidebarBrandTitle() }
         }
-        .frame(minWidth: 44, minHeight: 44)
-        .contentShape(Rectangle())
-        .accessibilityLabel(typeSize.isAccessibilitySize ? "Add Host" : "New Host")
-        .accessibilityIdentifier("add-host-button")
+    }
+
+    private var newHostButton: some View {
+        Button { model.request(.newHost) } label: { Label("New Host", systemImage: "plus") }
+            .labelStyle(.iconOnly)
+            .accessibilityIdentifier("add-host-button")
     }
 
     private var settingsButton: some View {
@@ -163,6 +168,22 @@ struct HostListView: View {
             .disabled(!connected)
         }
         Button("Delete", systemImage: "trash", role: .destructive) { pendingDelete = host }
+    }
+}
+
+/// The leading brand title of the sidebar's top bar. It scales with Dynamic Type and is the
+/// screen's header for VoiceOver.
+private struct SidebarBrandTitle: View {
+    var body: some View {
+        Text("shuai")
+            .font(.title2.weight(.bold))
+            .lineLimit(1)
+            .fixedSize()
+            // The system's toolbar inset leaves the text almost flush with the sidebar's edge; this
+            // lines it up with the host rows below.
+            .padding(.leading, 8)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("sidebar-title")
     }
 }
 
