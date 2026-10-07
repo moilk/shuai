@@ -152,6 +152,18 @@ struct HostListView: View {
     @ViewBuilder
     private func hostMenu(_ host: HostProfile) -> some View {
         let connected = model.sessions.existingController(for: host.id)?.agentRemote != nil
+        let connection = HostConnectionMenu.item(for: model.sessions.existingController(for: host.id)?.state)
+        Button(connection.title, systemImage: connection.symbol) {
+            switch connection {
+            case .connect:
+                // Selecting shows the terminal, where host key and password prompts surface.
+                model.selection = host.id
+                Task { await model.sessions.controller(for: host).connect() }
+            case .disconnect:
+                Task { await model.sessions.controller(for: host).disconnect() }
+            }
+        }
+        .accessibilityIdentifier("host-connection-action")
         Button("Edit", systemImage: "pencil") { model.request(.editHost(host.id)) }
         Section("AI integration") {
             AIMenuButton(title: "Enable AI integration\u{2026}", symbol: "sparkles", explainsDisabled: !connected) {

@@ -901,6 +901,18 @@ final class ShuaiUITests: XCTestCase {
     }
 
     @MainActor
+    func testHostContextMenuOffersConnectOrDisconnect() throws {
+        let app = launchWithTmuxFixture()
+        let row = app.staticTexts["host-row-fixture-host"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.press(forDuration: 1.0)
+        let action = app.buttons["host-connection-action"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5), "connection item in the host menu\n\(app.debugDescription)")
+        XCTAssertTrue(["Connect", "Disconnect"].contains(action.label), "label is \(action.label)")
+        XCTAssertTrue(app.buttons["Edit"].exists, "the rest of the menu is still there")
+    }
+
+    @MainActor
     func testSessionMenuListsSessionsInTheTabStrip() throws {
         let app = launchWithCollapsedSidebar()
         let menu = app.buttons["window-tab-session-menu"]

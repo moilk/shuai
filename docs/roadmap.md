@@ -23,18 +23,14 @@ v1 contains:
 
 There is no TestFlight or App Store build; users build and sign from source.
 
-## Next: immersive terminal
+## Immersive terminal: device validation
 
-Goal: give the terminal more of the screen. Merged: `ChromePolicy` (pure; rules in
+The terminal can use more of the screen: `ChromePolicy` (pure; rules in
 [Chrome policy](design/interaction.md#chrome-policy)), Window tabs: Automatic, the hardware-keyboard
-accessory bar setting, and Full Screen mode (⌃⌘F, handle menu, see
-[Chrome policy](design/interaction.md#chrome-policy)). What remains, as a small PR that starts with a
-failing test:
+accessory bar setting, Full Screen mode (⌃⌘F and a handle menu) and Connect or Disconnect in the host
+context menu. What remains is validating it on a real iPad.
 
-- **Connect and Disconnect in the host context menu**, a touch path that does not need the
-  navigation bar.
-
-To check on a real iPad: one `window-change` per toggle and a clean Claude redraw; the terminal
+To check on a real iPad (checklist B5 and B6): one `window-change` per toggle and a clean Claude redraw; the terminal
 keeping first responder when chrome changes; window controls overlapping the strip or handle under
 Stage Manager and iPadOS 26 windowing; Magic Keyboard attach and detach without the bar flickering;
 ⌃⌘F delivered while the terminal has focus; VoiceOver, Switch Control and Full Keyboard Access
