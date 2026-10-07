@@ -19,7 +19,8 @@ struct ChromeSettingsTests {
         #expect(s.hardwareKeyboardBar == .show)
         #expect(!s.fullScreen)
         #expect(s.accessoryBar == .docked)
-        #expect(s.theme == .dark)
+        #expect(s.theme == .ristretto)
+        #expect(s.theme.terminalTheme == .monokaiProRistretto)
         #expect(s.optionAsAlt)
     }
     @Test func tabStripModePersists() {
@@ -56,5 +57,13 @@ struct ChromeSettingsTests {
         #expect(AppSettings.AccessoryBarStyle.docked.rawValue == "docked")
         #expect(AppSettings.AccessoryBarStyle.floating.rawValue == "floating")
         #expect(AppSettings.AccessoryBarStyle.allCases.count == 2)
+    }
+
+    @Test func aStoredDarkThemeKeepsClaudeDark() {
+        let d = UserDefaults(suiteName: "settings-\(UUID().uuidString)")!
+        d.set("dark", forKey: "theme")
+        let s = AppSettings(defaults: d)
+        #expect(s.theme == .dark)
+        #expect(s.theme.terminalTheme == .claudeDark)
     }
 }

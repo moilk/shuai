@@ -19,19 +19,39 @@ struct TerminalThemeTests {
     }
 
     @Test func builtInsAreWellFormed() {
-        #expect(TerminalTheme.builtIn.count >= 2)
+        #expect(TerminalTheme.builtIn.count >= 3)
         for t in TerminalTheme.builtIn {
             #expect(t.palette.count == 16, "\(t.name)")
         }
         #expect(Set(TerminalTheme.builtIn.map(\.name)).count == TerminalTheme.builtIn.count)
     }
 
-    @Test func defaultIsDarkRegardlessOfSystemAppearance() {
-        #expect(TerminalTheme.default == .claudeDark)
+    @Test func defaultIsMonokaiProRistrettoRegardlessOfSystemAppearance() {
+        #expect(TerminalTheme.default == .monokaiProRistretto)
         #expect(TerminalTheme.default.isDark)
+        #expect(TerminalTheme.builtIn.contains(.claudeDark))
         #expect(TerminalTheme.claudeDark.background.relativeLuminance < 0.05)
         #expect(!TerminalTheme.claudeLight.isDark)
         #expect(TerminalTheme.claudeLight.background.relativeLuminance > 0.8)
+    }
+
+    /// The colors of the Monokai Pro Ristretto Ghostty theme (github.com/Kirlovon/monokai-ghostty),
+    /// except bright black, which is lifted a little so Claude Code's dim grey stays legible.
+    @Test func monokaiProRistrettoMatchesTheReferenceTheme() {
+        let t = TerminalTheme.monokaiProRistretto
+        #expect(t.name == "Monokai Pro Ristretto")
+        #expect(t.background == TerminalRGB(hex: 0x2C2525))
+        #expect(t.foreground == TerminalRGB(hex: 0xFFF1F3))
+        #expect(t.cursor == TerminalRGB(hex: 0xC3B7B8))
+        #expect(t.selection == TerminalRGB(hex: 0x5B5353))
+        let reference: [UInt32] = [
+            0x2C2525, 0xFD6883, 0xADDA78, 0xF9CC6C, 0xF38D70, 0xA8A9EB, 0x85DACC, 0xFFF1F3,
+            0x72696A, 0xFD6883, 0xADDA78, 0xF9CC6C, 0xF38D70, 0xA8A9EB, 0x85DACC, 0xFFF1F3,
+        ]
+        for (i, hex) in reference.enumerated() where i != 8 {
+            #expect(t.palette[i] == TerminalRGB(hex: hex), "color \(i)")
+        }
+        #expect(t.palette[8] != TerminalRGB(hex: 0x72696A), "bright black is lifted")
     }
 
     /// Colors 1-6 and 9-14 (red..cyan, normal + bright) carry meaning in Claude Code (diffs, inline code,
@@ -46,7 +66,10 @@ struct TerminalThemeTests {
             let ratio = TerminalRGB.contrastRatio(theme.palette[index], theme.background)
             #expect(ratio >= 3.0, "\(theme.name) color \(index) \(theme.palette[index].hexString) contrast \(ratio)")
         }
-        #expect(TerminalRGB.contrastRatio(theme.palette[0], theme.background) >= 1.5, "\(theme.name) black")
+        // Monokai's black is its background by design.
+        if theme.palette[0] != theme.background {
+            #expect(TerminalRGB.contrastRatio(theme.palette[0], theme.background) >= 1.5, "\(theme.name) black")
+        }
     }
 
     @Test(arguments: TerminalTheme.builtIn)
