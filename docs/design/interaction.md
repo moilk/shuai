@@ -129,6 +129,61 @@ Each status has its own symbol and label, so state never relies on colour alone:
 
 The accessibility label of every presentation, including the hidden ones, is "{host}: {status label}".
 
+## Modals
+
+One `ModalRoute` is open at a time (`AppModel.modal`, decided by the pure `ModalRouter`) and
+`RootView` shows it through a single `.sheet(item:)`: new or edited host, Settings, Keys, the quick
+switcher and the AI-integration sheet. Opening a sheet resigns the terminal first responder.
+
+- Nothing open: the request presents. The same route again is a no-op.
+- The quick switcher yields: any other request replaces it.
+- Every other open modal wins: a request for a different route is ignored, so menu chords (New Host
+  ⌘N, Settings ⌘,, Quick Switcher ⌘K) never stack sheets. A modal with unsaved input is never
+  replaced (`currentIsDirty`). The open host editor reports its dirtiness through
+  `AppModel.editorIsDirty`, which `AppModel` reads only for the new and edit host routes and clears
+  when the modal is dismissed.
+- A late dismissal of a route that has already been replaced does not close its successor.
+
+Keys is not a second sheet. Inside the host editor ("Generate a key" while the library is empty, `editor-open-keys`) and Settings
+("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
+with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
+request (toolbar, the connection card's Open keys) presents Keys as its own sheet with Done.
+
+## Editor
+
+The host editor's logic is the pure `HostEditorDraft` (every field as text, no password),
+`HostEditorValidation`, `HostEditorDirty`, `HostEditorSaveError` and the save flow
+`HostEditorSave`; the view only renders them. The view keeps the host id, the initial snapshot and
+the save progress in `@State`, because the sheet content is rebuilt whenever the app model changes.
+
+- A field's error shows once the field lost focus or Save was tapped, and hides as soon as the field
+  is valid. It renders as an `exclamationmark.circle.fill` label with the message text.
+- Save is never disabled. With errors it focuses the first invalid field in form order (the key
+  choice, which takes no text focus, is scrolled into view) and posts a VoiceOver announcement
+  shortly after, so the focus speech does not cut it off.
+- Cancel with unsaved changes (any edited field, or a typed password) asks "Discard Changes" /
+  "Keep Editing". Swipe-to-dismiss is disabled while dirty rather than prompting. The key choice
+  only counts as a change for key auth.
+- The password lives only in view state and is written only to the Keychain. It is cleared when the
+  editor closes (Save, Discard, or the sheet's navigation stack disappearing). The lifecycle hook is
+  on the `NavigationStack` itself, which does not disappear when a page is pushed, so a pushed Keys
+  page covers the form without clearing the password or the dirty state (UI test
+  `testPushingKeysKeepsThePasswordAndDirtyState`).
+- When an earlier Save stored a new host but not its password, the discard dialog says so ("The host
+  is already saved, but its password is not stored…"); the stored host stays and is selected when
+  nothing else is.
+- The editor's save state is in `@State`, so a rebuilt sheet content keeps the host id; no automated
+  test rebuilds the view, only the pure save flow is tested.
+- Save errors use fixed copy and never include an underlying error's description. "Host saved, but
+  the password could not be stored" is shown only when the host write of that same attempt
+  succeeded; a retry updates the same host.
+- A new host defaults to SSH key auth when the library has keys (preselected when there is one),
+  otherwise Ask each time. A key generated from the pushed Keys page is selected when none was chosen.
+
+  otherwise Ask each time. A key generated from the pushed Keys page is selected when the method is
+  SSH key and no key was chosen. "Generate a key" appears under the SSH key method when the library
+  is empty.
+
 ## Accessibility
 
 - **44 pt targets.** Every tappable control is at least 44 x 44 pt. The minimum is set inside the
@@ -146,24 +201,6 @@ The accessibility label of every presentation, including the hidden ones, is "{h
   message. Each step row is one accessibility element.
 - **Audit.** A UI test runs `performAccessibilityAudit` (Dynamic Type, hit region, element
   description) on the connection strip; the terminal surface is excluded.
-
-## Modals
-
-One `ModalRoute` is open at a time (`AppModel.modal`, decided by the pure `ModalRouter`) and
-`RootView` shows it through a single `.sheet(item:)`: new or edited host, Settings, Keys, the quick
-switcher and the AI-integration sheet. Opening a sheet resigns the terminal first responder.
-
-- Nothing open: the request presents. The same route again is a no-op.
-- The quick switcher yields: any other request replaces it.
-- Every other open modal wins: a request for a different route is ignored, so menu chords (New Host
-  ⌘N, Settings ⌘,, Quick Switcher ⌘K) never stack sheets. A modal with unsaved input is never
-  replaced (`currentIsDirty`; the host editor does not report dirtiness yet).
-- A late dismissal of a route that has already been replaced does not close its successor.
-
-Keys is not a second sheet. Inside the host editor ("Open Keys", `editor-open-keys`) and Settings
-("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
-with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
-request (toolbar, the connection card's Open keys) presents Keys as its own sheet with Done.
 
 ## Accessory bar accessibility
 
