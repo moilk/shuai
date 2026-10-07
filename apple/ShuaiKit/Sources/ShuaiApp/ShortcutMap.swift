@@ -78,6 +78,8 @@ public enum ShortcutAction: Hashable, Sendable {
     case quickSwitcher
     /// Jump to the next agent session that wants the user (UI-level, not a tmux command).
     case nextAttention
+    /// Full screen for the terminal (UI-level, not a tmux command).
+    case toggleFullScreen
 
     public var id: String {
         switch self {
@@ -93,6 +95,7 @@ public enum ShortcutAction: Hashable, Sendable {
         case .zoomPane: "zoomPane"
         case .quickSwitcher: "quickSwitcher"
         case .nextAttention: "nextAttention"
+        case .toggleFullScreen: "toggleFullScreen"
         }
     }
 
@@ -112,7 +115,7 @@ public enum ShortcutAction: Hashable, Sendable {
 
     private static let simple: [ShortcutAction] = [
         .newWindow, .killWindow, .previousWindow, .nextWindow, .lastWindow, .splitRight, .splitDown, .zoomPane,
-        .quickSwitcher, .nextAttention,
+        .quickSwitcher, .nextAttention, .toggleFullScreen,
     ]
 
     public var title: String {
@@ -129,6 +132,7 @@ public enum ShortcutAction: Hashable, Sendable {
         case .zoomPane: "Zoom Pane"
         case .quickSwitcher: "Quick Switcher"
         case .nextAttention: "Next Agent Needing Attention"
+        case .toggleFullScreen: "Full Screen"
         }
     }
 }
@@ -175,6 +179,7 @@ public struct ShortcutMap: Hashable, Sendable, Codable {
             (.zoomPane, KeyChord(.returnKey, [.command, .shift])),
             (.quickSwitcher, KeyChord(.character("k"), [.command])),
             (.nextAttention, KeyChord(.character("a"), [.command, .shift])),
+            (.toggleFullScreen, KeyChord(.character("f"), [.command, .control])),
         ]
         return ShortcutMap(b)
     }()

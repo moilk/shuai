@@ -163,6 +163,8 @@ struct WindowTabStrip: View {
     @Environment(AppModel.self) private var model
     let host: HostProfile
     let controller: SessionController
+    /// Full screen's handle, docked at the trailing end while the strip is shown.
+    var handle: FullScreenHandle?
     @State private var renaming: WindowRenaming?
     @State private var newName = ""
     @ScaledMetric(relativeTo: .body) private var minTarget: CGFloat = 44
@@ -188,6 +190,7 @@ struct WindowTabStrip: View {
                 }
                 .accessibilityLabel("New Window")
                 .accessibilityIdentifier("window-tab-new")
+                handle
             }
             .background(.bar)
             .accessibilityElement(children: .contain)

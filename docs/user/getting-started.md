@@ -103,6 +103,12 @@ least 44 pt and grow with the text size. Settings > Terminal > **Window tabs** i
 default, which hides the strip while the viewed session has one window and the host has one session;
 Always keeps it.
 
+**Full Screen** (⌃⌘F or View > Enter Full Screen) hides the navigation bar, status bar and home
+indicator and collapses the sidebar. A small status symbol at the top trailing edge (at the end of the
+window tab strip when that is shown) opens a menu with the host and its state, Disconnect or
+Reconnect, Show Sidebar, Quick Switcher and Exit Full Screen. The symbol is prominent when the
+connection is not healthy or a permission is pending. Full screen is not restored at launch.
+
 ## 5. Keyboard bars
 
 Above the software keyboard there are two rows:

@@ -333,6 +333,16 @@ the terminal; views feed it the inputs and apply the result. Contract:
 `FullScreenState` remembers the sidebar column visibility on entering full screen (which collapses to
 detail only) and restores it on leaving, unless the user changed the columns in between.
 
+Full screen is toggled by `AppModel.setFullScreen`, which applies the sidebar change and the setting in
+one state change so the terminal resizes once. It applies only while a host's terminal is shown, and
+is not restored at launch. Entry points: ⌃⌘F (`ShortcutAction.toggleFullScreen`, delivered by the
+terminal's key command only; the View menu item has no chord, because a second delivery path would
+toggle straight back) and the View menu. Leave through the handle's menu, the chord, the View menu or
+the VoiceOver escape gesture. The handle (`FullScreenHandle`) is a 44 pt status symbol that opens a
+menu: host and status, Disconnect or Reconnect, Show Sidebar, Quick Switcher, Exit Full Screen. It is an
+overlay at the top trailing edge, or the trailing end of the tab strip when that is shown, so it never
+resizes the terminal.
+
 Persisted settings (`AppSettings`): `tabStrip` (`automatic` default, `always`), `hardwareKeyboardBar`
-(`show` default, `hide`), `fullScreen` (`false` default); unknown stored values fall back to the
+(`show` default, `hide`), `fullScreen` (`false`, reset at launch); unknown stored values fall back to the
 defaults. Apart from the tab strip becoming automatic, the defaults keep the previous behaviour.
