@@ -33,8 +33,14 @@ struct SettingsView: View {
                         Text("Docked above keyboard").tag(AppSettings.AccessoryBarStyle.docked)
                         Text("Floating").tag(AppSettings.AccessoryBarStyle.floating)
                     }
+                    Picker("With a hardware keyboard", selection: $settings.hardwareKeyboardBar) {
+                        Text("Show").tag(HardwareKeyboardBar.show)
+                        Text("Hide").tag(HardwareKeyboardBar.hide)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("hardware-keyboard-bar-picker")
                     Toggle("Option key sends Alt (Esc prefix)", isOn: $settings.optionAsAlt)
-                    Text("A hardware keyboard always uses the floating bar. Option-as-Alt applies to new sessions.")
+                    Text("A hardware keyboard uses the floating bar; Hide removes it while no software keyboard is up. Permission cards then answer with ⌘↩ (Allow) and ⌘⌫ (Deny). Option-as-Alt applies to new sessions.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("SSH") {

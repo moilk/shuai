@@ -16,6 +16,7 @@ import ShuaiTerminal
 /// - `-debugSendAfterConnect <text>`: types `text` + Enter shortly after the session attaches.
 /// - `-debugSidebarCollapsed`: starts with the sidebar collapsed (the window tab strip is shown).
 /// - `-debugSingleWindow`: with the tmux fixture, a topology of one session with one window.
+/// - `-debugHardwareKeyboard`: the app sees a hardware keyboard and never a software one.
 /// - `-debugNoticeTimeScale <n>`: notices last `n` times longer (default 1), so UI tests on a slow
 ///   runner can still find a transient notice.
 enum DebugLaunch {
