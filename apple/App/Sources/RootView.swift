@@ -17,6 +17,8 @@ struct RootView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
+        .tint(Color(model.settings.theme.chrome.accent))
+        .preferredColorScheme(model.settings.theme.chrome.prefersDark ? .dark : .light)
         #if DEBUG
         .overlay(alignment: .bottomLeading) { if DebugLaunch.agentFixture { FixtureLogProbe() } }
         #endif
@@ -121,5 +123,11 @@ struct NotificationOptInBanner: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("notify-optin")
         }
+    }
+}
+
+extension Color {
+    init(_ rgb: TerminalRGB) {
+        self.init(red: Double(rgb.r) / 255, green: Double(rgb.g) / 255, blue: Double(rgb.b) / 255)
     }
 }

@@ -23,6 +23,10 @@ struct HostListView: View {
                 rowView(entry)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color(model.settings.theme.chrome.surface))
+        .foregroundStyle(Color(model.settings.theme.chrome.text))
+        .toolbarBackground(Color(model.settings.theme.chrome.surface), for: .navigationBar, .bottomBar)
         .overlay {
             if model.hosts.hosts.isEmpty {
                 ContentUnavailableView {
@@ -127,7 +131,7 @@ struct HostListView: View {
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { pendingDelete = host } label: { Label("Delete", systemImage: "trash") }
                         Button { model.request(.editHost(host.id)) } label: { Label("Edit", systemImage: "pencil") }
-                            .tint(.blue)
+                            .tint(Color.accentColor)
                     }
                     .contextMenu { hostMenu(host) }
             }

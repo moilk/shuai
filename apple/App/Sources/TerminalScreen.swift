@@ -87,6 +87,7 @@ private struct TerminalSessionView: View {
         }
         .accessibilityAction(.escape) { if model.fullScreenActive { model.setFullScreen(false) } }
         .toolbar(chrome.showsNavigationBar ? .visible : .hidden, for: .navigationBar)
+        .toolbarBackground(Color(model.settings.theme.chrome.surface), for: .navigationBar)
         .statusBarHidden(chrome.hidesStatusBar)
         .persistentSystemOverlays(chrome.hidesHomeIndicator ? .hidden : .automatic)
         .safeAreaInset(edge: .top, spacing: 0) {
