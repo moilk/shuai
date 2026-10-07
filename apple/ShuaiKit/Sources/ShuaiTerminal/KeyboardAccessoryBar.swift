@@ -34,9 +34,7 @@ public final class KeyboardAccessoryBar: UIView {
         autoresizingMask = style == .docked ? [.flexibleWidth] : []
         build()
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (bar: KeyboardAccessoryBar, _) in
-            // One turn later: the rest of the UI (SwiftUI) lays itself out for the new text size
-            // first, so rebuilding the bar and reloading the input views does not delay it.
-            DispatchQueue.main.async { [weak bar] in bar?.contentSizeChanged() }
+            bar.contentSizeChanged()
         }
     }
 
@@ -102,7 +100,7 @@ public final class KeyboardAccessoryBar: UIView {
         invalidateIntrinsicContentSize()
         frame.size.height = barHeight
         setNeedsLayout()
-        // EXPERIMENT: no input-view reload on a text-size change (bisecting the strip audit failure on CI)
+        onBarHeightChanged?()
     }
 
     /// Adopt sticky state held by the terminal view (a typed key spent a one-shot).
