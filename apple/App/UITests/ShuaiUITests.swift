@@ -689,6 +689,34 @@ final class ShuaiUITests: XCTestCase {
         }
     }
 
+    /// `-debugHardwareKeyboard` makes the app see a hardware keyboard and never a software one.
+    @MainActor
+    func testHardwareKeyboardBarShowsByDefault() throws {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugHardwareKeyboard"])
+        XCTAssertTrue(app.buttons["accessory-esc"].firstMatch.waitForExistence(timeout: 10), "floating bar present")
+    }
+
+    @MainActor
+    func testHardwareKeyboardBarHiddenWhenSettingIsHide() throws {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugHardwareKeyboard", "-hardwareKeyboardBar", "hide"])
+        XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].waitForExistence(timeout: 10), "terminal")
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertFalse(app.buttons["accessory-esc"].firstMatch.exists, "no bar with a hardware keyboard and Hide")
+    }
+
+    @MainActor
+    func testSettingsOffersHardwareKeyboardBarShowOrHide() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        tapSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let picker = app.segmentedControls["hardware-keyboard-bar-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5) || { scrollSheet(app, until: picker); return true }(), "picker")
+        XCTAssertTrue(picker.buttons["Show"].isSelected, "Show is the default")
+        picker.buttons["Hide"].tap()
+        XCTAssertTrue(picker.buttons["Hide"].isSelected)
+    }
+
     /// Every accessory key is a 44 pt tap target (docked bar, default text size).
     @MainActor
     func testAccessoryBarKeysAreAtLeast44ptTall() throws {
