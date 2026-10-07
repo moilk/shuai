@@ -162,6 +162,11 @@ final class ShuaiUITests: XCTestCase {
     func testOnlyTheViewedSessionShowsACurrentWindow() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-session-main"].waitForExistence(timeout: 10))
+        // Read the session rows before expanding: with scratch expanded the list can push rows off a small screen.
+        XCTAssertTrue(app.buttons["tmux-session-main"].isSelected, "the viewed session is marked")
+        XCTAssertFalse(app.buttons["tmux-session-scratch"].isSelected)
+        XCTAssertEqual(app.buttons["tmux-window-@1"].value as? String, "active")
+        XCTAssertTrue(app.buttons["tmux-window-@1"].isSelected)
         let toggle = app.buttons["tmux-session-toggle-scratch"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         toggle.tap()
@@ -169,10 +174,6 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(other.waitForExistence(timeout: 5), "scratch window")
         XCTAssertNotEqual(other.value as? String, "active", "a window of a session that is not viewed is not current")
         XCTAssertFalse(other.isSelected)
-        XCTAssertEqual(app.buttons["tmux-window-@1"].value as? String, "active")
-        XCTAssertTrue(app.buttons["tmux-window-@1"].isSelected)
-        XCTAssertTrue(app.buttons["tmux-session-main"].isSelected, "the viewed session is marked")
-        XCTAssertFalse(app.buttons["tmux-session-scratch"].isSelected)
     }
 
     @MainActor

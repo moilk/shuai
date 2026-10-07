@@ -173,12 +173,17 @@ private struct AIMenuButton: View {
     let explainsDisabled: Bool
     let action: () -> Void
 
+    private static let reason = "Connect to this host first"
+
     var body: some View {
         Button(action: action) {
             Text(title)
-            if explainsDisabled { Text("Connect to this host first") }
+            if explainsDisabled { Text(Self.reason) }
             Image(systemName: symbol)
         }
+        // The subtitle is not always part of a menu item's accessibility label (iOS 26 drops it),
+        // so the label carries the reason itself.
+        .accessibilityLabel(explainsDisabled ? "\(title), \(Self.reason)" : title)
     }
 }
 
