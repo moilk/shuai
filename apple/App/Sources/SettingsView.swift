@@ -12,6 +12,7 @@ struct SettingsView: View {
             Form {
                 Section("Terminal") {
                     Picker("Theme", selection: $settings.theme) {
+                        Text("Ristretto").tag(AppSettings.Theme.ristretto)
                         Text("Dark").tag(AppSettings.Theme.dark)
                         Text("Light").tag(AppSettings.Theme.light)
                     }

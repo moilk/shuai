@@ -137,7 +137,8 @@ Hardware shortcuts are listed in [Keyboard shortcuts](keyboard-shortcuts.md).
 ## 6. Terminal
 
 - Pinch or ⌘+ / ⌘− zooms an open terminal; Settings > Terminal sets the default font size and the
-  theme (Dark or Light; the terminal does not follow the system appearance).
+  theme (Ristretto, the default Monokai Pro Ristretto; Dark; or Light. The terminal does not follow
+  the system appearance).
 - Inline IME composition (including Chinese pinyin), CJK and emoji, mouse reporting, bracketed
   paste, selection and copy.
 - OSC 52 clipboard writes from the server ask for permission; OSC 9/777 notifications appear as

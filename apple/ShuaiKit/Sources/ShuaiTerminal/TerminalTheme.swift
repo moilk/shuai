@@ -37,7 +37,7 @@ public struct TerminalRGB: Sendable, Hashable {
 }
 
 /// Terminal colors. The terminal never follows the system appearance: the app picks a theme
-/// (default `claudeDark`, user-selectable later) and the engine applies it as both the light and the
+/// (default Monokai Pro Ristretto, user-selectable) and the engine applies it as both the light and the
 /// dark Ghostty variant.
 public struct TerminalTheme: Sendable, Hashable, Identifiable {
     public var name: String
@@ -65,8 +65,20 @@ public struct TerminalTheme: Sendable, Hashable, Identifiable {
         self.palette = palette
     }
 
-    public static let `default`: TerminalTheme = .claudeDark
-    public static let builtIn: [TerminalTheme] = [.claudeDark, .claudeLight]
+    public static let `default`: TerminalTheme = .monokaiProRistretto
+    public static let builtIn: [TerminalTheme] = [.monokaiProRistretto, .claudeDark, .claudeLight]
+
+    /// Monokai Pro Ristretto as in the Ghostty theme at github.com/Kirlovon/monokai-ghostty; bright black
+    /// is lifted from #72696A so Claude Code's dim grey keeps a contrast of 3 or more.
+    public static let monokaiProRistretto = TerminalTheme(
+        name: "Monokai Pro Ristretto", isDark: true,
+        foreground: TerminalRGB(hex: 0xFFF1F3), background: TerminalRGB(hex: 0x2C2525),
+        cursor: TerminalRGB(hex: 0xC3B7B8), selection: TerminalRGB(hex: 0x5B5353),
+        palette: [
+            0x2C2525, 0xFD6883, 0xADDA78, 0xF9CC6C, 0xF38D70, 0xA8A9EB, 0x85DACC, 0xFFF1F3,
+            0x7A7172, 0xFD6883, 0xADDA78, 0xF9CC6C, 0xF38D70, 0xA8A9EB, 0x85DACC, 0xFFF1F3,
+        ].map(TerminalRGB.init(hex:))
+    )
 
     /// Catppuccin Mocha derived; bright black lifted to overlay1 so Claude Code's dim grey stays legible.
     public static let claudeDark = TerminalTheme(

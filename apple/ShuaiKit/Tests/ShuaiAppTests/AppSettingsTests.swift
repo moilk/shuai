@@ -60,7 +60,7 @@ struct ChromeSettingsTests {
     }
 
     @Test func aStoredDarkThemeKeepsClaudeDark() {
-        let d = UserDefaults(suiteName: "settings-\(UUID().uuidString)")!
+        let d = suite()
         d.set("dark", forKey: "theme")
         let s = AppSettings(defaults: d)
         #expect(s.theme == .dark)

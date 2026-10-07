@@ -6,9 +6,15 @@ import ShuaiTerminal
 @MainActor @Observable
 public final class AppSettings {
     public enum Theme: String, CaseIterable, Identifiable, Sendable {
-        case dark, light
+        case ristretto, dark, light
         public var id: String { rawValue }
-        public var terminalTheme: TerminalTheme { self == .dark ? .claudeDark : .claudeLight }
+        public var terminalTheme: TerminalTheme {
+            switch self {
+            case .ristretto: .monokaiProRistretto
+            case .dark: .claudeDark
+            case .light: .claudeLight
+            }
+        }
     }
 
     public enum AccessoryBarStyle: String, CaseIterable, Identifiable, Sendable {
@@ -41,7 +47,7 @@ public final class AppSettings {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        theme = defaults.string(forKey: "theme").flatMap(Theme.init) ?? .dark
+        theme = defaults.string(forKey: "theme").flatMap(Theme.init) ?? .ristretto
         let size = defaults.object(forKey: "fontSize") as? Int ?? FontSizeModel.defaultSize
         fontSize = min(max(size, FontSizeModel.range.lowerBound), FontSizeModel.range.upperBound)
         accessoryBar = defaults.string(forKey: "accessoryBar").flatMap(AccessoryBarStyle.init) ?? .docked
