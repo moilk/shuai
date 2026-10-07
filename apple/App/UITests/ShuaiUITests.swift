@@ -456,6 +456,8 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertLessThan(title.frame.midX, list.midX, "the title sits in the left half of the sidebar")
         XCTAssertLessThan(title.frame.maxX, search.frame.minX, "the title is left of Quick Switcher")
         XCTAssertEqual(title.label, "shuai")
+        // Not flush with the sidebar's edge: it lines up with the host row's capsule below it.
+        XCTAssertGreaterThanOrEqual(title.frame.minX - list.minX, 14, "the title keeps a leading inset")
     }
 
     /// New Host and Settings are icon-only and sit together at the trailing side of the sidebar.
