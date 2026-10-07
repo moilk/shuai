@@ -183,6 +183,44 @@ import Testing
         await monitor.stop()
     }
 
+    @Test func confirmingAfterTheDialogDismissStillKills() async throws {
+        let (server, monitor, actions) = await rig()
+        actions.requestKillWindow("@1")
+        let captured = try #require(actions.pendingConfirmation)
+        actions.cancelPending() // what the dialog's dismissal does after the button action
+        try await actions.confirm(captured)
+        #expect(sent(server) == [try tmuxKillWindow(windowId: "@1").controlLine])
+        await monitor.stop()
+    }
+
+    @Test func confirmClearsThePendingConfirmation() async throws {
+        let (_, monitor, actions) = await rig()
+        actions.requestKillWindow("@1")
+        let captured = try #require(actions.pendingConfirmation)
+        try await actions.confirm(captured)
+        #expect(actions.pendingConfirmation == nil)
+        await monitor.stop()
+    }
+
+    @Test func confirmingAPaneKillSendsKillPane() async throws {
+        let (server, monitor, actions) = await rig()
+        actions.requestKillPane("%1")
+        let captured = try #require(actions.pendingConfirmation)
+        try await actions.confirm(captured)
+        #expect(sent(server) == [try tmuxKillPane(paneId: "%1").controlLine])
+        await monitor.stop()
+    }
+
+    @Test func cancelPendingStillSendsNothing() async throws {
+        let (server, monitor, actions) = await rig()
+        actions.requestKillPane("%1")
+        actions.cancelPending()
+        #expect(actions.pendingConfirmation == nil)
+        try await actions.confirmPending()
+        #expect(sent(server).isEmpty)
+        await monitor.stop()
+    }
+
     @Test func killPaneAsksFirstAndOnlyRunsWhenConfirmed() async throws {
         let (server, monitor, actions) = await rig()
         actions.requestKillPane("%1")

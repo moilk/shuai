@@ -83,7 +83,9 @@ private struct TerminalSessionView: View {
         ) {
             Button("Close", role: .destructive) {
                 let actions = controller.tmuxActions
-                Task { await actions.run { try await actions.confirmPending() } }
+                // Captured now: the dialog's dismissal clears the pending value right after this.
+                guard let pending = actions.pendingConfirmation else { return }
+                Task { await actions.run { try await actions.confirm(pending) } }
             }
             .accessibilityIdentifier("confirm-kill")
         } message: {
