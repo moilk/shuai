@@ -94,16 +94,7 @@ private struct TerminalSessionView: View {
         .navigationTitle(controller.windowTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                StatusIndicator(presentation: presentation)
-                if controller.state == .connected {
-                    Button { Task { await controller.disconnect() } } label: { Label("Disconnect", systemImage: "xmark.circle") }
-                        .accessibilityIdentifier("disconnect-button")
-                } else {
-                    Button { Task { await controller.reconnect() } } label: { Label("Connect", systemImage: "arrow.clockwise") }
-                        .accessibilityIdentifier("connect-button")
-                }
-            }
+            ToolbarItem(placement: .topBarTrailing) { connectionMenu }
         }
         .task(id: host.id) {
             #if DEBUG
@@ -133,6 +124,30 @@ private struct TerminalSessionView: View {
         .task(id: controller.pendingPrompt) { await DebugLaunch.autoAnswer(controller: controller) }
         .task(id: controller.state) { await DebugLaunch.sendAfterConnect(controller: controller) }
         #endif
+    }
+
+    /// The status indicator opens a menu with the host's state and the one action that applies, so
+    /// no single tap disconnects.
+    private var connectionMenu: some View {
+        Menu {
+            Section {
+                Text(verbatim: presentation.accessibilityLabel)
+            }
+            if controller.state == .connected {
+                Button("Disconnect", systemImage: "bolt.slash", role: .destructive) {
+                    Task { await controller.disconnect() }
+                }
+                .accessibilityIdentifier("disconnect-button")
+            } else {
+                Button("Reconnect", systemImage: "arrow.clockwise") {
+                    Task { await controller.reconnect() }
+                }
+                .accessibilityIdentifier("connect-button")
+            }
+        } label: {
+            StatusIndicator(presentation: presentation)
+        }
+        .accessibilityHint("Opens the connection menu")
     }
 
     /// Delivers the shortcut map to the terminal view as key commands (first-responder only).

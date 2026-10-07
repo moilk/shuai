@@ -149,6 +149,8 @@ struct StatusIndicator: View {
     var body: some View {
         Image(systemName: presentation.symbol)
             .foregroundStyle(presentation.tone.tint)
+            .frame(minWidth: 36, minHeight: 36)
+            .contentShape(Rectangle())
             .accessibilityLabel(presentation.accessibilityLabel)
             .accessibilityIdentifier("connection-status")
     }
