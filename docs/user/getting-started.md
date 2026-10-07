@@ -117,6 +117,11 @@ Above the software keyboard there are two rows:
   - Outside a dialog, `1` and `2` are typed into the prompt as visible text.
 
 With a hardware keyboard attached the bar switches to a compact floating style automatically.
+Settings > Keyboard > **With a hardware keyboard** can hide it (Show is the default); it is hidden
+only while no software keyboard is up, so touch use keeps Esc and Ctrl. Without the bar, answer a
+permission card with ⌘↩ (Allow) or ⌘⌫ (Deny); outside the AI integration `1`, `2` and Esc are
+typed directly (on a keyboard without Esc use Ctrl-[, or remap Caps Lock or Globe to Escape in
+iPadOS Settings).
 Settings > Keyboard has **Accessory bar** (Docked above keyboard / Floating) and
 **Option key sends Alt (Esc prefix)** (on by default; applies to sessions opened afterwards).
 

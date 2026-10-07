@@ -27,8 +27,18 @@ private struct TerminalSessionView: View {
     let host: HostProfile
     @State private var areaWidth: CGFloat = 1000
 
-    private var useFloatingBar: Bool {
-        model.keyboard.placement(preferFloating: model.settings.accessoryBar == .floating) == .floating
+    private var chrome: ChromeDecision {
+        let topology = controller.tmux.topology
+        return ChromePolicy.decide(ChromeInputs(
+            hasTopology: topology != nil,
+            windowCount: controller.tmuxActions.viewedSession?.windows.count ?? 0,
+            sessionCount: topology?.sessions.count ?? 0,
+            sidebarCollapsed: model.columnVisibility == .detailOnly, fullScreen: false,
+            tabStrip: model.settings.tabStrip, preferFloatingBar: model.settings.accessoryBar == .floating,
+            hardwareKeyboardBar: model.settings.hardwareKeyboardBar,
+            hardwareKeyboard: model.keyboard.isConnected,
+            softwareKeyboardVisible: model.keyboard.softwareKeyboardVisible,
+            status: .connected, permissionPendingForHost: false))
     }
 
     /// Connection strip, then notices. Permission cards are drawn on top in the trailing column,
@@ -55,25 +65,13 @@ private struct TerminalSessionView: View {
             .allowsHitTesting(false))
     }
 
-    private var showsTabStrip: Bool {
-        let topology = controller.tmux.topology
-        return ChromePolicy.decide(ChromeInputs(
-            hasTopology: topology != nil,
-            windowCount: controller.tmuxActions.viewedSession?.windows.count ?? 0,
-            sessionCount: topology?.sessions.count ?? 0,
-            sidebarCollapsed: model.columnVisibility == .detailOnly, fullScreen: false,
-            tabStrip: model.settings.tabStrip, preferFloatingBar: useFloatingBar,
-            hardwareKeyboardBar: .show, hardwareKeyboard: false, softwareKeyboardVisible: false,
-            status: .connected, permissionPendingForHost: false)).showsTabStrip
-    }
-
     var body: some View {
         ZStack {
             Color(uiColor: UIColor(hex: model.settings.theme.terminalTheme.background)).ignoresSafeArea()
             TerminalContainerRepresentable(
                 engine: engine, autoFocus: true,
-                showsFloatingAccessoryBar: useFloatingBar,
-                showsDockedAccessoryBar: !useFloatingBar
+                showsFloatingAccessoryBar: chrome.accessory == .floating,
+                showsDockedAccessoryBar: chrome.accessory == .docked
             )
             .ignoresSafeArea(.keyboard)
             .accessibilityIdentifier("terminal-view")
@@ -84,7 +82,7 @@ private struct TerminalSessionView: View {
             PermissionCardStack()
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if showsTabStrip {
+            if chrome.showsTabStrip {
                 WindowTabStrip(host: host, controller: controller)
             }
         }

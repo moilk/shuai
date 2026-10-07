@@ -14,10 +14,17 @@ import UIKit
 final class HardwareKeyboardMonitor {
     private(set) var isConnected: Bool
     private(set) var softwareKeyboardVisible = false
+    #if DEBUG
+    /// `-debugHardwareKeyboard`: a hardware keyboard and never a software one (the simulator has no real keyboards).
+    private let forced = ProcessInfo.processInfo.arguments.contains("-debugHardwareKeyboard")
+    #endif
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     init() {
         isConnected = GCKeyboard.coalesced != nil
+        #if DEBUG
+        if forced { isConnected = true }
+        #endif
         let center = NotificationCenter.default
         for name in [Notification.Name.GCKeyboardDidConnect, .GCKeyboardDidDisconnect] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -34,10 +41,16 @@ final class HardwareKeyboardMonitor {
     }
 
     private func setConnected(_ value: Bool) {
+        #if DEBUG
+        if forced { return }
+        #endif
         if isConnected != value { isConnected = value }
     }
 
     private func setSoftwareKeyboard(_ value: Bool) {
+        #if DEBUG
+        if forced { return }
+        #endif
         if softwareKeyboardVisible != value { softwareKeyboardVisible = value }
     }
 
