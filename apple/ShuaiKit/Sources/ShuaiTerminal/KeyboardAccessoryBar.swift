@@ -102,7 +102,7 @@ public final class KeyboardAccessoryBar: UIView {
         invalidateIntrinsicContentSize()
         frame.size.height = barHeight
         setNeedsLayout()
-        onBarHeightChanged?()
+        // EXPERIMENT: no input-view reload on a text-size change (bisecting the strip audit failure on CI)
     }
 
     /// Adopt sticky state held by the terminal view (a typed key spent a one-shot).
