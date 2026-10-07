@@ -46,6 +46,12 @@ public struct ModalRouter: Equatable, Sendable {
         return .replaced
     }
 
+    /// Whether `request(route, currentIsDirty:)` would show `route` (menus disable themselves when not).
+    public func canPresent(_ route: ModalRoute, currentIsDirty: Bool = false) -> Bool {
+        guard let open = current else { return true }
+        return open != route && open == .quickSwitcher && !currentIsDirty
+    }
+
     /// No-op unless `route` is still the open modal, so a late dismissal never closes its successor.
     public mutating func dismiss(_ route: ModalRoute) {
         if current == route { current = nil }

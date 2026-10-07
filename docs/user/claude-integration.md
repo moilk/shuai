@@ -66,6 +66,10 @@ urgent badge of their panes:
 | check mark | done (until seen) | |
 | moon | idle | lowest |
 
+A host row also shows the most urgent badge of all its panes, so it stays visible when the host or
+its sessions are collapsed. The number of agents waiting for you is shown next to it with a raised
+hand symbol.
+
 The orange number on a host row counts sessions waiting for you. State changes of a session you
 are not looking at appear as short in-app banners (notices at the top of the terminal area):
 

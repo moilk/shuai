@@ -159,6 +159,24 @@ final class ShuaiUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnlyTheViewedSessionShowsACurrentWindow() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-session-main"].waitForExistence(timeout: 10))
+        // Read the session rows before expanding: with scratch expanded the list can push rows off a small screen.
+        XCTAssertTrue(app.buttons["tmux-session-main"].isSelected, "the viewed session is marked")
+        XCTAssertFalse(app.buttons["tmux-session-scratch"].isSelected)
+        XCTAssertEqual(app.buttons["tmux-window-@1"].value as? String, "active")
+        XCTAssertTrue(app.buttons["tmux-window-@1"].isSelected)
+        let toggle = app.buttons["tmux-session-toggle-scratch"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.tap()
+        let other = app.buttons["tmux-window-@5"]
+        XCTAssertTrue(other.waitForExistence(timeout: 5), "scratch window")
+        XCTAssertNotEqual(other.value as? String, "active", "a window of a session that is not viewed is not current")
+        XCTAssertFalse(other.isSelected)
+    }
+
+    @MainActor
     func testSidebarShowsTheTmuxTree() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-session-main"].waitForExistence(timeout: 10), "session row")
@@ -223,6 +241,37 @@ final class ShuaiUITests: XCTestCase {
         // nothing was sent (the fixture has no server); the pane is still listed
         if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
         XCTAssertTrue(pane.exists)
+    }
+
+    @MainActor
+    func testCollapsingASessionHidesItsWindows() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        let toggle = app.buttons["tmux-session-toggle-main"]
+        XCTAssertTrue(toggle.exists, "session chevron")
+        XCTAssertGreaterThanOrEqual(toggle.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(toggle.frame.height, 44)
+        toggle.tap()
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-window-@1"])
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-window-@0"])
+        expectation(for: gone, evaluatedWith: app.buttons["tmux-pane-%1"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.buttons["tmux-session-main"].exists, "the session row stays")
+        app.buttons["tmux-session-toggle-main"].tap()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 5), "windows return")
+        XCTAssertTrue(app.buttons["tmux-window-@0"].exists)
+    }
+
+    @MainActor
+    func testHostMenuExplainsDisabledAIItems() throws {
+        let app = launchWithTmuxFixture()
+        let row = app.staticTexts["host-row-fixture-host"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5), "host menu is open")
+        let hint = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Connect to this host first'")).firstMatch
+        XCTAssertTrue(hint.waitForExistence(timeout: 5), "disabled AI items say why: \(app.debugDescription)")
     }
 
     @MainActor
@@ -301,10 +350,114 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(target.isHittable, "\(target) not reachable after \(swipes) swipes\n\(app.debugDescription)")
     }
 
+    /// The software keyboard (up while the terminal is focused) covers the sidebar bottom bar, so
+    /// tests that use the bar first move focus out of the terminal by tapping the host row.
+    @MainActor
+    private func hideSoftwareKeyboard(_ app: XCUIApplication) {
+        guard app.keyboards.count > 0 else { return }
+        app.staticTexts["host-row-fixture-host"].tap()
+        let gone = expectation(for: NSPredicate(format: "count == 0"), evaluatedWith: app.keyboards)
+        if XCTWaiter().wait(for: [gone], timeout: 3) != .completed {
+            // Landscape: the keyboard's dismiss key sits at its trailing bottom corner. The key's own
+            // frame is reported off screen by the simulator, so tap the corner of the keyboard frame.
+            let frame = app.keyboards.firstMatch.frame
+            let window = app.windows.firstMatch
+            let corner = CGVector(dx: (frame.maxX - 40) / window.frame.width, dy: (frame.maxY - 50) / window.frame.height)
+            window.coordinate(withNormalizedOffset: corner).tap()
+        }
+        for id in ["add-host-button", "settings-button"] {
+            let hittable = expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: app.buttons[id])
+            wait(for: [hittable], timeout: 5)
+        }
+    }
+
+    /// Taps the sidebar bottom bar's Settings button.
+    @MainActor
+    private func tapSettings(_ app: XCUIApplication) {
+        hideSoftwareKeyboard(app)
+        let button = app.buttons["settings-button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "settings-button missing\n\(app.debugDescription)")
+        button.tap()
+    }
+
+    @MainActor
+    func testSidebarTopHasOnlyQuickSwitcher() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        XCTAssertTrue(app.buttons["quick-switcher-button"].exists)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.exists, "New Host is in the bottom bar")
+        XCTAssertTrue(settings.exists, "Settings is in the bottom bar")
+        let hostRow = app.buttons["tmux-window-@1"].frame
+        let list = app.collectionViews.firstMatch.frame
+        XCTAssertGreaterThan(add.frame.minY, list.midY, "New Host sits in the lower half of the sidebar")
+        XCTAssertGreaterThan(settings.frame.minY, list.midY, "Settings sits in the lower half of the sidebar")
+        XCTAssertGreaterThan(add.frame.minY, hostRow.maxY, "the bottom bar sits below the rows")
+        XCTAssertLessThan(settings.frame.maxX, app.frame.width / 2, "the bottom bar is in the sidebar column")
+        XCTAssertFalse(app.buttons["more-menu"].exists, "the More menu is retired")
+        XCTAssertFalse(app.buttons["keys-button"].exists, "Keys lives in Settings and the app menu")
+    }
+
+    @MainActor
+    func testSettingsButtonOpensSettingsDirectly() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        tapSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), "one tap opens Settings, no menu")
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 5))
+    }
+
+    /// New Host is custom content sized to 44 pt. Settings is the system's icon-only glass button,
+    /// which reports 36 pt: a taller frame on it makes the whole bar report as not hittable.
+    @MainActor
+    func testSidebarBottomBarTargetsAreAtLeast44pt() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(add.isHittable, "add-host-button hittable")
+        XCTAssertTrue(settings.isHittable, "settings-button hittable")
+        XCTAssertGreaterThanOrEqual(add.frame.height, 44, "add-host-button tap target height")
+        XCTAssertGreaterThanOrEqual(settings.frame.height, 36, "settings-button is the system bar button size")
+    }
+
+    @MainActor
+    func testSidebarBottomBarAtAccessibilitySizeStillWorks() throws {
+        let app = launchWithTmuxFixture(
+            extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        let add = app.buttons["add-host-button"], settings = app.buttons["settings-button"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertTrue(add.isHittable)
+        XCTAssertTrue(settings.isHittable)
+        XCTAssertEqual(add.label, "Add Host", "icon-only keeps its accessibility label")
+        XCTAssertFalse(app.staticTexts["New Host"].exists, "New Host is icon-only at accessibility sizes")
+        XCTAssertFalse(add.frame.intersects(settings.frame), "buttons never overlap")
+    }
+
+    @MainActor
+    func testSidebarBottomBarPassesTheAccessibilityAudit() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["settings-button"].waitForExistence(timeout: 10))
+        hideSoftwareKeyboard(app)
+        let bar = app.buttons["add-host-button"].frame.union(app.buttons["settings-button"].frame).insetBy(dx: -1, dy: -1)
+        try app.performAccessibilityAudit(for: [.dynamicType, .hitRegion, .sufficientElementDescription]) { issue in
+            // Only the bottom bar is audited here; other screens have their own owners.
+            guard let frame = issue.element?.frame else { return true }
+            return !bar.contains(frame)
+        }
+    }
+
     @MainActor
     private func openPushSettings(_ app: XCUIApplication) {
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["push-settings-link"]
         scrollSheet(app, until: link)
@@ -316,7 +469,7 @@ final class ShuaiUITests: XCTestCase {
     func testNotificationSettingsShowTopicAndTestButton() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
         let link = app.buttons["push-settings-link"]
@@ -356,7 +509,7 @@ final class ShuaiUITests: XCTestCase {
     func testSettingsFirstPageShowsPushSummaryWithoutTheTopic() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["push-settings-link"]
         scrollSheet(app, until: link)
@@ -394,6 +547,19 @@ final class ShuaiUITests: XCTestCase {
         // host row: waiting count
         let waiting = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'waiting for you'")).firstMatch
         XCTAssertTrue(waiting.waitForExistence(timeout: 5), "host row shows the waiting count")
+    }
+
+    @MainActor
+    func testCollapsedHostKeepsTheWaitingBadge() throws {
+        let app = launchWithAgentFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@0"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.images["pane-badge"].firstMatch.waitForExistence(timeout: 10))
+        let toggle = app.buttons["host-toggle-fixture-host"]
+        XCTAssertTrue(toggle.exists, "host chevron")
+        toggle.tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["tmux-window-@0"])
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.descendants(matching: .any)["host-aggregate-badge"].waitForExistence(timeout: 5), "badge stays on the collapsed host")
     }
 
     @MainActor
@@ -520,6 +686,56 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(dismiss.frame.height, 44, "tap target height")
     }
 
+    // MARK: window tab strip (sidebar collapsed)
+
+    @MainActor
+    private func launchWithCollapsedSidebar() -> XCUIApplication {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugSidebarCollapsed"])
+        XCTAssertTrue(app.descendants(matching: .any)["window-tab-strip"].waitForExistence(timeout: 10), "tab strip")
+        return app
+    }
+
+    @MainActor
+    func testWindowTabStripTargetsAreAtLeast44pt() throws {
+        let app = launchWithCollapsedSidebar()
+        let ids = ["window-tab-@0", "window-tab-@1", "window-tab-new", "window-tab-session-menu"]
+        for id in ids {
+            let element = app.buttons[id]
+            XCTAssertTrue(element.waitForExistence(timeout: 5), id)
+            XCTAssertTrue(element.isHittable, "\(id) hittable")
+            XCTAssertGreaterThanOrEqual(element.frame.height, 44, "\(id) height")
+            XCTAssertGreaterThanOrEqual(element.frame.width, 44, "\(id) width")
+        }
+        XCTAssertEqual(app.buttons["window-tab-@1"].value as? String, "active")
+        XCTAssertEqual(app.buttons["window-tab-@0"].value as? String, "")
+    }
+
+    @MainActor
+    func testSessionMenuListsSessionsInTheTabStrip() throws {
+        let app = launchWithCollapsedSidebar()
+        let menu = app.buttons["window-tab-session-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        XCTAssertEqual(menu.label, "Session: main")
+        menu.tap()
+        XCTAssertTrue(app.buttons["main"].waitForExistence(timeout: 5), "viewed session listed")
+        XCTAssertTrue(app.buttons["scratch"].exists, "other session listed")
+    }
+
+    @MainActor
+    func testTabLongPressOffersTheWindowMenu() throws {
+        let app = launchWithCollapsedSidebar()
+        let tab = app.buttons["window-tab-@0"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 5))
+        tab.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Rename\u{2026}"].waitForExistence(timeout: 5), "menu offers Rename")
+        let close = app.buttons["Close Window"]
+        XCTAssertTrue(close.exists, "menu offers Close Window")
+        close.tap()
+        XCTAssertTrue(app.buttons["confirm-kill"].waitForExistence(timeout: 5), "closing asks first")
+        if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+        XCTAssertTrue(tab.exists)
+    }
+
     @MainActor
     func testConnectionStripPassesTheAccessibilityAudit() throws {
         let app = launchWithConnectionState("reconnecting")
@@ -612,7 +828,7 @@ final class ShuaiUITests: XCTestCase {
     func testKeysFromSettingsOpens() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
-        app.buttons["settings-button"].tap()
+        tapSettings(app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         let link = app.buttons["settings-keys-link"]
         scrollSheet(app, until: link)
