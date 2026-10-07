@@ -179,6 +179,9 @@ private struct SidebarBrandTitle: View {
             .font(.title2.weight(.bold))
             .lineLimit(1)
             .fixedSize()
+            // The system's toolbar inset leaves the text almost flush with the sidebar's edge; this
+            // lines it up with the host rows below.
+            .padding(.leading, 8)
             .accessibilityAddTraits(.isHeader)
             .accessibilityIdentifier("sidebar-title")
     }
