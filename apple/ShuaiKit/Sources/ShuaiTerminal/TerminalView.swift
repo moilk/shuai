@@ -44,6 +44,23 @@ public final class TerminalView: UITerminalView {
         }
     }
 
+    private var settledReload: Task<Void, Never>?
+
+    /// Reloads the input views once text-size changes have stopped for `settleDelay`. A reload makes
+    /// the keyboard re-lay out, so doing it on every step of a change (a slider drag, an audit
+    /// stepping through sizes) disturbs the rest of the UI while it is still adapting.
+    static let settleDelay: Duration = .seconds(2)
+
+    private func scheduleSettledInputViewsReload() {
+        settledReload?.cancel()
+        settledReload = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.settleDelay)
+            guard !Task.isCancelled, let self, isFirstResponder else { return }
+            inputViewsReloadCount += 1
+            reloadInputViews()
+        }
+    }
+
     private var mirroringSticky = false
     private var floatingBarInstalled = false
 
@@ -133,10 +150,7 @@ public final class TerminalView: UITerminalView {
         bar.onModifiersChanged = { [weak self] model in self?.mirrorSticky(model) }
         if style == .docked {
             // A new docked height only takes effect once the system re-reads the input accessory view.
-            bar.onBarHeightChanged = { [weak self] in
-                guard let self, isFirstResponder else { return }
-                reloadInputViews()
-            }
+            bar.onBarHeightChanged = { [weak self] in self?.scheduleSettledInputViewsReload() }
         }
         setStickyModifierChangeHandler { [weak self] in self?.libStickyChanged() }
         return bar
