@@ -55,6 +55,18 @@ private struct TerminalSessionView: View {
             .allowsHitTesting(false))
     }
 
+    private var showsTabStrip: Bool {
+        let topology = controller.tmux.topology
+        return ChromePolicy.decide(ChromeInputs(
+            hasTopology: topology != nil,
+            windowCount: controller.tmuxActions.viewedSession?.windows.count ?? 0,
+            sessionCount: topology?.sessions.count ?? 0,
+            sidebarCollapsed: model.columnVisibility == .detailOnly, fullScreen: false,
+            tabStrip: model.settings.tabStrip, preferFloatingBar: useFloatingBar,
+            hardwareKeyboardBar: .show, hardwareKeyboard: false, softwareKeyboardVisible: false,
+            status: .connected, permissionPendingForHost: false)).showsTabStrip
+    }
+
     var body: some View {
         ZStack {
             Color(uiColor: UIColor(hex: model.settings.theme.terminalTheme.background)).ignoresSafeArea()
@@ -72,7 +84,7 @@ private struct TerminalSessionView: View {
             PermissionCardStack()
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if model.columnVisibility == .detailOnly, controller.tmux.topology != nil {
+            if showsTabStrip {
                 WindowTabStrip(host: host, controller: controller)
             }
         }

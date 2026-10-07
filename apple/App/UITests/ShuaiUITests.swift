@@ -800,6 +800,35 @@ final class ShuaiUITests: XCTestCase {
     }
 
     @MainActor
+    func testAutomaticTabStripIsHiddenForOneWindowInOneSession() throws {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugSingleWindow", "-debugSidebarCollapsed"])
+        XCTAssertTrue(app.descendants(matching: .any)["terminal-view"].waitForExistence(timeout: 10), "terminal")
+        // The strip is decided after the first layout; give it time to (wrongly) appear.
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertFalse(app.descendants(matching: .any)["window-tab-strip"].exists, "no strip for one window in one session")
+    }
+
+    @MainActor
+    func testAlwaysTabStripShowsForOneWindowInOneSession() throws {
+        let app = launchWithTmuxFixture(extraArguments: ["-debugSingleWindow", "-debugSidebarCollapsed", "-tabStrip", "always"])
+        XCTAssertTrue(app.descendants(matching: .any)["window-tab-strip"].waitForExistence(timeout: 10), "strip with Always")
+    }
+
+    @MainActor
+    func testSettingsOffersWindowTabsAutomaticOrAlways() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        tapSettings(app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let automatic = app.buttons["Automatic"], always = app.buttons["Always"]
+        scrollSheet(app, until: always)
+        XCTAssertTrue(automatic.exists, "Automatic option")
+        XCTAssertTrue(automatic.isSelected, "Automatic is the default")
+        always.tap()
+        XCTAssertTrue(always.isSelected)
+    }
+
+    @MainActor
     func testSessionMenuListsSessionsInTheTabStrip() throws {
         let app = launchWithCollapsedSidebar()
         let menu = app.buttons["window-tab-session-menu"]

@@ -99,7 +99,9 @@ With the sidebar collapsed, a window tab strip appears above the terminal: one t
 viewed session (the active one highlighted), a **+** button for a new window, and a stack button on
 the left that lists the host's tmux sessions (the viewed one is checked) to switch session or add a
 window. Touch and hold a tab for the same window menu as in the sidebar. Tabs and buttons are at
-least 44 pt and grow with the text size.
+least 44 pt and grow with the text size. Settings > Terminal > **Window tabs** is Automatic by
+default, which hides the strip while the viewed session has one window and the host has one session;
+Always keeps it.
 
 ## 5. Keyboard bars
 

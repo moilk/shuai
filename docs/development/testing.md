@@ -59,7 +59,8 @@ List simulators with `xcrun simctl list devices available`; any iPad running iOS
   `-debugAgentFixture`; `-debugConnectionState <reconnecting|failed|disconnected>` shows a fixed
   connection state for screenshots and layout checks; `-debugNoticeTimeScale <n>` makes notices last
   `n` times longer, so transient-notice tests do not race a slow runner; `-debugSidebarCollapsed` starts with
-  the sidebar collapsed so the window tab strip is shown. The agent fixture plays the recorded Claude Code transcript
+  the sidebar collapsed so the window tab strip is shown; `-debugSingleWindow` seeds one session with
+  one window (with `-tabStrip always`, the persisted setting as a launch argument, the strip shows anyway). The agent fixture plays the recorded Claude Code transcript
   `core/shuai-agent/tests/fixtures/e2e-claude-2.1.288.jsonl` through the real monitor; `respond`
   calls are exposed via the `agent-fixture-log` accessibility value.
 - When several simulators or agents run at once, give UI tests their own simulator device; a shared
