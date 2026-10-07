@@ -306,3 +306,25 @@ minimum width scales the same way. Rows scroll horizontally when the keys no lon
 content-size change the bar rebuilds its button fonts, updates its height and the terminal view
 reloads its input views, so the keyboard guide (and with it the terminal's bottom edge) picks up the
 new height while the keyboard is up. Key order, mappings and sent bytes do not depend on the size.
+
+## Chrome policy
+
+`ChromePolicy.decide(ChromeInputs)` in `ShuaiApp` is the single decision for which chrome surrounds
+the terminal; views feed it the inputs and apply the result. Contract:
+
+- Window tab strip: shown iff the host has a tmux topology, the sidebar is collapsed or full screen is
+  on, and either the tab strip mode is Always or the viewed session has more than one window or the
+  host has more than one session. Automatic therefore hides it only for one window in one session.
+- Navigation bar: shown iff not full screen. Status bar and home indicator: hidden iff full screen.
+- Full-screen handle: shown iff full screen; prominent when the connection is not connected or a
+  permission request is pending for the host, quiet otherwise.
+- Accessory bar: hidden iff "hardware keyboard bar" is Hide, a hardware keyboard is attached and no
+  software keyboard is visible. Otherwise the placement is `AccessoryBarPlacement.decide` (docked or
+  floating) with the same inputs, so a software keyboard always keeps its docked bar.
+
+`FullScreenState` remembers the sidebar column visibility on entering full screen (which collapses to
+detail only) and restores it on leaving, unless the user changed the columns in between.
+
+Persisted settings (`AppSettings`): `tabStrip` (`automatic` default, `always`), `hardwareKeyboardBar`
+(`show` default, `hide`), `fullScreen` (`false` default); unknown stored values fall back to the
+defaults. Apart from the tab strip becoming automatic, the defaults keep the previous behaviour.
