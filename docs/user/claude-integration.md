@@ -116,6 +116,6 @@ a "Codex finished" push. There are no working/approval states and no permission 
 
 ## Local notifications
 
-Settings > AI integration > **Notify when an agent needs me** posts local notifications for
+Settings > Notifications > **Notify when an agent needs me** posts local notifications for
 agent events while the app is in the background. iOS suspends apps shortly after they leave the
 screen, so this is best effort; for reliable background alerts use [ntfy push](notifications.md).

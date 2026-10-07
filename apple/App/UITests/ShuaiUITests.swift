@@ -39,6 +39,98 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["alice@example.invalid"].exists)
     }
 
+    @MainActor
+    func testCancelWithChangesAsksToDiscard() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+
+        let name = app.textFields["host-name-field"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap()
+        name.typeText("unsaved-host")
+
+        app.buttons["Cancel"].tap()
+        let keep = app.buttons.matching(identifier: "keep-editing").firstMatch
+        XCTAssertTrue(app.buttons["discard-changes"].waitForExistence(timeout: 5), "unsaved input asks before closing")
+        XCTAssertTrue(keep.exists)
+        keep.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5), "Keep Editing leaves the sheet open")
+        XCTAssertEqual(name.value as? String, "unsaved-host")
+
+        app.buttons["Cancel"].tap()
+        let discard = app.buttons.matching(identifier: "discard-changes").firstMatch
+        XCTAssertTrue(discard.waitForExistence(timeout: 5))
+        discard.tap()
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 5), "Discard Changes closes the editor")
+        XCTAssertFalse(app.staticTexts["unsaved-host"].exists)
+    }
+
+    @MainActor
+    func testPushingKeysKeepsThePasswordAndDirtyState() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+        XCTAssertTrue(app.textFields["host-name-field"].waitForExistence(timeout: 5))
+
+        let method = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Method'")).firstMatch
+        method.tap()
+        app.buttons["Password"].firstMatch.tap()
+        let secret = app.secureTextFields.firstMatch
+        XCTAssertTrue(secret.waitForExistence(timeout: 5))
+        secret.tap()
+        secret.typeText("hunter2")
+
+        method.tap()
+        app.buttons["SSH key"].firstMatch.tap()
+        let generate = app.buttons["editor-open-keys"]
+        XCTAssertTrue(generate.waitForExistence(timeout: 5))
+        generate.tap()
+        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5))
+        app.navigationBars["Keys"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.textFields["host-name-field"].waitForExistence(timeout: 5))
+
+        method.tap()
+        app.buttons["Password"].firstMatch.tap()
+        let again = app.secureTextFields.firstMatch
+        XCTAssertTrue(again.waitForExistence(timeout: 5))
+        // An empty secure field reports its placeholder as the value; typed text reports bullets.
+        let shown = again.value as? String ?? ""
+        XCTAssertNotEqual(shown, "Password", "the field is not empty: the typed password survives a pushed page")
+        XCTAssertTrue(shown.contains("•"), "the field shows bullets, got \(shown)")
+
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons.matching(identifier: "discard-changes").firstMatch.waitForExistence(timeout: 5),
+                      "still dirty after returning from Keys")
+    }
+
+    @MainActor
+    func testSaveWithErrorsFocusesTheFirstInvalidField() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
+        app.launch()
+        let addFirst = app.buttons["add-first-host"]
+        XCTAssertTrue(addFirst.waitForExistence(timeout: 10))
+        addFirst.tap()
+
+        let save = app.buttons["save-host-button"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+        XCTAssertTrue(app.staticTexts["Enter a name."].waitForExistence(timeout: 3))
+        let hasFocus = NSPredicate(format: "hasKeyboardFocus == true")
+        let focused = expectation(for: hasFocus, evaluatedWith: app.textFields["host-name-field"])
+        wait(for: [focused], timeout: 5)
+    }
+
     // MARK: tmux (fixture topology, no server)
 
     @MainActor
@@ -193,8 +285,8 @@ final class ShuaiUITests: XCTestCase {
 
     /// Scrolls the list inside the open sheet (not the whole app) until `target` is hittable; bounded.
     @MainActor
-    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, maxSwipes: Int = 12) {
-        let bar = app.navigationBars["Settings"]
+    private func scrollSheet(_ app: XCUIApplication, until target: XCUIElement, title: String = "Settings", maxSwipes: Int = 12) {
+        let bar = app.navigationBars[title]
         let sheetX = bar.frame.midX
         let lists = app.collectionViews.allElementsBoundByIndex + app.tables.allElementsBoundByIndex
         let list = lists.first { $0.frame.minX <= sheetX && sheetX <= $0.frame.maxX && $0.frame.width < app.frame.width * 0.95 }
@@ -210,24 +302,68 @@ final class ShuaiUITests: XCTestCase {
     }
 
     @MainActor
+    private func openPushSettings(_ app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Background push (ntfy)"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testNotificationSettingsShowTopicAndTestButton() throws {
         let app = launchWithTmuxFixture()
         XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
         app.buttons["settings-button"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.keyboards.count, 0, "opening Settings resigns the terminal so its keyboard does not cover the sheet")
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Background push (ntfy)"].waitForExistence(timeout: 5))
         // top to bottom, so scrolling for the next target never passes an earlier one
-        scrollSheet(app, until: app.textFields["push-server-field"])
-        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
         let topic = app.staticTexts["push-topic"]
-        scrollSheet(app, until: topic)
-        // the row's label is "Topic, <topic>" (LabeledContent)
-        let value = topic.label.components(separatedBy: ", ").last ?? ""
-        XCTAssertNotNil(value.wholeMatch(of: /shuai-[a-z2-7]{26}/), topic.label)
-        scrollSheet(app, until: app.buttons["push-send-test"])
-        XCTAssertTrue(app.buttons["push-send-test"].exists)
-        scrollSheet(app, until: app.buttons["push-open-ntfy"])
+        scrollSheet(app, until: topic, title: "Background push (ntfy)")
+        // masked by default: the label never matches the full topic
+        XCTAssertNil(topic.label.firstMatch(of: /shuai-[a-z2-7]{26}/), "topic must be masked: \(topic.label)")
+        let reveal = app.buttons["push-topic-reveal"]
+        XCTAssertTrue(reveal.isHittable)
+        reveal.tap()
+        let revealed = app.staticTexts["push-topic"]
+        XCTAssertNotNil(revealed.label.firstMatch(of: /shuai-[a-z2-7]{26}/), revealed.label)
+        scrollSheet(app, until: app.buttons["push-open-ntfy"], title: "Background push (ntfy)")
         XCTAssertTrue(app.buttons["push-open-ntfy"].exists)
+        scrollSheet(app, until: app.buttons["push-send-test"], title: "Background push (ntfy)")
+        XCTAssertTrue(app.buttons["push-send-test"].exists)
+        scrollSheet(app, until: app.textFields["push-server-field"], title: "Background push (ntfy)")
+        XCTAssertEqual(app.textFields["push-server-field"].value as? String, "https://ntfy.sh")
+    }
+
+    @MainActor
+    func testCopyTopicStillWorks() throws {
+        let app = launchWithTmuxFixture()
+        openPushSettings(app)
+        let copy = app.buttons["push-copy-topic"]
+        scrollSheet(app, until: copy, title: "Background push (ntfy)")
+        XCTAssertEqual(copy.label, "Copy topic")
+        copy.tap()
+        XCTAssertEqual(app.buttons["push-copy-topic"].label, "Copied")
+    }
+
+    @MainActor
+    func testSettingsFirstPageShowsPushSummaryWithoutTheTopic() throws {
+        let app = launchWithTmuxFixture()
+        XCTAssertTrue(app.buttons["tmux-window-@1"].waitForExistence(timeout: 10))
+        app.buttons["settings-button"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let link = app.buttons["push-settings-link"]
+        scrollSheet(app, until: link)
+        XCTAssertTrue(link.label.contains("Background push"), link.label)
+        XCTAssertFalse(link.label.contains("shuai-"), link.label)
+        XCTAssertFalse(String(describing: link.value ?? "").contains("shuai-"))
+        XCTAssertFalse(app.staticTexts["push-topic"].exists, "the topic row lives on the push page only")
     }
 
     // MARK: agent integration (fixture: the real recorded Claude Code transcript through a fake monitor)

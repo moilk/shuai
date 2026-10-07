@@ -50,7 +50,7 @@ struct RootView: View {
     @ViewBuilder private func modalContent(_ route: ModalRoute) -> some View {
         switch route {
         case .newHost:
-            HostEditorView(target: .new)
+            HostEditorView(target: .new, keyIDs: model.keys.items.map(\.id))
         case .editHost(let id):
             if let host = model.hosts.host(id: id) { HostEditorView(target: .edit(host)) }
         case .settings:

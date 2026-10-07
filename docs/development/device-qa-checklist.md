@@ -81,6 +81,12 @@ Prerequisite: **Enable AI integration…** done for the host, `claude` running i
 - [ ] **D5 Push**: enable push, subscribe in ntfy, "Send test notification" arrives. Background or
   lock shuai, trigger a permission request: "Claude needs approval" arrives within seconds; the body
   shows only host and `session › window index` (no window name by default).
+- [ ] **D5b Push topic**: on Settings > Background push (ntfy) the topic is masked
+  (`shuai-••••…wxyz`); Show and Hide toggle it; backgrounding the app hides a revealed topic. Copy
+  topic, then paste in the ntfy app within two minutes (works) and again after two minutes on this
+  iPad (pasteboard is empty of it; a copy pasted on another device through Universal Clipboard is
+  not removed). VoiceOver reads "Topic hidden, ends in ..." while masked. At the largest Dynamic
+  Type size every row on the page stays readable and tappable.
 - [ ] **D6 Deep link**: tapping that notification opens shuai, connects the host and selects the
   right pane.
 
