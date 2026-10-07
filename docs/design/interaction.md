@@ -109,8 +109,12 @@ column of up to 380 pt. While cards are pending, the strip and the notices reser
 a 10 pt gap, so their buttons stay tappable. When fewer than 280 pt would remain for them
 (`NoticeLayout`), they take the full width at the bottom of the terminal area instead.
 
-The window toolbar shows the status indicator (symbol, spoken as "{host}: {status label}",
-identifier `connection-status`); the host list row uses the same symbol and label. Connection action
+The window toolbar shows the status indicator (symbol, spoken as "{host}: {status label}" with the
+hint "Opens the connection menu", identifier `connection-status`, at least 36 pt) as the label of a
+menu; the host list row uses the same symbol and label. The menu starts with a non-interactive
+header (host name and status label), then Disconnect (`disconnect-button`, destructive) while
+connected, otherwise Reconnect (`connect-button`). There is no separate disconnect button, so no
+single tap disconnects; ⌘W and ⌘R in the Session menu stay. Connection action
 buttons are at least 44 pt tall, the minimum is part of the button label so the whole height is
 tappable, and text from the server or host profile is rendered verbatim. Cancel while connecting (or
 at the host key prompt) disconnects; Cancel while reconnecting ends the reconnect loop.
@@ -172,13 +176,16 @@ request (the app menu's Keys…, the connection card's Open keys) presents Keys 
 
 The sidebar uses the system bars (no custom floating buttons):
 
-- **Top.** The system sidebar toggle, the title "shuai" (`navigationTitle`) and one trailing item,
-  Quick Switcher (`quick-switcher-button`, magnifying glass).
-- **Bottom bar** (`.bottomBar` toolbar on the sidebar column): New Host with a plus icon and text
-  (`add-host-button`, 44 pt tall) leading, Settings (`settings-button`, gear, spoken "Settings")
-  trailing, with a flexible space between them. At accessibility text sizes New Host is icon-only and
-  keeps the accessibility label "Add Host". Settings opens the Settings sheet directly; there is no
-  menu.
+- **Top.** The system sidebar toggle, the brand "shuai" as a leading toolbar item (`title2` bold,
+  scales with Dynamic Type, header trait, identifier `sidebar-title`; the system's centred title is
+  empty) and one trailing item, Quick Switcher (`quick-switcher-button`, magnifying glass). On
+  iOS 26 the brand has no glass background.
+- **Bottom bar** (`.bottomBar` toolbar on the sidebar column): nothing on the leading side; New Host
+  (`add-host-button`, plus, spoken "New Host") and Settings (`settings-button`, gear, spoken
+  "Settings") are icon-only and sit together at the trailing side after a flexible space. System
+  icon-only bottom-bar buttons report 36 pt (a 44 pt frame makes them report as not hittable), so
+  the UI tests assert at least 36 pt and hittable for both; the accessibility label keeps the text
+  for VoiceOver at every text size. Settings opens the Settings sheet directly; there is no menu.
 - **Keys** is not in the sidebar. It is reached through Settings > SSH > Keys, the app menu's Keys…,
   the host editor's Open/Generate a key and the connection card's Open keys.
 

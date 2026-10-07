@@ -4,7 +4,9 @@
 
 ## 1. Add a host
 
-Tap **New Host** in the sidebar's bottom bar (or press ⌘N). Settings is the gear next to it, or ⌘,.
+Tap the **+** (New Host) in the sidebar's bottom bar (or press ⌘N). Settings is the gear next to it,
+or ⌘,. To disconnect or reconnect later, tap the status icon at the top right of the terminal and
+choose from its menu (or use ⌘W / ⌘R).
 Enter a name, host or IP, port and
 user name, then pick an authentication method:
 
