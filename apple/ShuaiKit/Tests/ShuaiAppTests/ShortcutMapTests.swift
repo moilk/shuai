@@ -29,6 +29,7 @@ import Testing
             (.zoomPane, KeyChord(.returnKey, [.command, .shift])),
             (.quickSwitcher, KeyChord(.character("k"), [.command])),
             (.nextAttention, KeyChord(.character("a"), [.command, .shift])),
+            (.toggleFullScreen, KeyChord(.character("f"), [.command, .control])),
         ]
         for (action, chord) in expected {
             #expect(map.chord(for: action) == chord, "\(action)")
@@ -96,5 +97,11 @@ import Testing
 
     @Test func everyActionHasATitle() {
         for (action, _) in map.bindings { #expect(!action.title.isEmpty) }
+    }
+
+    @Test func fullScreenActionRoundTripsAndHasATitle() {
+        #expect(ShortcutAction(id: "toggleFullScreen") == .toggleFullScreen)
+        #expect(ShortcutAction.toggleFullScreen.id == "toggleFullScreen")
+        #expect(ShortcutAction.toggleFullScreen.title == "Full Screen")
     }
 }

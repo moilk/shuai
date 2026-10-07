@@ -37,6 +37,12 @@ struct ShuaiMain: App {
                 Button("Keys…") { model.request(.keys) }
                     .disabled(!model.canRequest(.keys))
             }
+            CommandGroup(after: .toolbar) {
+                // No chord: ⌃⌘F is delivered by the terminal's key command, and a second delivery
+                // path would toggle straight back.
+                Button(model.settings.fullScreen ? "Exit Full Screen" : "Enter Full Screen") { model.toggleFullScreen() }
+                    .disabled(!model.settings.fullScreen && model.selection.flatMap { model.hosts.host(id: $0) } == nil)
+            }
             CommandMenu("Go") {
                 // Also works while the sidebar has focus; in the terminal the key command takes the chord.
                 Button("Quick Switcher") { model.openQuickSwitcher() }

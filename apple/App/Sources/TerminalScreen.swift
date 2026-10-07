@@ -33,12 +33,13 @@ private struct TerminalSessionView: View {
             hasTopology: topology != nil,
             windowCount: controller.tmuxActions.viewedSession?.windows.count ?? 0,
             sessionCount: topology?.sessions.count ?? 0,
-            sidebarCollapsed: model.columnVisibility == .detailOnly, fullScreen: false,
+            sidebarCollapsed: model.columnVisibility == .detailOnly, fullScreen: model.fullScreenActive,
             tabStrip: model.settings.tabStrip, preferFloatingBar: model.settings.accessoryBar == .floating,
             hardwareKeyboardBar: model.settings.hardwareKeyboardBar,
             hardwareKeyboard: model.keyboard.isConnected,
             softwareKeyboardVisible: model.keyboard.softwareKeyboardVisible,
-            status: .connected, permissionPendingForHost: false))
+            status: controller.state.status,
+            permissionPendingForHost: model.agentHub.pendingPermissions.contains { $0.profileID == host.id }))
     }
 
     /// Connection strip, then notices. Permission cards are drawn on top in the trailing column,
@@ -80,10 +81,17 @@ private struct TerminalSessionView: View {
             topStack
             // Last, so a permission card is never covered by a notice.
             PermissionCardStack()
+            if chrome.showsHandle, !chrome.showsTabStrip {
+                fullScreenHandle.padding(8).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
         }
+        .accessibilityAction(.escape) { if model.fullScreenActive { model.setFullScreen(false) } }
+        .toolbar(chrome.showsNavigationBar ? .visible : .hidden, for: .navigationBar)
+        .statusBarHidden(chrome.hidesStatusBar)
+        .persistentSystemOverlays(chrome.hidesHomeIndicator ? .hidden : .automatic)
         .safeAreaInset(edge: .top, spacing: 0) {
             if chrome.showsTabStrip {
-                WindowTabStrip(host: host, controller: controller)
+                WindowTabStrip(host: host, controller: controller, handle: chrome.showsHandle ? fullScreenHandle : nil)
             }
         }
         .onAppear { bindShortcuts() }
@@ -137,6 +145,13 @@ private struct TerminalSessionView: View {
         .task(id: controller.pendingPrompt) { await DebugLaunch.autoAnswer(controller: controller) }
         .task(id: controller.state) { await DebugLaunch.sendAfterConnect(controller: controller) }
         #endif
+    }
+
+    private var fullScreenHandle: FullScreenHandle {
+        FullScreenHandle(
+            presentation: presentation, prominent: chrome.handleIsProminent, connected: controller.state == .connected,
+            disconnect: { Task { await controller.disconnect() } },
+            reconnect: { Task { await controller.reconnect() } })
     }
 
     /// The status indicator opens a menu with the host's state and the one action that applies, so

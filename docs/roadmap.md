@@ -25,37 +25,14 @@ There is no TestFlight or App Store build; users build and sign from source.
 
 ## Next: immersive terminal
 
-Goal: give the terminal more of the screen. The foundation is merged: `ChromePolicy` (pure; rules in
-[Chrome policy](design/interaction.md#chrome-policy)), `FullScreenState`, and the persisted settings
-`tabStrip`, `hardwareKeyboardBar` and `fullScreen` in `AppSettings`. Nothing in the UI uses them yet.
-The remaining steps, in this order, each a small PR that starts with a failing test:
+Goal: give the terminal more of the screen. Merged: `ChromePolicy` (pure; rules in
+[Chrome policy](design/interaction.md#chrome-policy)), Window tabs: Automatic, the hardware-keyboard
+accessory bar setting, and Full Screen mode (⌃⌘F, handle menu, see
+[Chrome policy](design/interaction.md#chrome-policy)). What remains, as a small PR that starts with a
+failing test:
 
-1. **Window tabs: Automatic.** Hide the tab strip when the viewed session has one window *and* the
-   host has one session (hiding on window count alone would leave touch-only users no way to reach
-   another session while the sidebar is collapsed). Setting Terminal > Window tabs: Automatic
-   (default) or Always; no "Never". Needs a single-window fixture: a DEBUG launch argument
-   registered in `scripts/check-no-debug-launch.sh`.
-2. **Accessory bar with a hardware keyboard.** Setting Keyboard > With a hardware keyboard: Show the
-   floating bar (default) or Hide. It is hidden only with a hardware keyboard and no software
-   keyboard on screen; there is no global Off, because touch-only users need Esc and Ctrl. Without
-   the bar the Claude permission cards answer with ⌘↩ (Allow) and ⌘⌫ (Deny), the cards have no
-   "Always", and without the AI integration `1`, `2` and Esc are typed directly (keyboards without
-   an Esc key: Ctrl-[, or remap Caps Lock or Globe to Escape in iPadOS Settings). Do not reveal the
-   bar when a permission is pending: it would resize the terminal.
-3. **Full Screen mode.** Explicit, not auto-hiding: hiding the navigation bar on demand changes the
-   safe area, resizes the terminal and makes tmux and Claude redraw on every reveal. Full screen
-   hides the navigation bar, status bar and home indicator, collapses the sidebar (restored on exit
-   by `FullScreenState`) and shows a small handle at the top trailing edge (docked into the tab strip
-   when it is shown): status symbol only, 44 pt target, a menu with the host and status, Reconnect or
-   Disconnect, Show Sidebar, Quick Switcher and Exit Full Screen. The handle is a menu overlay, so
-   it never resizes the terminal, and it is prominent when the connection is not healthy or a
-   permission is pending. Shortcut ⌃⌘F through `ShortcutMap` (`toggleFullScreen`) only; the View
-   menu item carries no chord, because a second delivery path would toggle straight back (fallback
-   ⇧⌘F if iPadOS reserves ⌃⌘F). Enter and leave in one state change so the terminal resizes once;
-   leave through the handle, the chord or the VoiceOver escape gesture. No three-finger or top-edge
-   gesture: iPadOS and the terminal already use them.
-4. **Connect and Disconnect in the host context menu**, a touch path that does not need the
-   navigation bar.
+- **Connect and Disconnect in the host context menu**, a touch path that does not need the
+  navigation bar.
 
 To check on a real iPad: one `window-change` per toggle and a clean Claude redraw; the terminal
 keeping first responder when chrome changes; window controls overlapping the strip or handle under

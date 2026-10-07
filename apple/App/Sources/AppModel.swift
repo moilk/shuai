@@ -58,6 +58,24 @@ final class AppModel {
     @ObservationIgnored var editorIsDirty = false
     /// Sidebar visibility (the window tab strip shows while the sidebar is collapsed).
     var columnVisibility: NavigationSplitViewVisibility = .all
+    @ObservationIgnored private var fullScreenState = FullScreenState()
+    /// Full screen applies only while a host's terminal is shown; otherwise the chrome stays.
+    var fullScreenActive: Bool {
+        settings.fullScreen && selection.flatMap { hosts.host(id: $0) } != nil
+    }
+
+    /// Enters or leaves full screen in one state change (the terminal resizes once). Entering
+    /// collapses the sidebar and leaving restores it (`FullScreenState`).
+    func setFullScreen(_ on: Bool) {
+        guard on != settings.fullScreen, !on || selection.flatMap({ hosts.host(id: $0) }) != nil else { return }
+        let current = SidebarVisibility(columnVisibility)
+        let next = on ? fullScreenState.enter(current: current) : fullScreenState.exit(current: current)
+        columnVisibility = NavigationSplitViewVisibility(next)
+        settings.fullScreen = on
+    }
+
+    func toggleFullScreen() { setFullScreen(!settings.fullScreen) }
+
     /// Hardware shortcuts delivered while the terminal has focus.
     var shortcuts: ShortcutMap = .defaults
     /// Every host's agent monitor; also the sidebar's per-pane badge provider (keyed by profile id).
@@ -110,6 +128,8 @@ final class AppModel {
         sidebarExpansion = SidebarExpansionStore(defaults: sidebarDefaults)
         sidebarExpansion.prune(keeping: Set(hosts.hosts.map(\.id)))
         pushSync = PushSyncCoordinator(settings: pushSettings, defaults: pushDefaults)
+        // Full screen is a state of the open window, not a preference: it is not restored at launch.
+        settings.fullScreen = false
         self.settings = settings
         keys = KeyLibrary(store: keyStore)
         let box = EngineBox()
@@ -173,6 +193,7 @@ final class AppModel {
         guard let action = ShortcutAction(id: id) else { return }
         if action == .quickSwitcher { openQuickSwitcher(); return }
         if action == .nextAttention { jumpNextAttention(); return }
+        if action == .toggleFullScreen { toggleFullScreen(); return }
         let controller = sessions.controller(for: host)
         switch controller.tmux.state {
         case .live, .polling: break
@@ -522,5 +543,27 @@ extension AppModel: PaneNavigating {
         }
         _ = engineBox.engines[host.id]?.view.acquireProgrammaticFocus()
         return result
+    }
+}
+
+private extension SidebarVisibility {
+    init(_ v: NavigationSplitViewVisibility) {
+        switch v {
+        case .all: self = .all
+        case .doubleColumn: self = .doubleColumn
+        case .detailOnly: self = .detailOnly
+        default: self = .automatic
+        }
+    }
+}
+
+private extension NavigationSplitViewVisibility {
+    init(_ v: SidebarVisibility) {
+        switch v {
+        case .all: self = .all
+        case .doubleColumn: self = .doubleColumn
+        case .detailOnly: self = .detailOnly
+        case .automatic: self = .automatic
+        }
     }
 }

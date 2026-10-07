@@ -49,6 +49,7 @@ without it. Keys… is in the app menu (and in Settings > Keys).
 |---|---|
 | ⌘+ / ⌘− (or pinch) | Zoom the terminal font |
 | ⌘C / ⌘V | Copy selection / paste (bracketed when the program enables it) |
+| ⌃⌘F | Enter or leave Full Screen (also View > Enter Full Screen) |
 | Option + key | Alt (Esc prefix) when Settings > Keyboard > "Option key sends Alt" is on (default) |
 
 ## Permission card

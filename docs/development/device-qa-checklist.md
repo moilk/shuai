@@ -47,7 +47,15 @@ keyboard**, using Pinyin - Simplified.
   redraws without artefacts.
 - [ ] **B5 Bar switching**: the docked bar sits above the software keyboard; attaching a hardware
   keyboard switches to the compact floating bar and back on detach, without flicker, focus loss or
-  covering the terminal.
+  covering the terminal. With Settings > Keyboard > With a hardware keyboard set to Hide, the bar is
+  gone while only the hardware keyboard is attached and returns with the software keyboard.
+- [ ] **B6 Full Screen**: ⌃⌘F with the terminal focused enters full screen and again leaves it (not
+  twice per press); the grid resizes once and tmux and Claude redraw cleanly; the terminal keeps focus;
+  the handle menu offers Reconnect or Disconnect, Show Sidebar, Quick Switcher and Exit Full Screen;
+  the handle is prominent when the connection drops or a permission is pending and does not cover a
+  permission card's buttons; under Stage Manager the window controls do not hide the handle or the
+  tab strip; VoiceOver, Switch Control and Full Keyboard Access reach the handle menu and the
+  VoiceOver escape gesture leaves full screen.
 
 ## C. Windowing and lifecycle
 

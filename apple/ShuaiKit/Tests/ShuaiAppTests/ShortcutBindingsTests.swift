@@ -62,4 +62,10 @@ import Testing
     @Test func actionsRoundTripFromTheBindingId() {
         for b in ShortcutMap.defaults.terminalBindings { #expect(ShortcutAction(id: b.id) != nil) }
     }
+
+    @Test func fullScreenIsDeliveredAsControlCommandF() {
+        let b = binding(.toggleFullScreen)
+        #expect(b?.input == "f")
+        #expect(b?.modifiers == TerminalKeyBinding.command | TerminalKeyBinding.control)
+    }
 }
