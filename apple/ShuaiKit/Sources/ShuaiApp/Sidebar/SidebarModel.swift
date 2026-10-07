@@ -65,6 +65,9 @@ public struct SessionRowModel: Equatable, Sendable {
 public struct WindowRowModel: Equatable, Sendable {
     public var host: UUID
     public var row: TmuxTree.WindowRow
+    /// The active window of the viewed session: the one current location in the tree. Every session
+    /// has an active window, so `row.active` alone does not identify it.
+    public var isCurrent: Bool
     public var accessibilityLabel: String
     public var accessibilityValue: String
     public var index: Int { row.index }
@@ -74,6 +77,8 @@ public struct WindowRowModel: Equatable, Sendable {
 public struct PaneRowModel: Equatable, Sendable {
     public var host: UUID
     public var row: TmuxTree.PaneRow
+    /// The active pane of the current window (see `WindowRowModel.isCurrent`).
+    public var isCurrent: Bool
     public var accessibilityLabel: String
     public var accessibilityValue: String
     public var index: Int { row.index }
@@ -136,8 +141,9 @@ public enum SidebarModel {
                 out.append(.session(sessionModel(s, host: h.id, expanded: open)))
                 guard open else { continue }
                 for w in s.windows {
-                    out.append(.window(windowModel(w, host: h.id)))
-                    for p in w.panes { out.append(.pane(paneModel(p, host: h.id))) }
+                    let current = s.viewed && w.active
+                    out.append(.window(windowModel(w, host: h.id, current: current)))
+                    for p in w.panes { out.append(.pane(paneModel(p, host: h.id, current: current && p.active))) }
                 }
             }
         }
@@ -155,16 +161,16 @@ public enum SidebarModel {
             accessibilityValue: join([s.viewed ? "viewed" : nil, expanded ? nil : "collapsed"]))
     }
 
-    private static func windowModel(_ w: TmuxTree.WindowRow, host: UUID) -> WindowRowModel {
+    private static func windowModel(_ w: TmuxTree.WindowRow, host: UUID, current: Bool) -> WindowRowModel {
         WindowRowModel(
-            host: host, row: w,
+            host: host, row: w, isCurrent: current,
             accessibilityLabel: join(["\(w.index): \(w.name)", plural(w.paneCount, "pane"), w.zoomed ? "zoomed" : nil, w.badge?.label]),
-            accessibilityValue: w.active ? "active" : "")
+            accessibilityValue: current ? "active" : "")
     }
 
-    private static func paneModel(_ p: TmuxTree.PaneRow, host: UUID) -> PaneRowModel {
+    private static func paneModel(_ p: TmuxTree.PaneRow, host: UUID, current: Bool) -> PaneRowModel {
         PaneRowModel(
-            host: host, row: p, accessibilityLabel: join(["Pane \(p.index): \(p.title)", p.badge?.label]),
-            accessibilityValue: p.active ? "active" : "")
+            host: host, row: p, isCurrent: current, accessibilityLabel: join(["Pane \(p.index): \(p.title)", p.badge?.label]),
+            accessibilityValue: current ? "active" : "")
     }
 }

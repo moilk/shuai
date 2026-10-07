@@ -37,7 +37,8 @@ keyboard**, using Pinyin - Simplified.
 
 - [ ] **B1 Shortcuts**: with the terminal focused, every chord in
   [Keyboard shortcuts](../user/keyboard-shortcuts.md) performs its action and the remote receives
-  nothing for it (check with `cat -v` on the server or `-debugByteTap`).
+  nothing for it (check with `cat -v` on the server or `-debugByteTap`). Each chord acts once (one
+  new window per ⌘T), and the menu bar's tmux menu items work and are disabled without a live tmux.
 - [ ] **B2 Option as Alt**: with "Option key sends Alt" on, Option+B / Option+F move by word in a
   readline shell and Option+letter works in vim; with it off (new session) Option types special
   characters.
@@ -106,6 +107,20 @@ Prerequisite: **Enable AI integration…** done for the host, `claude` running i
   reads its severity first (for example "Warning. ...").
 - [ ] **E7 Dynamic Type**: at the largest sizes the strip and cards stay legible, wrap instead of
   clipping, and keep full-height buttons.
+
+## F. Sidebar bottom bar
+
+- [ ] **F1 Software keyboard**: with the terminal focused and the software keyboard up, the bottom
+  bar (New Host, Settings) is covered; dismissing the keyboard (or tapping a sidebar row) brings it
+  back. ⌘N and ⌘, work with a hardware keyboard.
+- [ ] **F2 Portrait overlay sidebar**: in portrait the sidebar is an overlay; the bottom bar sits at
+  its bottom, above the home indicator, and New Host and Settings open their sheets.
+- [ ] **F3 Narrowest Stage Manager width**: both bottom-bar items stay visible and tappable (New Host
+  does not truncate into the gear).
+- [ ] **F4 VoiceOver order**: Sidebar toggle, Quick Switcher, then the rows, then "New Host" and
+  "Settings" last. At the largest Dynamic Type, New Host is icon-only and still read as "Add Host".
+- [ ] **F5 Full Keyboard Access**: Tab reaches Quick Switcher, the rows, New Host and Settings; Space
+  activates them.
 
 ## Reporting
 

@@ -115,6 +115,25 @@ buttons are at least 44 pt tall, the minimum is part of the button label so the 
 tappable, and text from the server or host profile is rendered verbatim. Cancel while connecting (or
 at the host key prompt) disconnects; Cancel while reconnecting ends the reconnect loop.
 
+### Window tab strip
+
+Shown above the terminal while the sidebar is collapsed and a tmux topology exists. From the
+leading edge: the session menu (`window-tab-session-menu`, spoken "Session: {name}", symbol
+`rectangle.stack`), one tab per window of the viewed session (`window-tab-{id}`, value exactly
+`active` or empty, label `{index}: {name}[, zoomed][, {badge}]`) and a new-window button
+(`window-tab-new`). The strip itself is `window-tab-strip`.
+
+- Tabs and both buttons are at least 44 pt; the minimum and the content shape belong to the button
+  label so the whole area is tappable. The strip has no fixed height: paddings and spacing scale
+  with Dynamic Type.
+- The session menu lists the host's sessions from the topology, marks the viewed one and switches
+  with the same action as the sidebar's **Switch to Session**; it also offers **New Window** in the
+  viewed session.
+- A tab's context menu is the sidebar's window menu (`TmuxWindowMenu`: Rename, New Window, Split,
+  Close; closing asks first); the rename alert is shared too (`windowRenameAlert`).
+- Badges keep their symbol, and zoom and badge are part of the spoken label, so nothing is
+  colour-only. The rows come from `TabStripModel` (pure, tested in `ShuaiApp`).
+
 ### Status indicator
 
 Each status has its own symbol and label, so state never relies on colour alone:
@@ -147,7 +166,39 @@ switcher and the AI-integration sheet. Opening a sheet resigns the terminal firs
 Keys is not a second sheet. Inside the host editor ("Generate a key" while the library is empty, `editor-open-keys`) and Settings
 ("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
 with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
-request (toolbar, the connection card's Open keys) presents Keys as its own sheet with Done.
+request (the app menu's Keys…, the connection card's Open keys) presents Keys as its own sheet with Done.
+
+## Toolbar and menus
+
+The sidebar uses the system bars (no custom floating buttons):
+
+- **Top.** The system sidebar toggle, the title "shuai" (`navigationTitle`) and one trailing item,
+  Quick Switcher (`quick-switcher-button`, magnifying glass).
+- **Bottom bar** (`.bottomBar` toolbar on the sidebar column): New Host with a plus icon and text
+  (`add-host-button`, 44 pt tall) leading, Settings (`settings-button`, gear, spoken "Settings")
+  trailing, with a flexible space between them. At accessibility text sizes New Host is icon-only and
+  keeps the accessibility label "Add Host". Settings opens the Settings sheet directly; there is no
+  menu.
+- **Keys** is not in the sidebar. It is reached through Settings > SSH > Keys, the app menu's Keys…,
+  the host editor's Open/Generate a key and the connection card's Open keys.
+
+All items go through `AppModel.request`, so they obey the modal rules above. Trade-off: while the
+software keyboard is up (the terminal is focused) it covers the sidebar's bottom bar. Hardware
+keyboard users use ⌘N, ⌘, and the menu bar; with the software keyboard, dismiss it (or tap a sidebar
+row) to reach the bar.
+
+The menu bar mirrors the same actions and the keyboard shortcuts for discoverability:
+
+- App menu: Settings… (⌘,) and Keys… (no chord). File: New Host (⌘N). Go: Quick Switcher, Next
+  Agent Needing Attention.
+- A **tmux** menu lists New Window, Close Window, Previous/Next Window, Split Right/Down, Zoom Pane
+  and Window 1-9 (`TmuxMenuState`, derived from `ShortcutMap`). Items call
+  `AppModel.handleShortcut` for the selected host and are disabled unless that host's tmux is live
+  or polling. The items carry no keyboard shortcut of their own: the terminal's priority key commands
+  own the chords and tmux commands are not idempotent, so a second delivery path could run an
+  action twice.
+- New Host, Settings…, Keys… and Quick Switcher are disabled while a modal that cannot be replaced
+  is open (`ModalRouter.canPresent`).
 
 ## Editor
 
@@ -183,6 +234,39 @@ the save progress in `@State`, because the sheet content is rebuilt whenever the
   otherwise Ask each time. A key generated from the pushed Keys page is selected when the method is
   SSH key and no key was chosen. "Generate a key" appears under the SSH key method when the library
   is empty.
+
+## Sidebar
+
+`HostListView` renders `SidebarModel.rows` (pure, in `ShuaiApp/Sidebar/`): one `List(selection:)`
+of host, loading, session, window and pane rows. Only host rows are tagged for selection; tmux rows
+are plain buttons. Indentation is `row.depth` times a
+`@ScaledMetric` step, capped at two levels at accessibility text sizes.
+
+- **Current location.** Hosts use the list's system selection. The one current location in the tmux
+  tree is secondary: the viewed session row has a light accent tint, a filled icon and `.isSelected`;
+  the active window and its active pane get the accent colour, weight, `.isSelected` and the
+  accessibility value `active` only inside the viewed session (`isCurrent` on `WindowRowModel` and
+  `PaneRowModel`). Other sessions' active windows look like any other window, however many sessions
+  are expanded.
+- **Defaults.** Hosts and the viewed session are expanded, other sessions collapsed. Collapsing
+  never changes selection, and an agent needing attention never expands anything.
+- **Persistence.** `SidebarExpansionStore` keeps only the exceptions to the defaults, keyed by host
+  UUID and session name (never tmux `$N`/`@N`/`%N` ids, which are reused after a server restart), in
+  UserDefaults, capped at 256 entries. Deleting a host forgets its entries; launch prunes entries of
+  hosts that no longer exist. UI tests use an isolated suite per launch.
+- **Host row.** One element (`host-row-<name>`) holds status symbol, name and target, so its tap
+  and long-press area is at least 44 pt tall; its label comes from the model. Beside it: the host
+  aggregate badge (`host-aggregate-badge`, the most urgent pane badge, visible while collapsed), the
+  waiting count (hand symbol plus number) and a 44 x 44 chevron (`host-toggle-<name>`,
+  `tmux-session-toggle-<name>` for sessions) that is also exposed as an Expand/Collapse
+  accessibility action.
+- **Menus.** The host menu keeps Edit and Delete and groups the AI items in an "AI integration"
+  section; while the host is not connected they are disabled and say "Connect to this host first".
+  Session rows offer Switch to Session and New Window; window and pane menus live in the shared
+  `TmuxWindowMenu`/`TmuxPaneMenu`. New Window always targets the row's own session
+  (`TmuxActions.newWindow(inSession:)`, which accepts only a known `$N` id).
+- **Accessibility text.** Window rows keep the accessibility value `active`/empty (`active` only for the current window); the richer text
+  (index, name, pane count, zoom, badge) is the label. The pane dot is decorative and hidden.
 
 ## Accessibility
 

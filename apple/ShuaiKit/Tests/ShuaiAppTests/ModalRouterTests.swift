@@ -58,3 +58,31 @@ struct ModalRouterTests {
         #expect(r.request(.keys) == .presented)
     }
 }
+
+@Suite("ModalRouter menu availability")
+struct ModalRouterAvailabilityTests {
+    @Test func canPresentWhenNothingOpenOrQuickSwitcher() {
+        var r = ModalRouter()
+        #expect(r.canPresent(.settings))
+        _ = r.request(.quickSwitcher)
+        #expect(r.canPresent(.keys))
+        #expect(!r.canPresent(.quickSwitcher))
+        #expect(!r.canPresent(.keys, currentIsDirty: true))
+    }
+
+    @Test func cannotPresentOverNonReplaceableModal() {
+        var r = ModalRouter()
+        _ = r.request(.settings)
+        #expect(!r.canPresent(.newHost))
+        #expect(!r.canPresent(.keys))
+    }
+
+    @Test func canPresentMatchesRequest() {
+        for open: ModalRoute? in [nil, .settings, .quickSwitcher, .keys] {
+            var a = ModalRouter()
+            if let open { _ = a.request(open) }
+            let predicted = a.canPresent(.newHost)
+            #expect(predicted == (a.request(.newHost) != .ignored))
+        }
+    }
+}

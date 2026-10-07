@@ -17,6 +17,7 @@ telemetry. Agent status travels inside the same SSH connection (an extra exec ch
 | Trusted host keys | OpenSSH `known_hosts` file in Application Support |
 | ntfy topic and token | Keychain; the topic is masked on screen until you tap Show |
 | Preferences | UserDefaults (no secrets) |
+| Sidebar expansion | UserDefaults: only the hosts and sessions you collapsed or expanded against the default, as host UUID and session name. No other tmux data is stored |
 
 Deleting the app deletes all of it, including the keys.
 

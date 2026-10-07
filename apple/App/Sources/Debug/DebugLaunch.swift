@@ -14,6 +14,7 @@ import ShuaiTerminal
 ///   views without a server (a fixed `ConnectionPresentation`; the session controller is untouched
 ///   and does not connect).
 /// - `-debugSendAfterConnect <text>`: types `text` + Enter shortly after the session attaches.
+/// - `-debugSidebarCollapsed`: starts with the sidebar collapsed (the window tab strip is shown).
 /// - `-debugNoticeTimeScale <n>`: notices last `n` times longer (default 1), so UI tests on a slow
 ///   runner can still find a transient notice.
 enum DebugLaunch {
@@ -70,6 +71,11 @@ enum DebugLaunch {
     @MainActor
     static func applyIfRequested(model: AppModel) async {
         applyTmuxFixtureIfRequested(model: model)
+        if args.contains("-debugSidebarCollapsed") {
+            // After the first layout: the split view resets its visibility while it first appears.
+            try? await Task.sleep(for: .milliseconds(500))
+            model.columnVisibility = .detailOnly
+        }
         guard let path = value(of: "-debugHostFile") else { return }
         do {
             let file = try JSONDecoder().decode(HostFile.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
