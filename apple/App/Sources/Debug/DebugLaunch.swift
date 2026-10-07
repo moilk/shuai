@@ -15,6 +15,7 @@ import ShuaiTerminal
 ///   and does not connect).
 /// - `-debugSendAfterConnect <text>`: types `text` + Enter shortly after the session attaches.
 /// - `-debugSidebarCollapsed`: starts with the sidebar collapsed (the window tab strip is shown).
+/// - `-debugSingleWindow`: with the tmux fixture, a topology of one session with one window.
 /// - `-debugNoticeTimeScale <n>`: notices last `n` times longer (default 1), so UI tests on a slow
 ///   runner can still find a transient notice.
 enum DebugLaunch {
@@ -118,7 +119,12 @@ enum DebugLaunch {
         let other = FfiTmuxSession(id: "$1", name: "scratch", attached: 0, windows: [
             FfiTmuxWindow(id: "@5", index: 0, name: "logs", active: true, flags: "*", panes: [pane("%5", 0, true, "tail")]),
         ])
-        model.sessions.controller(for: profile).tmux.debugSeed(topology: FfiTopology(sessions: [main, other]), viewedSessionID: "$0")
+        let single = args.contains("-debugSingleWindow")
+        let only = FfiTmuxSession(id: "$0", name: "main", attached: 1, windows: [
+            FfiTmuxWindow(id: "@1", index: 1, name: "claude", active: true, flags: "*", panes: [pane("%1", 0, true, "claude")]),
+        ])
+        model.sessions.controller(for: profile).tmux.debugSeed(
+            topology: FfiTopology(sessions: single ? [only] : [main, other]), viewedSessionID: "$0")
         model.selection = profile.id
         if agentFixture {
             let remote = FixtureAgentRemote()

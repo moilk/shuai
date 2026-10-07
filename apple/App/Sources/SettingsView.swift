@@ -17,10 +17,15 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: settings.theme) { _, _ in model.applyTheme() }
+                    Picker("Window tabs", selection: $settings.tabStrip) {
+                        Text("Automatic").tag(TabStripMode.automatic)
+                        Text("Always").tag(TabStripMode.always)
+                    }
+                    .pickerStyle(.segmented)
                     Stepper(
                         "Font size: \(settings.fontSize) pt", value: $settings.fontSize,
                         in: FontSizeModel.range)
-                    Text("Applies to new sessions; pinch or ⌘+ / ⌘− zoom an open one.")
+                    Text("Window tabs show while the sidebar is collapsed; Automatic hides them for a single window in a single session. Font size applies to new sessions; pinch or ⌘+ / ⌘− zoom an open one.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Keyboard") {
