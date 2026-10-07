@@ -172,7 +172,13 @@ public final class TmuxActions {
 
     public func confirmPending() async throws {
         guard let c = pendingConfirmation else { return }
-        pendingConfirmation = nil
+        try await confirm(c)
+    }
+
+    /// Runs a confirmation the caller captured. A dialog's dismissal clears `pendingConfirmation`
+    /// in the same turn as its button action, so the button captures the value synchronously.
+    public func confirm(_ c: Confirmation) async throws {
+        if pendingConfirmation == c { pendingConfirmation = nil }
         switch c.kind {
         case .killWindow(let id): try await monitor.run(tmuxKillWindow(windowId: id))
         case .killPane(let id): try await monitor.run(tmuxKillPane(paneId: id))
