@@ -1,10 +1,12 @@
 import Foundation
 import Testing
 
+@testable import ShuaiPlatform
 @testable import ShuaiApp
 
 @Suite struct HostConnectionMenuTests {
-    private let hostKey = HostKeyChallenge(host: "h", port: 22, algorithm: "ssh-ed25519", fingerprint: "SHA256:x", previous: nil)
+    private let hostKey = HostKeyChallenge(
+        host: "h", port: 22, publicKeyLine: "ssh-ed25519 AAAA", fingerprint: "SHA256:x", kind: .unknown)
 
     @Test func hostsWithoutALiveSessionOfferConnect() {
         #expect(HostConnectionMenu.item(for: nil) == .connect)

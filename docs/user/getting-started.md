@@ -91,8 +91,9 @@ the terminal start expanded, other sessions collapsed; collapsing never changes 
 is selected, and the app never expands a row by itself. Your choices are remembered per host and
 session name. The session you are viewing is tinted, and only its active window and pane are
 highlighted. A session's context menu offers **Switch to Session** and **New Window** (the new
-window is created in that session, not in the one you are viewing). A host's context menu groups
-its AI items under **AI integration**; they are disabled with "Connect to this host first" until
+window is created in that session, not in the one you are viewing). A host's context menu has **Connect** or
+**Disconnect** (Disconnect also cancels a connect or reconnect in progress; it works without the
+navigation bar, for example in full screen) and groups its AI items under **AI integration**; they are disabled with "Connect to this host first" until
 the host is connected.
 
 With the sidebar collapsed, a window tab strip appears above the terminal: one tab per window of the
