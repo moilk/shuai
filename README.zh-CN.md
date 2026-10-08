@@ -48,7 +48,8 @@ shuai 是一个带原生 tmux 导航的真终端，并且知道服务器上各�
 - tmux：自动 `tmux new -A -s <name>`，无 tmux 时回落到普通 shell；侧栏实时显示会话 / 窗口 / pane 树；
   ⌘K 快速切换器与硬件快捷键。
 - 终端：内联输入法、CJK 与 emoji、鼠标、bracketed paste、OSC 52（需确认）与 OSC 9/777、捏合与 ⌘± 缩放、
-  Option 当 Alt、深浅主题。
+  Option 当 Alt、主题（默认 Monokai Pro Ristretto，另有 Dark、Light，整个 App 随主题配色）、
+  全屏模式（⌃⌘F）以及只有一个会话时自动隐藏的窗口标签。
 - 键盘栏与 Claude 条（Yes = `1`、Always = `2`、No = Esc、⇧Tab、中断），接入硬件键盘时自动切换为浮动样式。
 - 一键 **Enable AI integration**：通过 SSH 安装 `shuai-agent`、Claude Code 插件和 tmux 配置块，并可完整卸载。
 - 每个 pane 的 agent 徽章；⌘⇧A 跳到下一个需要你处理的 agent。
