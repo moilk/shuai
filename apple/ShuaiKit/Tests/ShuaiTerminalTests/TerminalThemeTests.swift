@@ -8,6 +8,15 @@ struct TerminalThemeTests {
         #expect(TerminalRGB(hex: 0xABCDEF).hexString == "#ABCDEF")
     }
 
+    @Test func blendingMovesLinearlyBetweenTwoColors() {
+        let black = TerminalRGB(hex: 0x000000), white = TerminalRGB(hex: 0xFFFFFF)
+        #expect(black.blended(with: white, fraction: 0) == black)
+        #expect(black.blended(with: white, fraction: 1) == white)
+        #expect(black.blended(with: white, fraction: 0.5) == TerminalRGB(hex: 0x808080))
+        #expect(black.blended(with: white, fraction: 2) == white, "fraction is clamped")
+        #expect(black.blended(with: white, fraction: -1) == black, "fraction is clamped")
+    }
+
     @Test func wcagContrastReferenceValues() {
         let black = TerminalRGB(hex: 0x000000), white = TerminalRGB(hex: 0xFFFFFF)
         #expect(abs(TerminalRGB.contrastRatio(black, white) - 21) < 0.001)
