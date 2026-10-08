@@ -37,6 +37,7 @@ struct KeysView: View {
                 KeyRow(item: item, onDelete: { pendingDelete = item })
             }
         }
+        .chromeForm()
         .navigationTitle("Keys")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -81,6 +82,7 @@ struct KeysView: View {
             PasteKeySheet { text, name in
                 beginImport(data: Data(text.utf8), name: name)
             }
+            .presentationBackground(.chromeSurface)
         }
         .alert("Passphrase required", isPresented: $askPassphrase) {
             SecureField("Passphrase", text: $passphrase)
@@ -168,7 +170,7 @@ private struct KeyRow: View {
                 Text(item.name).font(.headline)
                 Text("\(item.algorithm)  \(item.fingerprint)")
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.chromeSecondary)
                     .lineLimit(1).truncationMode(.middle)
             }
         }
@@ -193,6 +195,7 @@ private struct PasteKeySheet: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
+            .chromeForm()
             .navigationTitle("Paste key")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

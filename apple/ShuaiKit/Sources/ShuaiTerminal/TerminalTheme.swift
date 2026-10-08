@@ -20,6 +20,13 @@ public struct TerminalRGB: Sendable, Hashable {
     /// `#RRGGBB` (what Ghostty's config accepts).
     public var hexString: String { String(format: "#%02X%02X%02X", r, g, b) }
 
+    /// This color moved `fraction` (clamped to 0...1) of the way to `other`.
+    public func blended(with other: TerminalRGB, fraction: Double) -> TerminalRGB {
+        let t = min(max(fraction, 0), 1)
+        func mix(_ a: UInt8, _ b: UInt8) -> UInt8 { UInt8((Double(a) + (Double(b) - Double(a)) * t).rounded()) }
+        return TerminalRGB(r: mix(r, other.r), g: mix(g, other.g), b: mix(b, other.b))
+    }
+
     /// WCAG relative luminance (0 = black, 1 = white).
     public var relativeLuminance: Double {
         func lin(_ v: UInt8) -> Double {

@@ -21,6 +21,20 @@ public final class KeyboardAccessoryBar: UIView {
     public var onModifiersChanged: ((AccessoryBarModel) -> Void)?
 
     private var buttons: [AccessoryButton: UIButton] = [:]
+    /// Colors come from the terminal theme so the bar matches the rest of the app.
+    public private(set) var theme: TerminalTheme = .default
+
+    /// Re-colors the bar for `theme`.
+    public func apply(theme: TerminalTheme) {
+        guard theme != self.theme else { return }
+        self.theme = theme
+        for sub in subviews { sub.removeFromSuperview() }
+        buttons = [:]
+        build()
+    }
+
+    private var keyFill: UIColor { UIColor(theme.background.blended(with: theme.foreground, fraction: 0.16)) }
+    private var keyText: UIColor { UIColor(theme.foreground) }
     private var repeatTimer: Timer?
     private var repeatDelayTask: Task<Void, Never>?
 
@@ -120,10 +134,10 @@ public final class KeyboardAccessoryBar: UIView {
     // MARK: - Build
 
     private func build() {
-        backgroundColor = style == .docked ? .secondarySystemBackground : .clear
+        backgroundColor = style == .docked ? UIColor(theme.background.blended(with: theme.foreground, fraction: 0.08)) : .clear
         switch style {
         case .docked:
-            let top = row(AccessoryButton.claudeStrip, tint: .systemPurple)
+            let top = row(AccessoryButton.claudeStrip, tint: UIColor(theme.palette[5]))
             let bottom = row(AccessoryButton.standardRow, tint: nil)
             let stack = UIStackView(arrangedSubviews: [top, bottom])
             stack.axis = .vertical
@@ -138,7 +152,7 @@ public final class KeyboardAccessoryBar: UIView {
                 stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
             ])
         case .compactFloating:
-            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+            let blur = UIVisualEffectView(effect: UIBlurEffect(style: theme.isDark ? .systemThinMaterialDark : .systemThinMaterialLight))
             blur.layer.cornerRadius = 22
             blur.clipsToBounds = true
             blur.translatesAutoresizingMaskIntoConstraints = false
@@ -193,7 +207,8 @@ public final class KeyboardAccessoryBar: UIView {
         config.title = item.title
         config.cornerStyle = .medium
         config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10)
-        if let tint { config.baseForegroundColor = tint }
+        config.baseBackgroundColor = keyFill
+        config.baseForegroundColor = tint ?? keyText
         config.titleTextAttributesTransformer = fontTransformer()
         let button = UIButton(configuration: config)
         button.accessibilityLabel = item.spokenLabel
@@ -240,17 +255,21 @@ public final class KeyboardAccessoryBar: UIView {
             switch state {
             case .off:
                 config = UIButton.Configuration.gray()
+                config.baseBackgroundColor = keyFill
+                config.baseForegroundColor = keyText
                 config.title = item.title
             case .oneShot:
                 config = UIButton.Configuration.filled()
-                config.baseBackgroundColor = .systemBlue
+                config.baseBackgroundColor = UIColor(theme.palette[4])
+                config.baseForegroundColor = UIColor(theme.background)
                 // Not colour alone: a border marks the armed state.
-                config.background.strokeColor = .label
+                config.background.strokeColor = UIColor(theme.foreground)
                 config.background.strokeWidth = 2
                 config.title = item.title
             case .locked:
                 config = UIButton.Configuration.filled()
-                config.baseBackgroundColor = .systemOrange
+                config.baseBackgroundColor = UIColor(theme.palette[3])
+                config.baseForegroundColor = UIColor(theme.background)
                 config.title = item.title + " 🔒"
             }
             config.cornerStyle = .medium
@@ -264,6 +283,12 @@ public final class KeyboardAccessoryBar: UIView {
                 button.accessibilityTraits.insert(.selected)
             }
         }
+    }
+}
+
+extension UIColor {
+    convenience init(_ rgb: TerminalRGB) {
+        self.init(red: CGFloat(rgb.r) / 255, green: CGFloat(rgb.g) / 255, blue: CGFloat(rgb.b) / 255, alpha: 1)
     }
 }
 #endif

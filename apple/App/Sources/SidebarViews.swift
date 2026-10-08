@@ -24,9 +24,8 @@ struct HostListView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(Color(model.settings.theme.chrome.surface))
-        .foregroundStyle(Color(model.settings.theme.chrome.text))
-        .toolbarBackground(Color(model.settings.theme.chrome.surface), for: .navigationBar, .bottomBar)
+        .background(.chromeSurface)
+        .toolbarBackground(.chromeSurface, for: .navigationBar, .bottomBar)
         .overlay {
             if model.hosts.hosts.isEmpty {
                 ContentUnavailableView {
@@ -255,7 +254,7 @@ private struct SidebarChevron: View {
         Button(action: action) {
             Image(systemName: "chevron.right")
                 .rotationEffect(.degrees(expanded ? 90 : 0))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.chromeSecondary)
                 .frame(minWidth: minTarget, minHeight: minTarget)
                 .contentShape(Rectangle())
         }
@@ -278,7 +277,7 @@ private struct SidebarHostRow: View {
                     Image(systemName: row.status.symbol).foregroundStyle(row.status.tint)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.name).font(.headline)
-                        Text(row.target).font(.caption).foregroundStyle(.secondary)
+                        Text(row.target).font(.caption).foregroundStyle(.chromeSecondary)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: minTarget, alignment: .leading)
@@ -309,9 +308,9 @@ private struct SidebarHostRow: View {
                     Text("\(row.waiting)")
                 }
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.black)
+                .foregroundStyle(.chromeSurface)
                 .padding(.horizontal, 7).padding(.vertical, 2)
-                .background(Color.orange, in: Capsule())
+                .background(.chromeWarning, in: Capsule())
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(row.waiting) waiting for you")
                 .accessibilityIdentifier("host-waiting-count")
@@ -357,7 +356,7 @@ private struct SidebarSessionRow: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: viewed ? "rectangle.stack.fill" : "rectangle.stack")
-                        .foregroundStyle(viewed ? Color.accentColor : .secondary)
+                        .foregroundStyle(viewed ? AnyShapeStyle(.chromeAccent) : AnyShapeStyle(.chromeSecondary))
                     Text(row.name).font(.subheadline.weight(.semibold))
                     Spacer()
                     BadgeView(badge: row.badge)
@@ -394,17 +393,17 @@ private struct SidebarWindowRow: View {
             model.runTmux(host: row.host) { try await $0.selectWindow(window.id) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "macwindow").foregroundStyle(row.isCurrent ? Color.accentColor : .secondary)
+                Image(systemName: "macwindow").foregroundStyle(row.isCurrent ? AnyShapeStyle(.chromeAccent) : AnyShapeStyle(.chromeSecondary))
                 Text(window.title)
                     .font(.subheadline)
                     .fontWeight(row.isCurrent ? .semibold : .regular)
                     .lineLimit(1)
                 if window.zoomed {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2).foregroundStyle(.secondary)
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2).foregroundStyle(.chromeSecondary)
                 }
                 Spacer()
                 if window.paneCount > 1 {
-                    Text("\(window.paneCount)").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(window.paneCount)").font(.caption2).foregroundStyle(.chromeSecondary)
                 }
                 BadgeView(badge: window.badge)
             }
@@ -431,7 +430,7 @@ private struct SidebarPaneRow: View {
                 Image(systemName: row.isCurrent ? "circle.fill" : "circle")
                     .font(.caption2)
                     .imageScale(.small)
-                    .foregroundStyle(row.isCurrent ? Color.accentColor : .secondary)
+                    .foregroundStyle(row.isCurrent ? AnyShapeStyle(.chromeAccent) : AnyShapeStyle(.chromeSecondary))
                     .accessibilityHidden(true)
                 Text(pane.title).font(.caption).lineLimit(1)
                 Spacer()

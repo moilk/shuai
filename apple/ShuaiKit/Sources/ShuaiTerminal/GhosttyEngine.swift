@@ -75,6 +75,8 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
         view = TerminalView(frame: CGRect(x: 0, y: 0, width: 900, height: 700))
         view.altSendsEscape = altSendsEscape
         view.overrideUserInterfaceStyle = theme.isDark ? .dark : .light
+        view.dockedAccessoryBar.apply(theme: theme)
+        view.floatingAccessoryBar.apply(theme: theme)
         super.init()
         debouncer = ResizeDebouncer(delay: resizeDebounce) { [weak self] in self?.onResize?($0) }
         box.handler = { [weak self] data in self?.onInput?(data) }
@@ -105,6 +107,8 @@ public final class GhosttyEngine: NSObject, TerminalEngine {
         guard theme != self.theme else { return }
         self.theme = theme
         view.overrideUserInterfaceStyle = theme.isDark ? .dark : .light
+        view.dockedAccessoryBar.apply(theme: theme)
+        view.floatingAccessoryBar.apply(theme: theme)
         controller.setTheme(theme.ghostty)
     }
 

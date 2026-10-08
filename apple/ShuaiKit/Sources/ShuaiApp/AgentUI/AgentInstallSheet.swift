@@ -25,7 +25,7 @@ public struct AgentInstallSheet: View {
                 case .idle, .inspecting:
                     Section { HStack { ProgressView(); Text("Inspecting \(hostName)...") } }
                 case .failed(let message):
-                    Section { Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+                    Section { Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.chromeError) }
                 case .ready:
                     planSection(title: model.mode == .install ? "Planned changes" : "Will be removed", model.preview.map { ($0.title, $0.status, $0.log) })
                 case .installing, .finished:
@@ -33,6 +33,7 @@ public struct AgentInstallSheet: View {
                 }
                 if let r = model.report { reportSections(r) }
             }
+            .chromeForm()
             .navigationTitle(model.mode == .install ? "Enable AI integration" : "Remove AI integration")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -86,7 +87,7 @@ public struct AgentInstallSheet: View {
         // Long values (paths) are shortened in the middle only while they fit beside the title;
         // at accessibility sizes they wrap in full.
         LabeledContent(title) {
-            Text(value).foregroundStyle(.secondary)
+            Text(value).foregroundStyle(.chromeSecondary)
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 .truncationMode(.middle)
         }
@@ -98,7 +99,7 @@ public struct AgentInstallSheet: View {
                 VStack(alignment: .leading, spacing: lineSpacing) {
                     Text(s.0)
                     ForEach(Array(s.2.enumerated()), id: \.offset) { _, line in
-                        Text(line).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                        Text(line).font(.system(.caption, design: .monospaced)).foregroundStyle(.chromeSecondary)
                     }
                 }
             }
@@ -114,9 +115,9 @@ public struct AgentInstallSheet: View {
                         VStack(alignment: .leading) {
                             Text(s.title)
                             ForEach(Array(s.log.enumerated()), id: \.offset) { _, l in
-                                Text(l).font(.caption).foregroundStyle(.secondary)
+                                Text(l).font(.caption).foregroundStyle(.chromeSecondary)
                             }
-                            if case .failed(let m) = s.status { Text(m).font(.caption).foregroundStyle(.red) }
+                            if case .failed(let m) = s.status { Text(m).font(.caption).foregroundStyle(.chromeError) }
                         }
                     }
                     .accessibilityElement(children: .combine)
@@ -139,12 +140,12 @@ public struct AgentInstallSheet: View {
 
     @ViewBuilder private func statusSymbol(_ status: StepStatus) -> some View {
         switch status {
-        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .failed: Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
-        case .needsDecision: Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
-        case .skipped: Image(systemName: "minus.circle").foregroundStyle(.secondary)
+        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.chromeSuccess)
+        case .failed: Image(systemName: "xmark.octagon.fill").foregroundStyle(.chromeError)
+        case .needsDecision: Image(systemName: "questionmark.circle.fill").foregroundStyle(.chromeWarning)
+        case .skipped: Image(systemName: "minus.circle").foregroundStyle(.chromeSecondary)
         case .running: ProgressView().controlSize(.small)
-        case .pending, .wouldRun: Image(systemName: "circle").foregroundStyle(.secondary)
+        case .pending, .wouldRun: Image(systemName: "circle").foregroundStyle(.chromeSecondary)
         }
     }
 
@@ -155,7 +156,7 @@ public struct AgentInstallSheet: View {
                     VStack(alignment: .leading, spacing: blockSpacing) {
                         Text("Codex already runs a notify program:")
                         Text(c.existing).font(.system(.caption, design: .monospaced))
-                        Text("Replacing it keeps a backup (config.toml.shuai-bak).").font(.caption).foregroundStyle(.secondary)
+                        Text("Replacing it keeps a backup (config.toml.shuai-bak).").font(.caption).foregroundStyle(.chromeSecondary)
                     }
                 }
             }

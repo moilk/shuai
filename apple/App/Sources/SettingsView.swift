@@ -27,7 +27,7 @@ struct SettingsView: View {
                         "Font size: \(settings.fontSize) pt", value: $settings.fontSize,
                         in: FontSizeModel.range)
                     Text("Window tabs show while the sidebar is collapsed; Automatic hides them for a single window in a single session. Font size applies to new sessions; pinch or ⌘+ / ⌘− zoom an open one.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.footnote).foregroundStyle(.chromeSecondary)
                 }
                 Section("Keyboard") {
                     Picker("Accessory bar", selection: $settings.accessoryBar) {
@@ -42,7 +42,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("hardware-keyboard-bar-picker")
                     Toggle("Option key sends Alt (Esc prefix)", isOn: $settings.optionAsAlt)
                     Text("A hardware keyboard uses the floating bar; Hide removes it while no software keyboard is up. Permission cards then answer with ⌘↩ (Allow) and ⌘⌫ (Deny). Option-as-Alt applies to new sessions.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.footnote).foregroundStyle(.chromeSecondary)
                 }
                 Section("SSH") {
                     NavigationLink(value: SettingsPage.keys) {
@@ -70,6 +70,7 @@ struct SettingsView: View {
                     LabeledContent("Terminal engine", value: "libghostty")
                 }
             }
+            .chromeForm()
             .navigationDestination(for: SettingsPage.self) { page in
                 switch page {
                 case .keys: KeysView(placement: .pushed)
