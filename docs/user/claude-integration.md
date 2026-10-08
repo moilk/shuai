@@ -60,7 +60,7 @@ urgent badge of their panes:
 | Symbol | Meaning | Priority |
 |---|---|---|
 | raised hand | needs approval | highest |
-| question bubble | needs input | |
+| speech bubble with dots | needs input | |
 | warning triangle | failed | |
 | gear | working | |
 | check mark | done (until seen) | |
