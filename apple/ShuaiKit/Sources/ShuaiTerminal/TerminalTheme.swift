@@ -20,6 +20,13 @@ public struct TerminalRGB: Sendable, Hashable {
     /// `#RRGGBB` (what Ghostty's config accepts).
     public var hexString: String { String(format: "#%02X%02X%02X", r, g, b) }
 
+    /// This color moved `fraction` (clamped to 0...1) of the way to `other`.
+    public func blended(with other: TerminalRGB, fraction: Double) -> TerminalRGB {
+        let t = min(max(fraction, 0), 1)
+        func mix(_ a: UInt8, _ b: UInt8) -> UInt8 { UInt8((Double(a) + (Double(b) - Double(a)) * t).rounded()) }
+        return TerminalRGB(r: mix(r, other.r), g: mix(g, other.g), b: mix(b, other.b))
+    }
+
     /// WCAG relative luminance (0 = black, 1 = white).
     public var relativeLuminance: Double {
         func lin(_ v: UInt8) -> Double {
@@ -37,7 +44,7 @@ public struct TerminalRGB: Sendable, Hashable {
 }
 
 /// Terminal colors. The terminal never follows the system appearance: the app picks a theme
-/// (default `claudeDark`, user-selectable later) and the engine applies it as both the light and the
+/// (default Monokai Pro Ristretto, user-selectable) and the engine applies it as both the light and the
 /// dark Ghostty variant.
 public struct TerminalTheme: Sendable, Hashable, Identifiable {
     public var name: String
@@ -65,8 +72,20 @@ public struct TerminalTheme: Sendable, Hashable, Identifiable {
         self.palette = palette
     }
 
-    public static let `default`: TerminalTheme = .claudeDark
-    public static let builtIn: [TerminalTheme] = [.claudeDark, .claudeLight]
+    public static let `default`: TerminalTheme = .monokaiProRistretto
+    public static let builtIn: [TerminalTheme] = [.monokaiProRistretto, .claudeDark, .claudeLight]
+
+    /// Monokai Pro Ristretto as in the Ghostty theme at github.com/Kirlovon/monokai-ghostty; bright black
+    /// is lifted from #72696A so Claude Code's dim grey keeps a contrast of 3 or more.
+    public static let monokaiProRistretto = TerminalTheme(
+        name: "Monokai Pro Ristretto", isDark: true,
+        foreground: TerminalRGB(hex: 0xFFF1F3), background: TerminalRGB(hex: 0x2C2525),
+        cursor: TerminalRGB(hex: 0xC3B7B8), selection: TerminalRGB(hex: 0x5B5353),
+        palette: [
+            0x2C2525, 0xFD6883, 0xADDA78, 0xF9CC6C, 0xF38D70, 0xA8A9EB, 0x85DACC, 0xFFF1F3,
+            0x7A7172, 0xFD6883, 0xADDA78, 0xF9CC6C, 0xF38D70, 0xA8A9EB, 0x85DACC, 0xFFF1F3,
+        ].map(TerminalRGB.init(hex:))
+    )
 
     /// Catppuccin Mocha derived; bright black lifted to overlay1 so Claude Code's dim grey stays legible.
     public static let claudeDark = TerminalTheme(

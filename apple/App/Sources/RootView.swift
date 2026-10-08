@@ -17,11 +17,14 @@ struct RootView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
+        .chromeRoot(model.settings.theme.chrome)
         #if DEBUG
         .overlay(alignment: .bottomLeading) { if DebugLaunch.agentFixture { FixtureLogProbe() } }
         #endif
         .sheet(item: Binding(get: { model.modal }, set: { if $0 == nil { model.dismissModal() } })) { route in
             modalContent(route)
+                .chromeRoot(model.settings.theme.chrome)
+                .presentationBackground(.chromeSurface)
         }
         .overlay(alignment: .bottom) { NotificationOptInBanner() }
         .overlay(alignment: .top) {
@@ -101,7 +104,7 @@ struct NotificationOptInBanner: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Get notified in the background?", systemImage: "bell.badge").font(.headline)
                 Text("shuai can send a notification when Claude needs your approval or finishes while the app is in the background. iOS suspends apps soon after you leave them, so this is best effort.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.footnote).foregroundStyle(.chromeSecondary)
                 HStack {
                     Button("Not now") { model.declineNotifications() }
                         .accessibilityIdentifier("notify-not-now")
@@ -113,7 +116,7 @@ struct NotificationOptInBanner: View {
             }
             .padding(14)
             .frame(maxWidth: 460)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .chromeCard(cornerRadius: 14)
             .shadow(radius: 8, y: 2)
             .padding(.bottom, 24)
             .padding(.horizontal, 16)

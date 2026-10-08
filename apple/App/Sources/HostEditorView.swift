@@ -104,7 +104,7 @@ struct HostEditorView: View {
                 switch draft.authKind {
                 case .key:
                     if model.keys.items.isEmpty {
-                        Text("No keys yet.").foregroundStyle(.secondary).id(Self.keyRow)
+                        Text("No keys yet.").foregroundStyle(.chromeSecondary).id(Self.keyRow)
                         errorLabel(.key)
                         NavigationLink("Generate a key", value: EditorPage.keys)
                             .accessibilityIdentifier("editor-open-keys")
@@ -120,7 +120,7 @@ struct HostEditorView: View {
                     SecureField(editing ? "Password (leave empty to keep)" : "Password", text: $password)
                         .textContentType(.password)
                 case .ask:
-                    Text("You are asked for the password every time you connect.").font(.footnote).foregroundStyle(.secondary)
+                    Text("You are asked for the password every time you connect.").font(.footnote).foregroundStyle(.chromeSecondary)
                 }
             }
             Section {
@@ -137,6 +137,7 @@ struct HostEditorView: View {
             }
             if let saveError { Section { errorText(saveError) } }
         }
+        .chromeForm()
     }
 
     @ViewBuilder
@@ -159,7 +160,7 @@ struct HostEditorView: View {
     }
 
     private func errorText(_ s: String) -> some View {
-        Label(s, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red)
+        Label(s, systemImage: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.chromeError)
     }
 
     private func discard() {

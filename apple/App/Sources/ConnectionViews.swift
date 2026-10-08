@@ -5,13 +5,13 @@ import SwiftUI
 
 extension SessionState.Status {
     /// Colour reinforces the symbol shape; it never carries the state alone.
-    var tint: Color {
+    var tint: ChromeStyle {
         switch self {
-        case .off: .gray
-        case .busy: .yellow
-        case .connected: .green
-        case .warning: .orange
-        case .error: .red
+        case .off: .chromeSecondary
+        case .busy: .chromeAccent
+        case .connected: .chromeSuccess
+        case .warning: .chromeWarning
+        case .error: .chromeError
         }
     }
 }
@@ -64,7 +64,7 @@ struct ConnectionCard: View {
                 }
                 Text(verbatim: presentation.title).font(.headline).multilineTextAlignment(.center)
                 if let detail = presentation.detail(at: .now) {
-                    Text(verbatim: detail).font(.footnote).foregroundStyle(.secondary)
+                    Text(verbatim: detail).font(.footnote).foregroundStyle(.chromeSecondary)
                         .multilineTextAlignment(.center)
                 }
                 if !presentation.actions.isEmpty {
@@ -76,7 +76,7 @@ struct ConnectionCard: View {
             }
             .padding(cardPadding)
             .frame(maxWidth: 480)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .chromeCard(cornerRadius: 20)
             .padding()
         }
         .accessibilityElement(children: .contain)
@@ -119,7 +119,7 @@ struct ConnectionStrip: View {
             ConnectionActionButtons(actions: presentation.actions, perform: perform)
         }
         .padding(.horizontal, hPadding).padding(.vertical, vPadding)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .chromeCard(cornerRadius: 12)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(presentation.accessibilityIdentifier)
     }
@@ -137,7 +137,7 @@ struct ConnectionStrip: View {
 
     @ViewBuilder private func detailText(_ text: String?) -> some View {
         if let text {
-            Text(verbatim: text).font(.caption).foregroundStyle(.secondary)
+            Text(verbatim: text).font(.caption).foregroundStyle(.chromeSecondary)
         }
     }
 }
@@ -154,7 +154,7 @@ struct StatusIndicator: View {
                 .foregroundStyle(presentation.tone.tint)
             Image(systemName: "chevron.down")
                 .font(.caption2.weight(.bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.chromeSecondary)
         }
         .frame(minWidth: 36, minHeight: 36)
         .contentShape(Rectangle())

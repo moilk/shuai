@@ -22,7 +22,7 @@ struct NoticeStackView: View {
             if queue.hiddenCount > 0 {
                 Text(verbatim: "+\(queue.hiddenCount) more")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.chromeSecondary)
                     .accessibilityIdentifier("notice-more")
             }
         }
@@ -82,7 +82,7 @@ private struct NoticeRow: View {
         }
         .padding(padding)
         .frame(maxWidth: 520)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .chromeCard(cornerRadius: 14)
     }
 
     /// Icon, text and count are one accessibility element; the dismiss button stays separate.
@@ -97,7 +97,7 @@ private struct NoticeRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if notice.count > 1 {
-                Text(verbatim: "×\(notice.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(verbatim: "×\(notice.count)").font(.caption.monospacedDigit()).foregroundStyle(.chromeSecondary)
             }
         }
         .contentShape(Rectangle())

@@ -130,7 +130,7 @@ private let encryptedFingerprint = "SHA256:47h1jAX/1T8caTrbFBelxNaAongMQWqFfhiVZ
 
     @Test func defaultsAreSensible() {
         let s = AppSettings(defaults: defaults())
-        #expect(s.theme == .dark)
+        #expect(s.theme == .ristretto)
         #expect(s.fontSize == 14)
         #expect(s.accessoryBar == .docked)
         #expect(s.optionAsAlt)

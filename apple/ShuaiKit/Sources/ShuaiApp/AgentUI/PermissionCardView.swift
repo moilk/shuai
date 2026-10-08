@@ -48,18 +48,21 @@ public struct PermissionCardView: View {
                 }
             }
             if let contextLabel {
-                Text(verbatim: contextLabel).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
+                Text(verbatim: contextLabel).font(.caption.weight(.semibold)).foregroundStyle(.chromeSecondary).lineLimit(1)
                     .accessibilityIdentifier("permission-context")
             }
             if let cwd = item.session.cwd {
-                Text(verbatim: cwd).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                Text(verbatim: cwd).font(.caption).foregroundStyle(.chromeSecondary).lineLimit(1).truncationMode(.head)
             }
             previewBody
             TextField("Message to Claude (optional)", text: $message)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(.chromeSurface, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.chromeSeparator, lineWidth: 1))
                 .focused($typing)
                 .disabled(answering != nil)
-            if let errorMessage { Text(verbatim: errorMessage).font(.caption).foregroundStyle(.red) }
+            if let errorMessage { Text(verbatim: errorMessage).font(.caption).foregroundStyle(.chromeError) }
             HStack {
                 if let answering {
                     ProgressView().controlSize(.small)
@@ -77,7 +80,7 @@ public struct PermissionCardView: View {
             .disabled(answering != nil)
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .chromeCard(cornerRadius: 14)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("permission-card")
     }
@@ -94,7 +97,7 @@ public struct PermissionCardView: View {
             Text(verbatim: p.primary).font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled).padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .background(.chromeSurface, in: RoundedRectangle(cornerRadius: 8))
         case .edit, .write:
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: p.primary).font(.system(.callout, design: .monospaced)).fontWeight(.semibold)
@@ -104,7 +107,7 @@ public struct PermissionCardView: View {
                     }
                 }
                 .frame(maxHeight: 160)
-                if p.truncated { Text(verbatim: "...").font(.caption).foregroundStyle(.secondary) }
+                if p.truncated { Text(verbatim: "...").font(.caption).foregroundStyle(.chromeSecondary) }
             }
         case .other:
             Text(verbatim: p.primary).font(.system(.callout, design: .monospaced)).lineLimit(6)

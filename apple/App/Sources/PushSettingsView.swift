@@ -26,7 +26,7 @@ struct PushSettingsView: View {
                     .accessibilityIdentifier("push-enabled-toggle")
                 DisclosureGroup("What is sent") {
                     Text("Pushes contain status only, such as “Claude needs approval” with the host and the tmux session and window number, never commands, prompts, messages or paths. tmux names windows after the command running in them, so window names are left out unless you turn on “Include tmux window names”. The default server is the public ntfy.sh; anyone who knows the topic can read these status messages, so keep it private, or use your own server and an access token. A new topic or turning push on or off reaches connected hosts right away; other changes on each host’s next connect, or with “Sync to connected hosts”.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.footnote).foregroundStyle(.chromeSecondary)
                 }
             } footer: {
                 Text("Status-only pushes through ntfy when no shuai window is watching. Anyone with the topic can read them on a public server.")
@@ -66,9 +66,9 @@ struct PushSettingsView: View {
                 switch testResult {
                 case .sent?:
                     Label("Sent. It should arrive in the ntfy app within seconds.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green).font(.footnote)
+                        .foregroundStyle(.chromeSuccess).font(.footnote)
                 case .failed(let m)?:
-                    Label(m, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.footnote)
+                    Label(m, systemImage: "xmark.octagon.fill").foregroundStyle(.chromeError).font(.footnote)
                 case nil: EmptyView()
                 }
             } header: {
@@ -86,10 +86,10 @@ struct PushSettingsView: View {
                     .accessibilityIdentifier("push-server-field")
                 switch push.serverValidation {
                 case .invalid(let reason):
-                    Label(reason.message, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.footnote)
+                    Label(reason.message, systemImage: "xmark.octagon.fill").foregroundStyle(.chromeError).font(.footnote)
                 case .insecure:
                     Label(NtfyServer.insecureWarning, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange).font(.footnote)
+                        .foregroundStyle(.chromeWarning).font(.footnote)
                 case .valid: EmptyView()
                 }
                 SecureField("Access token (optional)", text: $push.token)
@@ -128,6 +128,7 @@ struct PushSettingsView: View {
                 .accessibilityIdentifier("push-regenerate")
             }
         }
+        .chromeForm()
         .onChange(of: scenePhase) { _, phase in
             if !TopicRevealPolicy.shouldKeepRevealed(isActive: phase == .active) { revealed = false }
         }
@@ -152,7 +153,7 @@ struct PushSettingsView: View {
     @ViewBuilder
     private func topicRow(_ topic: String) -> some View {
         HStack {
-            Text("Topic").foregroundStyle(.secondary)
+            Text("Topic").foregroundStyle(.chromeSecondary)
             Spacer(minLength: 8)
             if revealed {
                 Text(topic).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
