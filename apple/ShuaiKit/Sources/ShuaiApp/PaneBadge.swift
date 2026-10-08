@@ -11,7 +11,7 @@ extension PaneBadge {
         switch self {
         case .working: "gearshape"
         case .needsPermission: "hand.raised"
-        case .needsInput: "questionmark.bubble"
+        case .needsInput: "ellipsis.bubble"
         case .done: "checkmark.circle"
         case .failed: "exclamationmark.triangle"
         case .idle: "moon.zzz"
