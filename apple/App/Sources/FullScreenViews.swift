@@ -28,9 +28,9 @@ struct FullScreenHandle: View {
                 .accessibilityIdentifier("full-screen-exit")
         } label: {
             Image(systemName: presentation.symbol)
-                .foregroundStyle(prominent ? AnyShapeStyle(presentation.tone.tint) : AnyShapeStyle(.secondary))
+                .foregroundStyle(prominent ? AnyShapeStyle(presentation.tone.tint) : AnyShapeStyle(.chromeSecondary))
                 .frame(width: 44, height: 44)
-                .background(prominent ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.clear), in: Circle())
+                .background(prominent ? AnyShapeStyle(.chromeElevated) : AnyShapeStyle(.clear), in: Circle())
                 .opacity(prominent ? 1 : 0.6)
                 .contentShape(Rectangle())
         }

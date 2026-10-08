@@ -27,10 +27,10 @@ struct GhosttyEngineHardeningTests {
         h.window.rootViewController?.view.layoutIfNeeded()
         await h.engine.settle()
         let cfg = h.engine.controller.renderedConfig
-        #expect(cfg.contains("background = #1E1E2E"), "\(cfg)")
-        #expect(cfg.contains("foreground = #CDD6F4"))
-        #expect(cfg.contains("palette = 4=#89B4FA"))
-        #expect(h.engine.controller.backgroundColor == TerminalColor(red: 0x1E, green: 0x1E, blue: 0x2E))
+        #expect(cfg.contains("background = #2C2525"), "\(cfg)")
+        #expect(cfg.contains("foreground = #FFF1F3"))
+        #expect(cfg.contains("palette = 4=#F38D70"))
+        #expect(h.engine.controller.backgroundColor == TerminalColor(red: 0x2C, green: 0x25, blue: 0x25))
         #expect(h.engine.view.overrideUserInterfaceStyle == .dark)
     }
 

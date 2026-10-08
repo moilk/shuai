@@ -2,13 +2,13 @@ import ShuaiApp
 import SwiftUI
 
 extension PaneBadge.Tint {
-    var color: Color {
+    var color: ChromeStyle {
         switch self {
-        case .neutral: .secondary
-        case .info: .blue
-        case .success: .green
-        case .warning: .orange
-        case .danger: .red
+        case .neutral: .chromeSecondary
+        case .info: .chromeAccent
+        case .success: .chromeSuccess
+        case .warning: .chromeWarning
+        case .danger: .chromeError
         }
     }
 }
@@ -32,7 +32,7 @@ struct TmuxLoadingRow: View {
     var body: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Loading tmux\u{2026}").font(.caption).foregroundStyle(.secondary)
+            Text("Loading tmux\u{2026}").font(.caption).foregroundStyle(.chromeSecondary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("tmux-loading")
@@ -192,7 +192,7 @@ struct WindowTabStrip: View {
                 .accessibilityIdentifier("window-tab-new")
                 handle
             }
-            .background(.bar)
+            .background(.chromeElevated)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("window-tab-strip")
             .windowRenameAlert(renaming: $renaming, newName: $newName)
@@ -279,7 +279,7 @@ struct QuickSwitcherView: View {
                         .frame(minWidth: minTarget, minHeight: minTarget)
                         .contentShape(Rectangle())
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.chromeSecondary)
                 .accessibilityLabel("Close")
                 .accessibilityIdentifier("quick-switcher-close")
             }
@@ -296,6 +296,7 @@ struct QuickSwitcherView: View {
                             .accessibilityValue(index == switcher.selectedIndex ? "selected" : "")
                     }
                 }
+                .chromeForm()
                 .listStyle(.plain)
                 .onChange(of: switcher.selectedIndex) { _, i in
                     if switcher.results.indices.contains(i) { proxy.scrollTo(switcher.results[i].id) }
@@ -316,10 +317,10 @@ struct QuickSwitcherView: View {
         let badge = PaneBadge.aggregate(panes: item.paneIDs, host: item.hostID.uuidString, provider: model.badges)
         let detail = switcher.agentDetail(for: item)
         return HStack(spacing: 10) {
-            Image(systemName: icon(item.kind)).frame(width: 22).foregroundStyle(.secondary)
+            Image(systemName: icon(item.kind)).frame(width: 22).foregroundStyle(.chromeSecondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).font(.body).lineLimit(1)
-                Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(item.subtitle).font(.caption).foregroundStyle(.chromeSecondary).lineLimit(1)
                 if let detail {
                     Text(verbatim: [AgentStatusBadge.label(for: detail.badge), detail.snippet].compactMap { $0 }.joined(separator: " \u{2014} "))
                         .font(.caption).foregroundStyle(detail.badge.tint.color).lineLimit(1)

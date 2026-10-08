@@ -87,6 +87,7 @@ private struct TerminalSessionView: View {
         }
         .accessibilityAction(.escape) { if model.fullScreenActive { model.setFullScreen(false) } }
         .toolbar(chrome.showsNavigationBar ? .visible : .hidden, for: .navigationBar)
+        .toolbarBackground(.chromeSurface, for: .navigationBar)
         .statusBarHidden(chrome.hidesStatusBar)
         .persistentSystemOverlays(chrome.hidesHomeIndicator ? .hidden : .automatic)
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -129,6 +130,7 @@ private struct TerminalSessionView: View {
             set: { if $0 == nil { dismissPrompt() } }
         )) { item in
             PromptSheet(controller: controller, prompt: item.prompt)
+                .presentationBackground(.chromeSurface)
                 .interactiveDismissDisabled()
         }
         .alert(clipboardTitle, isPresented: Binding(
@@ -310,9 +312,9 @@ private struct HostKeySheet: View {
                 case .changed(let expected):
                     Section {
                         Label("The host key has CHANGED", systemImage: "exclamationmark.octagon.fill")
-                            .font(.headline).foregroundStyle(.red)
+                            .font(.headline).foregroundStyle(.chromeError)
                         Text("Someone may be eavesdropping on this connection (man-in-the-middle), or the server was reinstalled. Do not continue unless you know why the key changed.")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(.chromeError)
                     }
                     Section("Recorded fingerprint(s)") {
                         ForEach(expected, id: \.self) { fingerprint($0) }
@@ -327,6 +329,7 @@ private struct HostKeySheet: View {
                     }
                 }
             }
+            .chromeForm()
             .navigationTitle(challenge.kind == .unknown ? "New host" : "Host key changed")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -357,6 +360,7 @@ private struct PasswordSheet: View {
                         .accessibilityIdentifier("password-field")
                 }
             }
+            .chromeForm()
             .navigationTitle("Authenticate")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -406,6 +410,7 @@ private struct KeyboardInteractiveSheet: View {
                     }
                 }
             }
+            .chromeForm()
             .navigationTitle(name.isEmpty ? "Authentication" : name)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
