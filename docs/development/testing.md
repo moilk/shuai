@@ -111,6 +111,10 @@ cwebp -q 88 -m 6 -sharp_yuv shot-1800.png -o docs/assets/integration.webp
 Use `simctl io`: `XCUIScreen` and `XCUIApplication` screenshots of a rotated simulator come out
 sideways. The time is UTC and renders as 9:41 AM in UTC+8; pick the matching value for your zone.
 The on-screen keyboard appears only after the terminal is tapped, so do not tap before capturing.
+A simulator without a connected hardware keyboard shows the software keyboard over the terminal; shut
+the simulator down and boot it again before capturing. A reboot also resets the orientation to
+portrait; rotate it back with `XCUIDevice.shared.orientation = .landscapeLeft` from a throwaway UI
+test (the rotation outlives the test).
 
 ## Flaky tests
 

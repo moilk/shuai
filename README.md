@@ -53,7 +53,8 @@ under the MIT license.
 - tmux: automatic `tmux new -A -s <name>`, plain-shell fallback without tmux, a live sidebar tree of
   sessions, windows and panes, context-menu actions, ⌘K quick switcher, hardware shortcuts.
 - Terminal: inline IME, CJK and emoji, mouse, bracketed paste, OSC 52 (with confirmation) and
-  OSC 9/777, pinch and ⌘± zoom, Option as Alt, dark and light themes.
+  OSC 9/777, pinch and ⌘± zoom, Option as Alt, themes (Monokai Pro Ristretto by default, Dark, Light) that also color the whole app,
+  Full Screen mode (⌃⌘F) and window tabs that hide when there is only one session.
 - Keyboard bar plus a Claude strip (Yes = `1`, Always = `2`, No = Esc, ⇧Tab, interrupt); docked or
   floating, switching automatically with a hardware keyboard.
 - One-tap **Enable AI integration** installs `shuai-agent`, the Claude Code plugin and a tmux config
