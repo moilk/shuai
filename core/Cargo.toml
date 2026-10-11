@@ -18,7 +18,7 @@ shuai-proto = { path = "shuai-proto" }
 shuai-tmux = { path = "shuai-tmux" }
 # Exact pin: identical to the ssh-key re-exported by russh 0.63.x (`russh::keys::ssh_key`).
 ssh-key = { version = "=0.7.0-rc.11", default-features = false, features = ["std", "ecdsa", "ed25519", "p256", "p384", "p521", "rsa", "encryption", "getrandom", "rand_core"] }
-russh = "0.63.3"
+russh = "0.64.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 async-trait = "0.1"
 rand = "0.10"
