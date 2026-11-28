@@ -250,6 +250,29 @@ pub fn split_window(t: &Target, dir: Direction, cwd: Option<&str>) -> TmuxComman
         .target(t)
         .opt("-c", cwd)
 }
+/// Scroll a pane's history without forwarding cursor keys to the shell.
+pub fn scroll_history(pane: PaneId, lines: i32) -> TmuxCommand {
+    let direction = if lines > 0 {
+        "scroll-up"
+    } else {
+        "scroll-down"
+    };
+    let scroll = format!(
+        "send-keys -t {pane} -X -N {} {direction}",
+        lines.unsigned_abs()
+    );
+    let enter_copy_mode = if lines > 0 {
+        format!("copy-mode -e -t {pane} ; {scroll}")
+    } else {
+        String::new()
+    };
+    TmuxCommand::new(["if-shell", "-F"])
+        .target(&Target::pane(pane))
+        .arg("#{m:copy-mode*,#{pane_mode}}")
+        .arg(scroll)
+        .arg(enter_copy_mode)
+}
+
 /// `send-keys -t T -l -- TEXT`.
 pub fn send_keys_literal(t: &Target, text: &str) -> TmuxCommand {
     TmuxCommand::new(["send-keys"])

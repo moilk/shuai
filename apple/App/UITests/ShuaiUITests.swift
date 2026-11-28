@@ -5,9 +5,9 @@ final class ShuaiUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Launch, add a host through the editor, see it in the sidebar.
+    /// A failed connection check keeps the draft open and out of the sidebar.
     @MainActor
-    func testAddHostAppearsInSidebar() throws {
+    func testUnreachableHostCannotBeSaved() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting"]
@@ -28,15 +28,16 @@ final class ShuaiUITests: XCTestCase {
         name.typeText("ui-test-host")
         let host = app.textFields["host-address-field"]
         host.tap()
-        host.typeText("example.invalid")
+        host.typeText("unreachable.example.invalid")
         let user = app.textFields["host-user-field"]
         user.tap()
         user.typeText("alice")
         save.tap()
+        app.swipeUp()
 
-        let row = app.staticTexts["ui-test-host"]
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "new host listed in the sidebar")
-        XCTAssertTrue(app.staticTexts["alice@example.invalid"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["host-connection-error"].firstMatch.waitForExistence(timeout: 25))
+        XCTAssertTrue(app.navigationBars["New Host"].exists)
+        XCTAssertFalse(app.buttons["host-row-ui-test-host"].exists)
     }
 
     @MainActor
@@ -94,9 +95,23 @@ final class ShuaiUITests: XCTestCase {
         let generate = app.buttons["editor-open-keys"]
         XCTAssertTrue(generate.waitForExistence(timeout: 5))
         generate.tap()
-        XCTAssertTrue(app.navigationBars["Keys"].waitForExistence(timeout: 5))
-        app.navigationBars["Keys"].buttons.firstMatch.tap()
+        let keys = app.navigationBars["Keys"]
+        XCTAssertTrue(keys.waitForExistence(timeout: 5))
+        let addKey = app.buttons["add-key-menu"]
+        addKey.tap()
+        app.buttons["Generate ed25519 key"].tap()
+        let generateAlert = app.alerts["Generate key"]
+        XCTAssertTrue(generateAlert.waitForExistence(timeout: 5))
+        let keyName = generateAlert.textFields.firstMatch
+        keyName.tap()
+        keyName.typeText("editor-test-key")
+        generateAlert.buttons["Generate"].tap()
+        XCTAssertTrue(app.staticTexts["editor-test-key"].waitForExistence(timeout: 5))
+        keys.buttons.firstMatch.tap()
         XCTAssertTrue(app.textFields["host-name-field"].waitForExistence(timeout: 5))
+        let selectedKey = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Key' AND label CONTAINS 'editor-test-key'")).firstMatch
+        XCTAssertTrue(selectedKey.waitForExistence(timeout: 5), "the editor selects the key it just created")
+        XCTAssertTrue(generate.exists, "the add-key entry remains available with an existing key")
 
         method.tap()
         app.buttons["Password"].firstMatch.tap()
@@ -148,7 +163,7 @@ final class ShuaiUITests: XCTestCase {
     private func openQuickSwitcher(_ app: XCUIApplication) -> XCUIElement {
         let field = app.textFields["quick-switcher-field"]
         for _ in 0 ..< 2 {
-            app.staticTexts["host-row-fixture-host"].firstMatch.tap()
+            app.buttons["host-row-fixture-host"].firstMatch.tap()
             app.typeKey("k", modifierFlags: .command)
             if field.waitForExistence(timeout: 4) { return field }
         }
@@ -266,10 +281,10 @@ final class ShuaiUITests: XCTestCase {
     @MainActor
     func testHostMenuExplainsDisabledAIItems() throws {
         let app = launchWithTmuxFixture()
-        let row = app.staticTexts["host-row-fixture-host"].firstMatch
+        let row = app.buttons["host-row-fixture-host"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.press(forDuration: 1.0)
-        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5), "host menu is open")
+        XCTAssertTrue(app.buttons["Host Details"].waitForExistence(timeout: 5), "host menu is open")
         let hint = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Connect to this host first'")).firstMatch
         XCTAssertTrue(hint.waitForExistence(timeout: 5), "disabled AI items say why: \(app.debugDescription)")
     }
@@ -355,7 +370,7 @@ final class ShuaiUITests: XCTestCase {
     @MainActor
     private func hideSoftwareKeyboard(_ app: XCUIApplication) {
         guard app.keyboards.count > 0 else { return }
-        app.staticTexts["host-row-fixture-host"].tap()
+        app.buttons["host-row-fixture-host"].tap()
         let gone = expectation(for: NSPredicate(format: "count == 0"), evaluatedWith: app.keyboards)
         if XCTWaiter().wait(for: [gone], timeout: 3) != .completed {
             // Landscape: the keyboard's dismiss key sits at its trailing bottom corner. The key's own
@@ -595,7 +610,7 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertTrue(centers.contains { w0.contains($0) }, "a badge inside the @0 row: \(centers) vs \(w0)")
         XCTAssertFalse(centers.contains { w1.contains($0) }, "no badge in the @1 row")
         // host row: waiting count
-        let waiting = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'waiting for you'")).firstMatch
+        let waiting = app.descendants(matching: .any).matching(NSPredicate(format: "value CONTAINS 'waiting for you'")).firstMatch
         XCTAssertTrue(waiting.waitForExistence(timeout: 5), "host row shows the waiting count")
     }
 
@@ -609,7 +624,8 @@ final class ShuaiUITests: XCTestCase {
         toggle.tap()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["tmux-window-@0"])
         waitForExpectations(timeout: 5)
-        XCTAssertTrue(app.descendants(matching: .any)["host-aggregate-badge"].waitForExistence(timeout: 5), "badge stays on the collapsed host")
+        let host = app.buttons["host-row-fixture-host"]
+        XCTAssertTrue((host.value as? String)?.contains("waiting for you") == true, "waiting count stays on the collapsed host")
     }
 
     @MainActor
@@ -875,7 +891,7 @@ final class ShuaiUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(handle.frame.height, 44, "handle height")
         XCTAssertGreaterThanOrEqual(handle.frame.width, 44, "handle width")
         XCTAssertGreaterThan(handle.frame.midX, app.frame.width / 2, "handle is at the trailing edge")
-        XCTAssertFalse(app.staticTexts["host-row-fixture-host"].exists, "sidebar collapsed")
+        XCTAssertFalse(app.buttons["host-row-fixture-host"].exists, "sidebar collapsed")
     }
 
     @MainActor
@@ -887,7 +903,7 @@ final class ShuaiUITests: XCTestCase {
         }
         app.buttons["full-screen-exit"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["connection-status"].waitForExistence(timeout: 5), "navigation bar back")
-        XCTAssertTrue(app.staticTexts["host-row-fixture-host"].waitForExistence(timeout: 5), "sidebar restored")
+        XCTAssertTrue(app.buttons["host-row-fixture-host"].waitForExistence(timeout: 5), "sidebar restored")
         XCTAssertFalse(app.buttons["full-screen-handle"].exists, "handle gone")
     }
 
@@ -903,13 +919,13 @@ final class ShuaiUITests: XCTestCase {
     @MainActor
     func testHostContextMenuOffersConnectOrDisconnect() throws {
         let app = launchWithTmuxFixture()
-        let row = app.staticTexts["host-row-fixture-host"]
+        let row = app.buttons["host-row-fixture-host"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.press(forDuration: 1.0)
         let action = app.buttons["host-connection-action"]
         XCTAssertTrue(action.waitForExistence(timeout: 5), "connection item in the host menu\n\(app.debugDescription)")
         XCTAssertTrue(["Connect", "Disconnect"].contains(action.label), "label is \(action.label)")
-        XCTAssertTrue(app.buttons["Edit"].exists, "the rest of the menu is still there")
+        XCTAssertTrue(app.buttons["Host Details"].exists, "the rest of the menu is still there")
     }
 
     @MainActor

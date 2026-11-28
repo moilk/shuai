@@ -168,7 +168,7 @@ switcher and the AI-integration sheet. Opening a sheet resigns the terminal firs
   when the modal is dismissed.
 - A late dismissal of a route that has already been replaced does not close its successor.
 
-Keys is not a second sheet. Inside the host editor ("Generate a key" while the library is empty, `editor-open-keys`) and Settings
+Keys is not a second sheet. Inside the host editor ("Add or Import SSH Key", `editor-open-keys`) and Settings
 ("Keys", `settings-keys-link`) it is a page pushed in the sheet's navigation stack, so Back returns
 with the editor's input and Settings intact; there is no Done on the pushed page. A standalone
 request (the app menu's Keys…, the connection card's Open keys) presents Keys as its own sheet with Done.
@@ -188,7 +188,7 @@ The sidebar uses the system bars (no custom floating buttons):
   the UI tests assert at least 36 pt and hittable for both; the accessibility label keeps the text
   for VoiceOver at every text size. Settings opens the Settings sheet directly; there is no menu.
 - **Keys** is not in the sidebar. It is reached through Settings > SSH > Keys, the app menu's Keys…,
-  the host editor's Open/Generate a key and the connection card's Open keys.
+  the host editor's Add or Import SSH Key and the connection card's Open keys.
 
 All items go through `AppModel.request`, so they obey the modal rules above. Trade-off: while the
 software keyboard is up (the terminal is focused) it covers the sidebar's bottom bar. Hardware
@@ -236,39 +236,31 @@ the save progress in `@State`, because the sheet content is rebuilt whenever the
 - Save errors use fixed copy and never include an underlying error's description. "Host saved, but
   the password could not be stored" is shown only when the host write of that same attempt
   succeeded; a retry updates the same host.
-- A new host defaults to SSH key auth when the library has keys (preselected when there is one),
-  otherwise Ask each time. A key generated from the pushed Keys page is selected when none was chosen.
-
-  otherwise Ask each time. A key generated from the pushed Keys page is selected when the method is
-  SSH key and no key was chosen. "Generate a key" appears under the SSH key method when the library
-  is empty.
+- A new host defaults to SSH key auth when the library has keys, with a single key preselected.
+  Otherwise it defaults to Ask each time. Add or Import SSH Key opens the library and selects the
+  key the user just added.
+- A new host can be saved after its SSH access is verified. Changing connection fields invalidates
+  verification. Testing lists existing tmux sessions without attaching or creating one.
 
 ## Sidebar
 
-`HostListView` renders `SidebarModel.rows` (pure, in `ShuaiApp/Sidebar/`): one `List(selection:)`
-of host, loading, session, window and pane rows. Only host rows are tagged for selection; tmux rows
-are plain buttons. Indentation is `row.depth` times a
-`@ScaledMetric` step, capped at two levels at accessibility text sizes.
+`HostListView` renders host, loading, session, window and pane rows from `SidebarModel.rows`.
+Host buttons select a host. The tmux buttons act on the server. Indentation scales with text size
+and stops at two levels at accessibility text sizes.
 
-- **Current location.** Hosts use the list's system selection. The one current location in the tmux
-  tree is secondary: the viewed session row has a light accent tint, a filled icon and `.isSelected`;
-  the active window and its active pane get the accent colour, weight, `.isSelected` and the
-  accessibility value `active` only inside the viewed session (`isCurrent` on `WindowRowModel` and
-  `PaneRowModel`). Other sessions' active windows look like any other window, however many sessions
-  are expanded.
+- **Current location.** The sidebar uses the theme's selection color in rounded rows. The selected
+  host gets the strongest fill. The viewed session, current window and current pane use a lighter
+  fill and announce their selected state.
 - **Defaults.** Hosts and the viewed session are expanded, other sessions collapsed. Collapsing
   never changes selection, and an agent needing attention never expands anything.
 - **Persistence.** `SidebarExpansionStore` keeps only the exceptions to the defaults, keyed by host
   UUID and session name (never tmux `$N`/`@N`/`%N` ids, which are reused after a server restart), in
   UserDefaults, capped at 256 entries. Deleting a host forgets its entries; launch prunes entries of
   hosts that no longer exist. UI tests use an isolated suite per launch.
-- **Host row.** One element (`host-row-<name>`) holds status symbol, name and target, so its tap
-  and long-press area is at least 44 pt tall; its label comes from the model. Beside it: the host
-  aggregate badge (`host-aggregate-badge`, the most urgent pane badge, visible while collapsed), the
-  waiting count (hand symbol plus number) and a 44 x 44 chevron (`host-toggle-<name>`,
-  `tmux-session-toggle-<name>` for sessions) that is also exposed as an Expand/Collapse
-  accessibility action.
-- **Menus.** The host menu keeps Edit and Delete and groups the AI items in an "AI integration"
+- **Host row.** A host icon, the name and its most important alert stay visible. Host Details
+  in the context menu opens the connection settings. A separate 44 x 44 chevron expands the tree,
+  and VoiceOver exposes the same action from the host button.
+- **Menus.** The host menu includes Host Details and Delete and groups AI items in an integration
   section; while the host is not connected they are disabled and say "Connect to this host first".
   Session rows offer Switch to Session and New Window; window and pane menus live in the shared
   `TmuxWindowMenu`/`TmuxPaneMenu`. New Window always targets the row's own session
@@ -314,6 +306,14 @@ minimum width scales the same way. Rows scroll horizontally when the keys no lon
 content-size change the bar rebuilds its button fonts, updates its height and the terminal view
 reloads its input views, so the keyboard guide (and with it the terminal's bottom edge) picks up the
 new height while the keyboard is up. Key order, mappings and sent bytes do not depend on the size.
+
+## App chrome colors
+
+Sidebar toggling, search, New Host and Settings use the system foreground color in the toolbar.
+The terminal tab bar's session picker and New Window controls use the same treatment. The active
+theme supplies the surface and selection colors for host rows, tabs and Quick Switcher results.
+The welcome screen uses the theme accent for the brand and its primary action. Connection and
+agent indicators use their status colors.
 
 ## Chrome policy
 

@@ -188,6 +188,7 @@ struct WindowTabStrip: View {
                         .frame(minWidth: minTarget, minHeight: minTarget)
                         .contentShape(Rectangle())
                 }
+                .tint(.primary)
                 .accessibilityLabel("New Window")
                 .accessibilityIdentifier("window-tab-new")
                 handle
@@ -223,6 +224,7 @@ struct WindowTabStrip: View {
                 .frame(minWidth: minTarget, minHeight: minTarget)
                 .contentShape(Rectangle())
         }
+        .tint(.primary)
         .accessibilityLabel("Session: \(strip.viewedSessionName ?? "")")
         .accessibilityIdentifier("window-tab-session-menu")
     }
@@ -238,7 +240,9 @@ struct WindowTabStrip: View {
             .font(.subheadline.weight(w.active ? .semibold : .regular))
             .padding(.horizontal, hPadding)
             .frame(minHeight: minTarget)
-            .background(w.active ? Color.accentColor.opacity(0.25) : Color.clear, in: Capsule())
+            .background {
+                if w.active { Capsule().fill(.chromeSelection) }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -290,7 +294,8 @@ struct QuickSwitcherView: View {
                     ForEach(Array(switcher.results.enumerated()), id: \.element.id) { index, item in
                         Button { pick(index) } label: { row(item) }
                             .buttonStyle(.plain)
-                            .listRowBackground(index == switcher.selectedIndex ? Color.accentColor.opacity(0.2) : Color.clear)
+                            .listRowBackground(
+                                Rectangle().fill(.chromeSelection).opacity(index == switcher.selectedIndex ? 1 : 0))
                             .id(item.id)
                             .accessibilityIdentifier("quick-switcher-row-\(index)")
                             .accessibilityValue(index == switcher.selectedIndex ? "selected" : "")

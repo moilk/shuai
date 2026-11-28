@@ -40,7 +40,10 @@ final class AppModel {
     let keyboard = HardwareKeyboardMonitor()
 
     var selection: UUID? {
-        didSet { notices.setFocus(selection.map { .host($0) }) }
+        didSet {
+            notices.setFocus(selection.map { .host($0) })
+            if selection != oldValue { preferredCompactColumn = selection == nil ? .sidebar : .detail }
+        }
     }
     /// Which modal is up; `RootView` shows it through a single sheet.
     private(set) var router = ModalRouter()
@@ -58,6 +61,7 @@ final class AppModel {
     @ObservationIgnored var editorIsDirty = false
     /// Sidebar visibility (the window tab strip shows while the sidebar is collapsed).
     var columnVisibility: NavigationSplitViewVisibility = .all
+    var preferredCompactColumn: NavigationSplitViewColumn = .sidebar
     @ObservationIgnored private var fullScreenState = FullScreenState()
     /// Full screen applies only while a host's terminal is shown; otherwise the chrome stays.
     var fullScreenActive: Bool {
@@ -98,8 +102,8 @@ final class AppModel {
     @ObservationIgnored private var pathMonitor: NWPathMonitor?
     @ObservationIgnored private var lastPathSignature: String?
 
-    /// - Parameter ephemeral: UI tests; temp files and in-memory secrets, nothing touches the user's data.
-    init(ephemeral: Bool = false) {
+    /// Ephemeral mode uses temporary files and in-memory secrets. Tests may supply a preset host list.
+    init(ephemeral: Bool = false, ephemeralHostsFile: URL? = nil) {
         let settings: AppSettings
         let keyStore: KeyStore
         let known: KnownHostsStore
@@ -107,7 +111,7 @@ final class AppModel {
         let sidebarDefaults: UserDefaults
         if ephemeral {
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shuai-ui-\(UUID().uuidString)")
-            hosts = HostStore(fileURL: dir.appendingPathComponent("hosts.json"))
+            hosts = HostStore(fileURL: ephemeralHostsFile ?? dir.appendingPathComponent("hosts.json"))
             keyStore = InMemoryKeyStore()
             passwords = InMemoryPasswordStore()
             known = KnownHostsStore(fileURL: dir.appendingPathComponent("known_hosts"))
@@ -161,8 +165,6 @@ final class AppModel {
                 return engine
             }, agentHub: hub, notices: notices)
         engineBox = box
-        selection = hosts.hosts.first?.id
-        notices.setFocus(selection.map { .host($0) })
         viewing.check = { [weak self] key in MainActor.assumeIsolated { self?.isViewing(key) ?? false } }
         hub.onLiveChanges = { [weak self] id, changes in self?.handleLive(profileID: id, changes: changes) }
         // Local-notification taps take the same path as `shuai://` links (and ntfy pushes).
