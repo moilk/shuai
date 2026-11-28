@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use russh::keys::{Algorithm, PrivateKey, PublicKey};
-use russh::server::{Auth, Msg, Response, Server as _, Session};
+use russh::server::{Auth, Msg, PublicKeyOffer, Response, Server as _, Session, VerifiedPublicKey};
 use russh::{Channel, ChannelId, Pty};
 use tokio::net::TcpListener;
 
@@ -120,13 +120,13 @@ impl russh::server::Handler for Srv {
     async fn auth_publickey_offered(
         &mut self,
         _user: &str,
-        key: &PublicKey,
+        offer: PublicKeyOffer<'_>,
     ) -> Result<Auth, Self::Error> {
         if self
             .opts
             .authorized_keys
             .iter()
-            .any(|k| k.key_data() == key.key_data())
+            .any(|k| k.key_data() == offer.public_key.key_data())
         {
             Ok(Auth::Accept)
         } else {
@@ -134,12 +134,16 @@ impl russh::server::Handler for Srv {
         }
     }
 
-    async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth, Self::Error> {
+    async fn auth_publickey(
+        &mut self,
+        user: &str,
+        key: VerifiedPublicKey<'_>,
+    ) -> Result<Auth, Self::Error> {
         if self
             .opts
             .authorized_keys
             .iter()
-            .any(|k| k.key_data() == key.key_data())
+            .any(|k| k.key_data() == key.public_key.key_data())
         {
             self.log.users.lock().unwrap().push(user.into());
             Ok(Auth::Accept)
