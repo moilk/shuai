@@ -11,6 +11,7 @@ struct KeysView: View {
     }
 
     let placement: Placement
+    var onAdded: ((KeyLibrary.Item) -> Void)? = nil
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -59,7 +60,10 @@ struct KeysView: View {
             TextField("Name", text: $newKeyName)
             Button("Generate") {
                 if let alg = generateAlgorithm {
-                    run { _ = try model.keys.generate(name: newKeyName, algorithm: alg) }
+                    run {
+                        let item = try model.keys.generate(name: newKeyName, algorithm: alg)
+                        onAdded?(item)
+                    }
                 }
                 generateAlgorithm = nil
             }
@@ -122,8 +126,9 @@ struct KeysView: View {
 
     private func importNow(_ data: Data, passphrase: String?) {
         do {
-            _ = try model.keys.importKey(data: data, name: pendingName, passphrase: passphrase)
+            let item = try model.keys.importKey(data: data, name: pendingName, passphrase: passphrase)
             pendingData = nil
+            onAdded?(item)
         } catch KeyLibraryError.needsPassphrase {
             pendingData = data
             askPassphrase = true

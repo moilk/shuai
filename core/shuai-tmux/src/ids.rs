@@ -40,9 +40,18 @@ macro_rules! id_type {
     };
 }
 
-id_type!(/// Session id, `$N`.
-    SessionId, "$");
-id_type!(/// Window id, `@N`.
-    WindowId, "@");
-id_type!(/// Pane id, `%N`.
-    PaneId, "%");
+id_type!(
+    #[doc = "Session id, `$N`."]
+    SessionId,
+    "$"
+);
+id_type!(
+    #[doc = "Window id, `@N`."]
+    WindowId,
+    "@"
+);
+id_type!(
+    #[doc = "Pane id, `%N`."]
+    PaneId,
+    "%"
+);

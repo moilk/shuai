@@ -42,6 +42,10 @@ private struct TerminalSessionView: View {
             permissionPendingForHost: model.agentHub.pendingPermissions.contains { $0.profileID == host.id }))
     }
 
+    private var routesHistoryToTmux: Bool {
+        controller.state == .connected && controller.profile.tmux.enabled && !controller.tmuxMissing
+    }
+
     /// Connection strip, then notices. Permission cards are drawn on top in the trailing column,
     /// so the stack leaves that column free; when the area is too narrow for both, the stack moves
     /// to the bottom instead (`NoticeLayout`).
@@ -72,7 +76,11 @@ private struct TerminalSessionView: View {
             TerminalContainerRepresentable(
                 engine: engine, autoFocus: true,
                 showsFloatingAccessoryBar: chrome.accessory == .floating,
-                showsDockedAccessoryBar: chrome.accessory == .docked
+                showsDockedAccessoryBar: chrome.accessory == .docked,
+                hasHardwareKeyboard: model.keyboard.isConnected,
+                onHistoryScroll: routesHistoryToTmux ? { lines in
+                    controller.tmuxActions.scrollHistory(by: lines)
+                } : nil
             )
             .ignoresSafeArea(.keyboard)
             .accessibilityIdentifier("terminal-view")
@@ -141,6 +149,10 @@ private struct TerminalSessionView: View {
             Button("Deny", role: .cancel) { controller.pendingClipboard?.respond(allow: false); controller.pendingClipboard = nil }
         } message: {
             Text(String((controller.pendingClipboard?.contents ?? "").prefix(300)))
+        }
+        .onChange(of: model.columnVisibility) { _, _ in
+            guard model.keyboard.isConnected, !model.hasSheetOpen, controller.pendingPrompt == nil else { return }
+            Task { @MainActor in _ = engine.view.acquireProgrammaticFocus() }
         }
         .onChange(of: model.settings.theme) { _, _ in model.applyTheme() }
         #if DEBUG
@@ -257,7 +269,7 @@ private struct TerminalSessionView: View {
     }
 }
 
-private struct PromptItem: Identifiable {
+struct PromptItem: Identifiable {
     let prompt: SessionPrompt
     var id: String {
         switch prompt {
@@ -276,7 +288,7 @@ private extension UIColor {
 
 // MARK: - Prompts
 
-private struct PromptSheet: View {
+struct PromptSheet: View {
     let controller: SessionController
     let prompt: SessionPrompt
 

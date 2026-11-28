@@ -4,14 +4,15 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #if DEBUG
     @State private var showTerminalDebug = ProcessInfo.processInfo.arguments.contains("-debugTerminal")
     #endif
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView(columnVisibility: $model.columnVisibility) {
-            HostListView()
+        NavigationSplitView(columnVisibility: $model.columnVisibility, preferredCompactColumn: $model.preferredCompactColumn) {
+            HostListView(showsEmptyAction: horizontalSizeClass == .compact)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
         } detail: {
             detail
@@ -77,17 +78,7 @@ struct RootView: View {
         if let id = model.selection, let host = model.hosts.host(id: id) {
             TerminalScreen(host: host).id(host.id)
         } else {
-            ContentUnavailableView {
-                Label("No host selected", systemImage: "terminal")
-            } description: {
-                Text(model.hosts.hosts.isEmpty ? "Add a server to start a terminal session." : "Choose a host from the sidebar.")
-            } actions: {
-                if model.hosts.hosts.isEmpty {
-                    Button("Add your first host") { model.request(.newHost) }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("add-first-host")
-                }
-            }
+            TerminalWelcomeView()
         }
     }
 }

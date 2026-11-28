@@ -59,8 +59,8 @@ pub fn build(brand: &Path) -> Result<Files, String> {
     }
     manifest.push_str("  ]\n}\n");
     files.push(("out/manifest.json".into(), manifest.into_bytes()));
-    catalog(&icon, &mut files);
     exports(brand, &glyph, &mut files)?;
+    catalog(&icon, &mut files);
     Ok(files)
 }
 
@@ -104,7 +104,25 @@ const CONTENTS_JSON: &str = r#"{
 }
 "#;
 
-/// The AppIcon asset catalog: the three rendered icons plus the iOS 18 single-size manifest.
+const MARK_CONTENTS_JSON: &str = r#"{
+  "images" : [
+    {
+      "filename" : "mark.svg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  },
+  "properties" : {
+    "preserves-vector-representation" : true,
+    "template-rendering-intent" : "template"
+  }
+}
+"#;
+
+/// Assets for the iOS app: the three app icons and the template brand mark.
 /// Paths are relative to the brand dir (the catalog lives beside it in the repo).
 fn catalog(icon: &IconCfg, files: &mut Files) {
     let dir = format!("../{}", icon.appiconset);
@@ -122,6 +140,24 @@ fn catalog(icon: &IconCfg, files: &mut Files) {
     extra.push((
         format!("{dir}/Contents.json"),
         CONTENTS_JSON.as_bytes().to_vec(),
+    ));
+    let mark_dir = Path::new(&dir).with_file_name("ShuaiMark.imageset");
+    let mark = files
+        .iter()
+        .find(|(name, _)| name == "out/exports/mark.svg")
+        .expect("monochrome mark exported above")
+        .1
+        .clone();
+    extra.push((
+        mark_dir.join("mark.svg").to_string_lossy().into_owned(),
+        mark,
+    ));
+    extra.push((
+        mark_dir
+            .join("Contents.json")
+            .to_string_lossy()
+            .into_owned(),
+        MARK_CONTENTS_JSON.as_bytes().to_vec(),
     ));
     files.extend(extra);
 }

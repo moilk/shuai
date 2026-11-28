@@ -63,6 +63,11 @@ public final class SessionRegistry {
         return controller
     }
 
+    public func verificationController(for host: HostProfile, engine: any TerminalEngine) -> SessionController {
+        SessionController(
+            profile: host, engine: engine, factory: factory, keys: keys, passwords: passwords, knownHosts: knownHosts)
+    }
+
     public func existingController(for id: UUID) -> SessionController? { controllers[id] }
 
     public func status(for id: UUID) -> SessionState.Status {

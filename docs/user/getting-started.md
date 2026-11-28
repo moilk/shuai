@@ -4,6 +4,9 @@
 
 ## 1. Add a host
 
+When Shuai opens, choose a saved host from the sidebar or Quick Switcher (⌘K) to connect.
+If the list is empty, tap **Add your first host** on the welcome screen.
+
 Tap the **+** (New Host) in the sidebar's bottom bar (or press ⌘N). Settings is the gear next to it,
 or ⌘,. To disconnect or reconnect later, tap the status icon at the top right of the terminal and
 choose from its menu (or use ⌘W / ⌘R).
@@ -12,11 +15,14 @@ user name, then pick an authentication method:
 
 - **SSH key**: a key from the app's key library. With keys in the library a new host defaults to
   this method (the key is preselected when there is only one); without keys it defaults to
-  **Ask each time**, and **Generate a key** opens the key library.
+  **Ask each time**. Choose **SSH key** and tap **Add or Import SSH Key** to create or import a key
+  without closing the host editor.
 - **Password**: stored in the Keychain.
 - **Ask each time**: asked on every connect, kept in memory only and cleared on disconnect. The
   prompt appears only *after* the server's host key has been verified.
 
+Tap **Test Connection** to verify SSH access before saving a new host. If you enable **Attach to
+tmux**, choose an existing session from the list after the check or enter a new session name.
 Keyboard-interactive authentication (for example one-time codes) is answered in a prompt.
 
 A field's problem is shown under it when you leave the field, and disappears as soon as it is
@@ -26,7 +32,7 @@ down does nothing while there are unsaved changes.
 
 ## 2. Keys
 
-Open the key library from Settings > **Keys** (or the app menu's Keys…, or Generate a key in the host editor; Back returns to where you were), then
+Open the key library from Settings > **Keys** (or the app menu's Keys…, or Add or Import SSH Key in the host editor; Back returns to where you were), then
 **Add Key**:
 
 - **Generate ed25519 key** / **Generate ECDSA P-256 key**: created on the iPad.
@@ -67,7 +73,7 @@ server reinstall; otherwise treat it as a possible man-in-the-middle).
 ## 4. tmux
 
 "Attach to tmux" is on by default with the session name `shuai`. On connect the app runs
-`tmux new -A -s '<name>'` directly on the PTY channel: it attaches if the session exists and
+`tmux -u new -A -s '<name>'` directly on the PTY channel: it attaches if the session exists and
 creates it otherwise. An optional **Startup command** runs only when the session is created.
 
 - **Reconnect**: when the network drops or the app returns from the background, shuai reconnects

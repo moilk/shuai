@@ -1,5 +1,7 @@
 import Foundation
 import Testing
+@testable import Shuai
+import ShuaiApp
 import ShuaiCore
 import ShuaiPlatform
 
@@ -19,4 +21,22 @@ import ShuaiPlatform
     #expect(try hosts.check(host: "h", port: 22, publicKeyLine: key.publicLine) == .unknown)
     try hosts.add(host: "h", port: 22, publicKeyLine: key.publicLine)
     #expect(try hosts.check(host: "h", port: 22, publicKeyLine: key.publicLine) == .trusted)
+}
+
+@MainActor @Test func startupWithSavedHostsWaitsForSelection() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("hosts.json")
+    let hosts = HostStore(fileURL: file)
+    let first = HostProfile(name: "First", host: "first.example.invalid", username: "alice")
+    let second = HostProfile(name: "Second", host: "second.example.invalid", username: "alice")
+    try hosts.add(first)
+    try hosts.add(second)
+
+    let model = AppModel(ephemeral: true, ephemeralHostsFile: file)
+    #expect(model.hosts.hosts.map(\.id) == [first.id, second.id])
+    #expect(model.selection == nil)
+    #expect(model.preferredCompactColumn == .sidebar)
+    #expect(model.sessions.existingController(for: first.id) == nil)
+    #expect(model.sessions.existingController(for: second.id) == nil)
 }
