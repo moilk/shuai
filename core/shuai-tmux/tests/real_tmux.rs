@@ -120,13 +120,19 @@ fn builders_drive_a_real_server() {
         assert_eq!(s.windows.len(), 2);
         let second = s.windows.iter().find(|w| w.name == "second").unwrap();
         assert!(second.active);
-        assert!(
-            second.panes[0].current_path.ends_with("/tmp")
-                || second.panes[0].current_path.contains("tmp")
+        let pane = second.panes[0].id;
+        // The pane shell may not have finished starting when list-panes returns.
+        // The recorded start path reflects the builder's -c option immediately.
+        let start_path = srv.run(&cmd::display_message(
+            Some(&Target::pane(pane)),
+            "#{pane_start_path}",
+        ));
+        assert_eq!(
+            std::fs::canonicalize(start_path.trim()).unwrap(),
+            std::fs::canonicalize("/tmp").unwrap()
         );
 
         // split in the pane's cwd, both directions
-        let pane = second.panes[0].id;
         srv.run(&cmd::split_window(
             &Target::pane(pane),
             Direction::Horizontal,
