@@ -1,9 +1,9 @@
 import ShuaiApp
 import SwiftUI
 
-/// The sidebar: one `List` over `SidebarModel.rows` (hosts, sessions, windows, panes). Hosts are
-/// the only selectable rows; tmux rows are buttons that act on tmux.
+/// The sidebar displays the host and tmux tree. Each row explicitly handles activation.
 struct HostListView: View {
+    let showsEmptyAction: Bool
     @Environment(AppModel.self) private var model
     @State private var pendingDelete: HostProfile?
     @State private var renaming: WindowRenaming?
@@ -17,10 +17,12 @@ struct HostListView: View {
     }
 
     var body: some View {
-        @Bindable var model = model
-        List(selection: $model.selection) {
+        List {
             ForEach(entries()) { entry in
                 rowView(entry)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 10, bottom: 2, trailing: 10))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
         }
         .scrollContentBackground(.hidden)
@@ -28,11 +30,21 @@ struct HostListView: View {
         .toolbarBackground(.chromeSurface, for: .navigationBar, .bottomBar)
         .overlay {
             if model.hosts.hosts.isEmpty {
-                ContentUnavailableView {
-                    Label("No hosts", systemImage: "server.rack")
-                } actions: {
-                    Button("Add your first host") { model.request(.newHost) }
-                        .accessibilityIdentifier("sidebar-add-first-host")
+                if showsEmptyAction {
+                    ContentUnavailableView {
+                        Label("No hosts", systemImage: "server.rack")
+                    } actions: {
+                        Button("Add your first host") { model.request(.newHost) }
+                            .accessibilityIdentifier("sidebar-add-first-host")
+                    }
+                } else {
+                    Text("No saved hosts")
+                        .font(.footnote)
+                        .foregroundStyle(.chromeSecondary)
+                        .padding(.horizontal, 18)
+                        .padding(.top, 16)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .allowsHitTesting(false)
                 }
             }
         }
@@ -42,8 +54,9 @@ struct HostListView: View {
         .toolbar {
             brandToolbarItem
             ToolbarItem(placement: .topBarTrailing) {
-                Button { model.openQuickSwitcher() } label: { Label("Quick Switcher", systemImage: "magnifyingglass") }
-                    .accessibilityIdentifier("quick-switcher-button")
+                toolbarButton("Quick Switcher", symbol: "magnifyingglass", identifier: "quick-switcher-button") {
+                    model.openQuickSwitcher()
+                }
             }
             // System bottom bar: a flexible space, then New Host and Settings together at the trailing
             // side. Keys stays reachable through Settings, the app menu, the host editor and the
@@ -53,8 +66,12 @@ struct HostListView: View {
             } else {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
-            ToolbarItem(placement: .bottomBar) { newHostButton }
-            ToolbarItem(placement: .bottomBar) { settingsButton }
+            ToolbarItem(placement: .bottomBar) {
+                toolbarButton("New Host", symbol: "plus", identifier: "add-host-button") { model.request(.newHost) }
+            }
+            ToolbarItem(placement: .bottomBar) {
+                toolbarButton("Settings", symbol: "gearshape", identifier: "settings-button") { model.request(.settings) }
+            }
         }
         .confirmationDialog(
             "Delete \(pendingDelete?.name ?? "host")?", isPresented: Binding(
@@ -82,16 +99,14 @@ struct HostListView: View {
         }
     }
 
-    private var newHostButton: some View {
-        Button { model.request(.newHost) } label: { Label("New Host", systemImage: "plus") }
+    private func toolbarButton(
+        _ title: LocalizedStringKey, symbol: String, identifier: String, action: @escaping () -> Void
+    ) -> some View {
+        // Match the adaptive foreground color of the system sidebar toggle.
+        Button(action: action) { Label(title, systemImage: symbol) }
             .labelStyle(.iconOnly)
-            .accessibilityIdentifier("add-host-button")
-    }
-
-    private var settingsButton: some View {
-        Button { model.request(.settings) } label: { Label("Settings", systemImage: "gearshape") }
-            .labelStyle(.iconOnly)
-            .accessibilityIdentifier("settings-button")
+            .tint(.primary)
+            .accessibilityIdentifier(identifier)
     }
 
     // MARK: rows
@@ -125,8 +140,17 @@ struct HostListView: View {
         switch entry.row {
         case .host(let h):
             if let host = model.hosts.host(id: h.id) {
-                SidebarHostRow(row: h) { model.sidebarExpansion.toggle(.host(h.id), default: true) }
-                    .tag(h.id)
+                SidebarHostRow(
+                    row: h, selected: model.selection == h.id,
+                    select: {
+                        model.selection = h.id
+                        model.preferredCompactColumn = .detail
+                        if let view = model.engine(for: host)?.view, view.window != nil {
+                            _ = view.acquireProgrammaticFocus()
+                        }
+                    },
+                    toggle: { model.sidebarExpansion.toggle(.host(h.id), default: true) })
+
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) { pendingDelete = host } label: { Label("Delete", systemImage: "trash") }
                         Button { model.request(.editHost(host.id)) } label: { Label("Edit", systemImage: "pencil") }
@@ -167,8 +191,9 @@ struct HostListView: View {
             }
         }
         .accessibilityIdentifier("host-connection-action")
-        Button("Edit", systemImage: "pencil") { model.request(.editHost(host.id)) }
-        Section("AI integration") {
+        Button("Host Details", systemImage: "info.circle") { model.request(.editHost(host.id)) }
+        let agent = model.agentHub.status(for: host.id)
+        Section(agent == .unknown ? "AI Integration" : agent.label) {
             AIMenuButton(title: "Enable AI integration\u{2026}", symbol: "sparkles", explainsDisabled: !connected) {
                 model.presentAgentInstall(host: host, uninstall: false)
             }
@@ -266,76 +291,77 @@ private struct SidebarChevron: View {
 
 private struct SidebarHostRow: View {
     let row: HostRowModel
+    let selected: Bool
+    let select: () -> Void
     let toggle: () -> Void
-    @ScaledMetric(relativeTo: .body) private var minTarget: CGFloat = 44
 
     var body: some View {
-        HStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 2) {
-                // One element for status, name and target: a >= 44 pt tap area that VoiceOver reads as a sentence.
-                HStack(spacing: 10) {
-                    Image(systemName: row.status.symbol).foregroundStyle(row.status.tint)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(row.name).font(.headline)
-                        Text(row.target).font(.caption).foregroundStyle(.chromeSecondary)
+        HStack(spacing: 0) {
+            Button(action: select) {
+                HStack(spacing: 8) {
+                    SidebarRowIcon(symbol: "server.rack", active: selected)
+                    Text(row.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    if row.waiting > 0 {
+                        Label("\(row.waiting)", systemImage: "hand.raised.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.chromeWarning)
+                            .accessibilityIdentifier("host-waiting-count")
+                    } else if let badge = row.aggregate {
+                        Image(systemName: badge.symbol)
+                            .font(.caption)
+                            .foregroundStyle(badge.tint.color)
+                            .accessibilityIdentifier("host-aggregate-badge")
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: minTarget, alignment: .leading)
+                .frame(minHeight: 44)
+                .padding(.leading, 8)
+                .padding(.trailing, row.hasChildren ? 0 : 8)
                 .contentShape(Rectangle())
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(row.accessibilityLabel)
-                .accessibilityValue(row.accessibilityValue)
-                .accessibilityAddTraits(.isStaticText)
-                .accessibilityIdentifier("host-row-\(row.name)")
-                .accessibilityActionIf(row.hasChildren, named: row.toggleLabel, toggle)
-                if row.agent != .unknown {
-                    Label(row.agent.label, systemImage: agentSymbol)
-                        .font(.caption2)
-                        .foregroundStyle(agentColor)
-                        .accessibilityIdentifier("host-agent-status")
-                }
             }
-            if let badge = row.aggregate {
-                Image(systemName: badge.symbol)
-                    .imageScale(.small)
-                    .foregroundStyle(badge.tint.color)
-                    .accessibilityLabel(badge.label)
-                    .accessibilityIdentifier("host-aggregate-badge")
-            }
-            if row.waiting > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "hand.raised.fill").imageScale(.small)
-                    Text("\(row.waiting)")
-                }
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.chromeSurface)
-                .padding(.horizontal, 7).padding(.vertical, 2)
-                .background(.chromeWarning, in: Capsule())
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(row.waiting) waiting for you")
-                .accessibilityIdentifier("host-waiting-count")
-            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(row.name)
+            .accessibilityValue(
+                [row.accessibilityValue, row.waiting == 0 ? row.aggregate?.label : nil, row.agent.label]
+                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier("host-row-\(row.name)")
+            .accessibilityActionIf(row.hasChildren, named: row.toggleLabel, toggle)
             if row.hasChildren {
                 SidebarChevron(
                     expanded: row.isExpanded, label: row.toggleLabel, identifier: "host-toggle-\(row.name)", action: toggle)
             }
         }
+        .sidebarSurface(active: selected, primary: true)
     }
+}
 
-    private var agentColor: Color {
-        if case .outdated = row.agent { .orange } else { .secondary }
-    }
+private struct SidebarRowIcon: View {
+    let symbol: String
+    let active: Bool
+    @ScaledMetric(relativeTo: .caption) private var size: CGFloat = 24
 
-    private var agentSymbol: String {
-        switch row.agent {
-        case .installed: "sparkles"
-        case .outdated: "arrow.up.circle"
-        default: "sparkles.slash"
-        }
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.caption.weight(.semibold))
+            .frame(width: size, height: size)
+            .foregroundStyle(active ? AnyShapeStyle(.chromeAccent) : AnyShapeStyle(.chromeSecondary))
+            .accessibilityHidden(true)
     }
 }
 
 extension View {
+    @ViewBuilder
+    fileprivate func sidebarSurface(active: Bool, primary: Bool = false) -> some View {
+        self
+            .background {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(.chromeSelection)
+                    .opacity(active ? (primary ? 1 : 0.55) : 0)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9))
+    }
+
     @ViewBuilder
     fileprivate func accessibilityActionIf(_ condition: Bool, named name: String, _ action: @escaping () -> Void) -> some View {
         if condition { accessibilityAction(named: name, action) } else { self }
@@ -355,13 +381,14 @@ private struct SidebarSessionRow: View {
                 model.runTmux(host: row.host) { try await $0.switchSession(row.row.id) }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: viewed ? "rectangle.stack.fill" : "rectangle.stack")
-                        .foregroundStyle(viewed ? AnyShapeStyle(.chromeAccent) : AnyShapeStyle(.chromeSecondary))
+                    SidebarRowIcon(symbol: "rectangle.stack", active: viewed)
                     Text(row.name).font(.subheadline.weight(.semibold))
                     Spacer()
                     BadgeView(badge: row.badge)
                 }
                 .frame(minHeight: minTarget)
+                .padding(.leading, 8)
+                .padding(.trailing, row.hasChildren ? 0 : 8)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -376,8 +403,7 @@ private struct SidebarSessionRow: View {
                     identifier: "tmux-session-toggle-\(row.name)", action: toggle)
             }
         }
-        // A secondary tint, not a second selection: hosts keep the list's system highlight.
-        .listRowBackground(viewed ? Color.accentColor.opacity(0.12) : nil)
+        .sidebarSurface(active: viewed)
     }
 }
 
@@ -393,7 +419,7 @@ private struct SidebarWindowRow: View {
             model.runTmux(host: row.host) { try await $0.selectWindow(window.id) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "macwindow").foregroundStyle(row.isCurrent ? AnyShapeStyle(.chromeAccent) : AnyShapeStyle(.chromeSecondary))
+                SidebarRowIcon(symbol: "macwindow", active: row.isCurrent)
                 Text(window.title)
                     .font(.subheadline)
                     .fontWeight(row.isCurrent ? .semibold : .regular)
@@ -407,6 +433,9 @@ private struct SidebarWindowRow: View {
                 }
                 BadgeView(badge: window.badge)
             }
+            .frame(minHeight: 44)
+            .padding(.horizontal, 8)
+            .sidebarSurface(active: row.isCurrent)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(row.accessibilityLabel)
@@ -427,15 +456,14 @@ private struct SidebarPaneRow: View {
             model.runTmux(host: row.host) { try await $0.selectPane(pane.id) }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: row.isCurrent ? "circle.fill" : "circle")
-                    .font(.caption2)
-                    .imageScale(.small)
-                    .foregroundStyle(row.isCurrent ? AnyShapeStyle(.chromeAccent) : AnyShapeStyle(.chromeSecondary))
-                    .accessibilityHidden(true)
+                SidebarRowIcon(symbol: "rectangle.split.2x1", active: row.isCurrent)
                 Text(pane.title).font(.caption).lineLimit(1)
                 Spacer()
                 BadgeView(badge: pane.badge)
             }
+            .frame(minHeight: 44)
+            .padding(.horizontal, 8)
+            .sidebarSurface(active: row.isCurrent)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(row.accessibilityLabel)

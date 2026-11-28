@@ -50,7 +50,7 @@ final class ShuaiE2ETests: XCTestCase {
 
     @MainActor
     private func openHostMenu(_ app: XCUIApplication, item: String) {
-        let row = app.staticTexts.matching(identifier: hostRowID).firstMatch
+        let row = app.buttons.matching(identifier: hostRowID).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.press(forDuration: 1.2)
         let button = app.buttons[item]
@@ -70,9 +70,9 @@ final class ShuaiE2ETests: XCTestCase {
         XCTAssertTrue(done.waitForExistence(timeout: 240), "install finished")
         attach(app, "result")
         done.tap()
-        // The row's texts share one identifier; the status line carries the agent version.
-        let status = app.staticTexts.matching(identifier: hostRowID)
-            .matching(NSPredicate(format: "label MATCHES '.*AI integration [0-9]+\\\\.[0-9]+.*'")).firstMatch
+        // The host row exposes the installed agent version in its accessibility value.
+        let status = app.buttons.matching(identifier: hostRowID)
+            .matching(NSPredicate(format: "value MATCHES '.*AI integration [0-9]+\\\\.[0-9]+.*'")).firstMatch
         XCTAssertTrue(status.waitForExistence(timeout: 20), "host row shows the installed AI integration version")
     }
 

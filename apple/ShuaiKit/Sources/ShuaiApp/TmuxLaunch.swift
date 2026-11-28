@@ -17,10 +17,15 @@ public enum TmuxLaunch {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    /// Apply the same client options to commands built by the Rust tmux module.
+    static func withClientOptions(_ shell: String) -> String {
+        "tmux -u" + debugArgs + shell.dropFirst("tmux".count)
+    }
+
     /// `tmux new -A -s 'NAME'` (attach if it exists, create otherwise). A startup command runs
     /// only when the session is created; afterwards the user's shell takes over.
     public static func command(sessionName: String, startupCommand: String? = nil) -> String {
-        var cmd = "tmux\(debugArgs) new -A -s \(shellQuote(sessionName))"
+        var cmd = "tmux -u\(debugArgs) new -A -s \(shellQuote(sessionName))"
         if let s = startupCommand?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
             cmd += " " + shellQuote("\(s); exec \"${SHELL:-/bin/sh}\"")
         }

@@ -30,6 +30,7 @@ directory `tools/icongen`; pass `--brand DIR` otherwise.
 | `brand/out/exports/` | `mark.svg` (transparent, black), `mark-light.svg` (transparent, ivory), `favicon-{16,32,48}.png`, `readme-256.png` (squircle) from the mono themes |
 | `brand/out/manifest.json` | Mark bounds per appearance |
 | `apple/App/Resources/Assets.xcassets/AppIcon.appiconset/` | `AppIcon-{light,dark,tinted}.png` (copies of the rendered icons) and `Contents.json` |
+| `apple/App/Resources/Assets.xcassets/ShuaiMark.imageset/` | Vector template of the same `mark.svg`, tinted by the app theme |
 
 `appiconset` in `icon.toml` is a plain path relative to the repository root; with a custom
 `--brand DIR` it resolves to `DIR/../<appiconset>`.
