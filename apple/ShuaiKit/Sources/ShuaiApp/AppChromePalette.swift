@@ -1,9 +1,9 @@
 import ShuaiTerminal
 
 /// Colors for the app around the terminal, derived from the terminal theme so every surface matches
-/// it. The accent is ANSI color 4 (Ristretto's orange, the blue of the Claude themes): it tints icons,
-/// selection highlights and buttons. Cards, notices and sheet rows use `elevated`; error, success and
-/// warning come from the ANSI red, green and yellow.
+/// it. The accent is ANSI color 4 (Ristretto's orange, the blue of the Claude themes) and highlights
+/// primary actions and the brand. Selected hosts, windows and search results use `selection`.
+/// Cards and sheet rows use `elevated`. Error, success and warning use ANSI red, green and yellow.
 public struct AppChromePalette: Equatable, Sendable {
     public var accent: TerminalRGB
     public var surface: TerminalRGB

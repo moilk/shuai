@@ -58,7 +58,7 @@ import ShuaiTerminal
     }
 
     @Test func missingTmuxOnTheServerFallsBackToAPlainShell() async throws {
-        // The testkit answers unknown exec commands (like `tmux new -A ...`) with exit status 127.
+        // The testkit answers unknown exec commands (like `tmux -u new -A ...`) with exit status 127.
         let server = await startTestSshServer()
         let (c, engine, known, sink) = makeController(server, tmux: true)
         try known.add(host: "127.0.0.1", port: server.port(), publicKeyLine: server.hostPublicKeyLine())

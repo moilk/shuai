@@ -1,4 +1,5 @@
 import ShuaiApp
+import ShuaiTerminal
 import SwiftUI
 
 struct HostEditorView: View {
@@ -6,6 +7,15 @@ struct HostEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     private enum EditorPage: Hashable { case keys }
+
+    private struct ConnectionInputs: Equatable {
+        let host: String
+        let port: String
+        let user: String
+        let authentication: HostEditorDraft.AuthKind
+        let key: String?
+        let password: String?
+    }
 
     private static let keyRow = "editor-key-row"
 
@@ -21,6 +31,10 @@ struct HostEditorView: View {
     @State private var confirmDiscard = false
     @State private var scrollTarget: String?
     @State private var announcement: Task<Void, Never>?
+    @State private var probe: SessionController?
+    @State private var verifiedInputs: ConnectionInputs?
+    @State private var tmuxSessions: [String]?
+    @State private var useCustomSession = false
     @FocusState private var focus: HostValidationError?
 
     init(target: HostEditorTarget, keyIDs: [String] = []) {
@@ -41,25 +55,44 @@ struct HostEditorView: View {
         HostEditorDirty.needsConfirmation(initial: save.initial, current: draft, passwordTyped: !password.isEmpty)
     }
 
+    private var connectionInputs: ConnectionInputs {
+        ConnectionInputs(
+            host: draft.host, port: draft.portText, user: draft.username, authentication: draft.authKind,
+            key: draft.authKind == .key ? draft.keyID : nil,
+            password: draft.authKind == .password && !password.isEmpty ? password : nil)
+    }
+
+    private var connectionVerified: Bool { verifiedInputs == connectionInputs }
+
+
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
                 form
+                    .disabled(probe != nil)
                     .onChange(of: scrollTarget) { _, target in
                         guard let target else { return }
                         withAnimation { proxy.scrollTo(target, anchor: .center) }
                         scrollTarget = nil
                     }
             }
-            .navigationDestination(for: EditorPage.self) { _ in KeysView(placement: .pushed) }
+            .navigationDestination(for: EditorPage.self) { _ in
+                KeysView(placement: .pushed, onAdded: { item in draft.keyID = item.id })
+            }
             .navigationTitle(editing ? "Edit Host" : "New Host")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { if isDirty { confirmDiscard = true } else { close() } }
+                    Button(probe != nil ? "Stop Testing" : "Cancel") {
+                        if probe != nil { cancelProbe() }
+                        else if isDirty { confirmDiscard = true }
+                        else { close() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: attemptSave).accessibilityIdentifier("save-host-button")
+                    Button("Save", action: attemptSave)
+                        .accessibilityIdentifier("save-host-button")
+                        .disabled(probe != nil)
                 }
             }
             .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
@@ -75,8 +108,19 @@ struct HostEditorView: View {
             .onChange(of: focus) { old, _ in
                 if let old { validation.blur(old) }
             }
-            .onChange(of: model.keys.items.map(\.id)) { old, new in
-                draft = draft.adoptingNewKey(before: old, after: new)
+            .onChange(of: connectionInputs) { invalidateVerification() }
+            .onChange(of: model.keys.items.map(\.id)) { _, ids in
+                if draft.authKind == .key && !ids.contains(draft.keyID) { draft.keyID = "" }
+            }
+            .sheet(item: Binding(
+                get: { probe?.pendingPrompt.map(PromptItem.init) },
+                set: { _ in }
+            )) { item in
+                if let probe {
+                    PromptSheet(controller: probe, prompt: item.prompt)
+                        .presentationBackground(.chromeSurface)
+                        .interactiveDismissDisabled()
+                }
             }
             .onChange(of: isDirty, initial: true) { _, dirty in model.editorIsDirty = dirty }
         }
@@ -84,6 +128,7 @@ struct HostEditorView: View {
         // when the sheet goes away.
         .onDisappear {
             announcement?.cancel()
+            cancelProbe()
             password = ""
             model.editorIsDirty = false
         }
@@ -106,8 +151,6 @@ struct HostEditorView: View {
                     if model.keys.items.isEmpty {
                         Text("No keys yet.").foregroundStyle(.chromeSecondary).id(Self.keyRow)
                         errorLabel(.key)
-                        NavigationLink("Generate a key", value: EditorPage.keys)
-                            .accessibilityIdentifier("editor-open-keys")
                     } else {
                         Picker("Key", selection: $draft.keyID) {
                             Text("Choose…").tag("")
@@ -115,6 +158,13 @@ struct HostEditorView: View {
                         }
                         .id(Self.keyRow)
                         errorLabel(.key)
+                    }
+                    NavigationLink(value: EditorPage.keys) {
+                        Label("Add or Import SSH Key", systemImage: "key")
+                    }
+                    .accessibilityIdentifier("editor-open-keys")
+                    if let key = model.keys.items.first(where: { $0.id == draft.keyID }) {
+                        ShareLink(item: key.publicLine) { Label("Share Public Key", systemImage: "square.and.arrow.up") }
                     }
                 case .password:
                     SecureField(editing ? "Password (leave empty to keep)" : "Password", text: $password)
@@ -124,18 +174,55 @@ struct HostEditorView: View {
                 }
             }
             Section {
+                Button(action: testConnection) {
+                    if probe != nil {
+                        ProgressView("Testing SSH connection…")
+                    } else {
+                        Label(connectionVerified ? "Test Again" : "Test Connection", systemImage: "network")
+                    }
+                }
+                .accessibilityIdentifier("test-host-button")
+                if connectionVerified {
+                    Label("SSH connection verified", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.chromeSecondary)
+                }
+                if let saveError {
+                    errorText(saveError).accessibilityIdentifier("host-connection-error")
+                }
+            } footer: {
+                if !editing { Text("Verify the SSH connection before saving this host.") }
+            }
+            Section {
                 Toggle("Attach to tmux", isOn: $draft.tmuxEnabled)
                 if draft.tmuxEnabled {
-                    field("Session name", text: $draft.tmuxName, error: .tmuxSessionName, id: "host-tmux-field")
+                    if let sessions = tmuxSessions, !sessions.isEmpty {
+                        Picker("Session", selection: Binding<String?>(
+                            get: { !useCustomSession && sessions.contains(draft.tmuxName) ? draft.tmuxName : nil },
+                            set: { choice in
+                                useCustomSession = choice == nil
+                                if let choice { draft.tmuxName = choice }
+                                else if sessions.contains(draft.tmuxName) { draft.tmuxName = "" }
+                            }
+                        )) {
+                            ForEach(sessions, id: \.self) { Text($0).tag(Optional($0)) }
+                            Text("Enter a session name").tag(nil as String?)
+                        }
+                    }
+                    if useCustomSession || !(tmuxSessions?.contains(draft.tmuxName) ?? false) {
+                        field("Session name", text: $draft.tmuxName, error: .tmuxSessionName, id: "host-tmux-field")
+                    }
                 }
                 TextField("Startup command (optional)", text: $draft.startup)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
             } header: {
                 Text("Session")
             } footer: {
-                Text("`tmux new -A -s NAME` keeps your session alive across disconnects. The startup command runs when the session is created.")
+                if draft.tmuxEnabled && connectionVerified && (tmuxSessions?.isEmpty ?? true) {
+                    Text("No tmux sessions were found. Enter a name to create one when you connect. If tmux is unavailable, Shuai opens a shell.")
+                } else {
+                    Text("The startup command runs when a new session is created.")
+                }
             }
-            if let saveError { Section { errorText(saveError) } }
         }
         .chromeForm()
     }
@@ -175,19 +262,79 @@ struct HostEditorView: View {
         dismiss()
     }
 
+    private func invalidateVerification() {
+        verifiedInputs = nil
+        tmuxSessions = nil
+        useCustomSession = false
+        saveError = nil
+    }
+
+    private func cancelProbe() {
+        guard let active = probe else { return }
+        probe = nil
+        Task { await active.disconnect() }
+    }
+
+    private func testConnection() {
+        saveError = nil
+        if let first = draft.errors.first(where: { $0 != .name && $0 != .tmuxSessionName }) {
+            validation.blur(first)
+            reveal(first)
+            return
+        }
+        invalidateVerification()
+        focus = nil
+        let profile = draft.profile(id: save.id, lastConnectedAt: nil)
+        let controller = model.sessions.verificationController(for: profile, engine: GhosttyEngine())
+        let inputs = connectionInputs
+        probe = controller
+        Task {
+            guard probe === controller else { return }
+            do {
+                let names = try await controller.verifyAccess(password: inputs.password)
+                guard probe === controller else { return }
+                probe = nil
+                guard connectionInputs == inputs else { return }
+                tmuxSessions = names
+                if !editing, draft.tmuxName == save.initial.tmuxName,
+                   let names, !names.contains(draft.tmuxName), let first = names.first {
+                    draft.tmuxName = first
+                }
+                verifiedInputs = inputs
+            } catch {
+                guard probe === controller else { return }
+                saveError = SessionError(error).message
+                probe = nil
+            }
+        }
+    }
+
+    private func reveal(_ first: HostValidationError) {
+        // The key choice is a picker, which takes no text focus: scroll to it instead.
+        if first == .key { scrollTarget = Self.keyRow } else { focus = first }
+        let message = first.message
+        // Let VoiceOver finish announcing the focus change before the message.
+        announcement?.cancel()
+        announcement = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            AccessibilityNotification.Announcement(message).post()
+        }
+    }
+
     private func attemptSave() {
         saveError = nil
-        if let first = validation.attemptSave(draft) {
-            // The key choice is a picker, which takes no text focus: scroll to it instead.
-            if first == .key { scrollTarget = Self.keyRow } else { focus = first }
-            let message = first.message
-            // Let VoiceOver finish announcing the focus change before the message.
-            announcement?.cancel()
-            announcement = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 400_000_000)
-                guard !Task.isCancelled else { return }
-                AccessibilityNotification.Announcement(message).post()
+        if !editing && !connectionVerified {
+            if let first = draft.errors.first(where: { $0 != .tmuxSessionName }) {
+                validation.blur(first)
+                reveal(first)
+            } else {
+                testConnection()
             }
+            return
+        }
+        if let first = validation.attemptSave(draft) {
+            reveal(first)
             return
         }
         let result = save.attempt(

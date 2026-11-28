@@ -85,6 +85,28 @@ private struct Harness {
         #expect(events.get == [true, false])
     }
 
+    @Test func verificationUsesDraftPasswordAndListsSessionsWithoutOpeningPTY() async throws {
+        let factory = FakeFactory { _, config, _, connection in
+            if case .password(let password) = config.auth.first {
+                #expect(password == "draft-password")
+            } else {
+                Issue.record("Expected the draft password")
+            }
+            connection.execHandler.with { handler in
+                handler = { _ in
+                    ExecResult(stdout: Data("$1\u{1f}工作\\\\work\u{1f}0\n$0\u{1f}notes\u{1f}1\n".utf8), stderr: Data(), exitStatus: 0, exitSignal: nil)
+                }
+            }
+        }
+        let h = Harness(factory: factory)
+        let sessions = try await h.controller.verifyAccess(password: "draft-password")
+        let connection = try #require(factory.last)
+        #expect(sessions == ["notes", "工作\\work"])
+        #expect(connection.opens.get.isEmpty)
+        #expect(connection.disconnects.get == 1)
+        #expect(try h.passwords.password(for: h.profile.id) == "pw")
+    }
+
     // MARK: connect + auth
 
     @Test func connectsWithStoredPasswordAndTrustedHost() async {
@@ -338,8 +360,8 @@ private struct Harness {
         await h.controller.connect()
         let opens = h.factory.last!.opens.get
         #expect(opens == [.ptyExec(
-            command: "tmux new -A -s 'shuai'", cols: 132, rows: 43, term: "xterm-256color",
-            env: [FfiEnvVar(name: "COLORTERM", value: "truecolor"), FfiEnvVar(name: "LANG", value: "en_US.UTF-8")])])
+            command: "tmux -u new -A -s 'shuai'", cols: 132, rows: 43, term: "xterm-256color",
+            env: [FfiEnvVar(name: "COLORTERM", value: "truecolor")])])
         #expect(h.factory.last!.shell.writes.get.isEmpty) // nothing typed into the shell
     }
 
@@ -501,7 +523,7 @@ private struct Harness {
         #expect(second !== first)
         // Reattached through tmux, sized to the current grid, and nudged to force a full redraw.
         guard case .ptyExec(let cmd, _, _, _, _) = second.opens.get[0] else { Issue.record("not tmux"); return }
-        #expect(cmd == "tmux new -A -s 'shuai'")
+        #expect(cmd == "tmux -u new -A -s 'shuai'")
         #expect(await waitUntil { second.shell.resizes.get.count == 2 })
         #expect(second.shell.resizes.get == [TerminalGridSize(cols: 100, rows: 29), TerminalGridSize(cols: 100, rows: 30)])
         // Old output is still on screen; fresh output keeps flowing and input works again.

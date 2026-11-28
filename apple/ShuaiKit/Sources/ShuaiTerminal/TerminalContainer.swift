@@ -6,8 +6,10 @@ import UIKit
 /// guide: the last terminal row is never covered by the software keyboard or the docked
 /// accessory bar (the guide includes the first responder's `inputAccessoryView`). With no
 /// keyboard the guide falls back to the bottom safe area.
-public final class TerminalContainerView: UIView {
+public final class TerminalContainerView: UIView, UIGestureRecognizerDelegate {
     public let terminal: TerminalView
+    var onHistoryScroll: ((Int) -> Void)?
+    private var scrollRemainder: CGFloat = 0
 
     public init(terminal: TerminalView) {
         self.terminal = terminal
@@ -22,6 +24,52 @@ public final class TerminalContainerView: UIView {
         ])
         terminalBottomToKeyboard = terminal.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor)
         terminalBottomToKeyboard.isActive = true
+        installHistoryGestures()
+    }
+
+    // In tmux with mouse mode off, the outer terminal is in the alternate buffer
+    // and a regular Ghostty scroll can emit cursor keys. Route these gestures to
+    // tmux copy mode instead. Let Ghostty handle plain-shell scrollback and apps
+    // that explicitly request mouse events.
+    private func installHistoryGestures() {
+        let touch = UIPanGestureRecognizer(target: self, action: #selector(scrollHistory(_:)))
+        touch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        touch.maximumNumberOfTouches = 1
+        let wheel = HistoryWheelGesture(target: self, action: #selector(scrollHistory(_:)))
+        wheel.allowedScrollTypesMask = [.continuous, .discrete]
+        for gesture in [touch, wheel] {
+            gesture.delegate = self
+            addGestureRecognizer(gesture)
+        }
+        for pan in terminal.gestureRecognizers?.compactMap({ $0 as? UIPanGestureRecognizer }) ?? [] {
+            pan.require(toFail: pan.allowedScrollTypesMask.isEmpty ? touch : wheel)
+        }
+    }
+
+    public override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard onHistoryScroll != nil, !terminal.isMouseCaptured,
+              let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+        let translation = pan.translation(in: self)
+        return abs(translation.y) >= abs(translation.x)
+    }
+
+    @objc private func scrollHistory(_ gesture: UIPanGestureRecognizer) {
+        switch gesture.state {
+        case .began, .changed:
+            let delta = gesture.translation(in: self).y
+            gesture.setTranslation(.zero, in: self)
+            scrollRemainder += delta
+            let lines = Int(scrollRemainder / 20)
+            guard lines != 0 else { return }
+            scrollRemainder -= CGFloat(lines) * 20
+            onHistoryScroll?(lines)
+        default:
+            scrollRemainder = 0
+        }
+    }
+
+    private final class HistoryWheelGesture: UIPanGestureRecognizer {
+        override func shouldReceive(_ event: UIEvent) -> Bool { event.type == .scroll }
     }
 
     private var terminalBottomToKeyboard: NSLayoutConstraint!
@@ -74,28 +122,36 @@ public struct TerminalContainerRepresentable: UIViewRepresentable {
     public var showsFloatingAccessoryBar: Bool
     /// Docked bar above the software keyboard.
     public var showsDockedAccessoryBar: Bool
+    public var hasHardwareKeyboard: Bool
+    public var onHistoryScroll: ((Int) -> Void)?
 
     public init(
         engine: GhosttyEngine, autoFocus: Bool = true, showsFloatingAccessoryBar: Bool = false,
-        showsDockedAccessoryBar: Bool = true
+        showsDockedAccessoryBar: Bool = true, hasHardwareKeyboard: Bool = false,
+        onHistoryScroll: ((Int) -> Void)? = nil
     ) {
         self.engine = engine
         self.autoFocus = autoFocus
         self.showsFloatingAccessoryBar = showsFloatingAccessoryBar
         self.showsDockedAccessoryBar = showsDockedAccessoryBar
+        self.hasHardwareKeyboard = hasHardwareKeyboard
+        self.onHistoryScroll = onHistoryScroll
     }
 
     public func makeUIView(context _: Context) -> TerminalContainerView {
         let container = TerminalContainerView(terminal: engine.view)
-        apply(to: engine.view)
+        apply(to: container)
         return container
     }
 
     public func updateUIView(_ container: TerminalContainerView, context _: Context) {
-        apply(to: container.terminal)
+        apply(to: container)
     }
 
-    private func apply(to view: TerminalView) {
+    private func apply(to container: TerminalContainerView) {
+        container.onHistoryScroll = onHistoryScroll
+        let view = container.terminal
+        view.hasHardwareKeyboard = hasHardwareKeyboard
         view.autoFocus = autoFocus
         if view.showsFloatingAccessoryBar != showsFloatingAccessoryBar {
             view.showsFloatingAccessoryBar = showsFloatingAccessoryBar

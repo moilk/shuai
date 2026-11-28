@@ -152,6 +152,20 @@ pub fn parse_topology(text: String) -> Result<FfiTopology, FfiTmuxError> {
 }
 
 #[uniffi::export]
+pub fn tmux_list_sessions() -> FfiTmuxCommand {
+    cmd::list_sessions().into()
+}
+
+#[uniffi::export]
+pub fn parse_tmux_session_names(text: String) -> Result<Vec<String>, FfiTmuxError> {
+    shuai_tmux::parse::parse_sessions(&text)
+        .map(|sessions| sessions.into_iter().map(|session| session.name).collect())
+        .map_err(|e| FfiTmuxError::Parse {
+            message: e.to_string(),
+        })
+}
+
+#[uniffi::export]
 pub fn tmux_list_panes_all() -> FfiTmuxCommand {
     cmd::list_panes_all().into()
 }
@@ -233,6 +247,12 @@ pub fn tmux_send_keys_literal(
     text: String,
 ) -> Result<FfiTmuxCommand, FfiTmuxError> {
     Ok(cmd::send_keys_literal(&pane_target(&pane_id)?, &text).into())
+}
+
+#[uniffi::export]
+pub fn tmux_scroll_history(pane_id: String, lines: i32) -> Result<FfiTmuxCommand, FfiTmuxError> {
+    let pane = PaneId::from_str(&pane_id).map_err(|_| invalid(&pane_id))?;
+    Ok(cmd::scroll_history(pane, lines).into())
 }
 
 #[uniffi::export]

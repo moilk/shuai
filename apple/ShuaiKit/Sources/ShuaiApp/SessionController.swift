@@ -231,6 +231,36 @@ public final class SessionController {
         }
     }
 
+    /// Checks SSH credentials without attaching a PTY or creating a remote session.
+    /// The host editor uses a dedicated, short-lived controller for each attempt.
+    public func verifyAccess(password: String?) async throws -> [String]? {
+        generation += 1
+        let gen = generation
+        state = .connecting
+        let auth = try buildAuth(gen: gen, password: password)
+        let conn = try await open(auth: auth, gen: gen)
+        do {
+            guard gen == generation else { throw CancellationError() }
+            connection = conn
+            let discoveryTimeout = Task {
+                try? await Task.sleep(for: .seconds(5))
+                if !Task.isCancelled { await conn.disconnect() }
+            }
+            defer { discoveryTimeout.cancel() }
+            let result = try? await conn.exec(TmuxLaunch.withClientOptions(tmuxListSessions().shell))
+            guard gen == generation else { throw CancellationError() }
+            connection = nil
+            await conn.disconnect()
+            guard gen == generation else { throw CancellationError() }
+            guard let result, result.exitStatus == 0 else { return nil }
+            let names = try? parseTmuxSessionNames(text: String(decoding: result.stdout, as: UTF8.self))
+            return names?.filter(TmuxLaunch.isValidSessionName).sorted()
+        } catch {
+            await conn.disconnect()
+            throw error
+        }
+    }
+
     /// A rejected password must not be offered again silently.
     private func noteAuthOutcome(_ error: Error) {
         if SessionError(error).kind == .authFailed { sessionPassword = nil }
@@ -361,7 +391,7 @@ public final class SessionController {
 
     /// Builds the credential list without any user interaction: a password that has to be typed is
     /// requested lazily by the SSH layer (`PasswordBridge`), i.e. only after the host key was trusted.
-    private func buildAuth(gen: Int) throws -> [FfiAuth] {
+    private func buildAuth(gen: Int, password: String? = nil) throws -> [FfiAuth] {
         var auth: [FfiAuth] = []
         switch profile.auth {
         case .key(let id):
@@ -370,7 +400,7 @@ public final class SessionController {
             }
             auth.append(.privateKeyPem(pem: pem))
         case .password:
-            if let stored = (try? passwords.password(for: profile.id)) ?? nil {
+            if let stored = password ?? (try? passwords.password(for: profile.id)) {
                 auth.append(.password(password: stored))
             } else {
                 auth.append(.passwordPrompt(prompter: PasswordBridge(controller: self, gen: gen)))
@@ -411,7 +441,6 @@ public final class SessionController {
 
     private static let env = [
         FfiEnvVar(name: "COLORTERM", value: "truecolor"),
-        FfiEnvVar(name: "LANG", value: "en_US.UTF-8"),
     ]
 
     private func attach(_ conn: RemoteConnection, gen: Int, reconnecting: Bool) async throws {

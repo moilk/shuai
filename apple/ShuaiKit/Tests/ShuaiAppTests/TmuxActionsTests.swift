@@ -111,6 +111,20 @@ import Testing
         await monitor.stop()
     }
 
+    #if DEBUG
+    @Test func queuedScrollDoesNotCarryOverWhenSwitchingPanes() async throws {
+        let (server, monitor, actions) = await rig()
+        let topology = try #require(monitor.topology)
+        actions.scrollHistory(by: 5)
+        monitor.debugSeed(topology: topology, viewedSessionID: "$1")
+        actions.scrollHistory(by: -2)
+
+        let expected = try tmuxScrollHistory(paneId: "%5", lines: -2).controlLine
+        #expect(await waitUntil { self.sent(server) == [expected] })
+        await monitor.stop()
+    }
+    #endif
+
     // MARK: structure
 
     @Test func newWindowUsesTheActivePaneDirectory() async throws {

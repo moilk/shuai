@@ -103,6 +103,44 @@ public final class TmuxActions {
         try await switchSession(sessionID)
     }
 
+    /// Queue gesture deltas without issuing one exec request per input event.
+    @ObservationIgnored private var historyScrollTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingHistoryScroll: (pane: String, lines: Int)?
+
+    private var canScrollHistory: Bool {
+        switch monitor.state {
+        case .live, .polling: true
+        default: false
+        }
+    }
+
+    public func scrollHistory(by lines: Int) {
+        guard lines != 0, !isRetired, canScrollHistory, let pane = activePane?.id else { return }
+        let previous = pendingHistoryScroll.flatMap { $0.pane == pane ? $0.lines : nil } ?? 0
+        let delta = max(-200, min(200, lines))
+        pendingHistoryScroll = (pane, max(-200, min(200, previous + delta)))
+        guard historyScrollTask == nil else { return }
+        historyScrollTask = Task { [weak self] in await self?.flushHistoryScroll() }
+    }
+
+    private func flushHistoryScroll() async {
+        defer {
+            pendingHistoryScroll = nil
+            historyScrollTask = nil
+        }
+        while let request = pendingHistoryScroll, !isRetired, canScrollHistory {
+            pendingHistoryScroll = nil
+            guard request.lines != 0, activePane?.id == request.pane else { continue }
+            do {
+                var command = try tmuxScrollHistory(paneId: request.pane, lines: Int32(request.lines))
+                command.shell = TmuxLaunch.withClientOptions(command.shell)
+                _ = try await monitor.run(command)
+            } catch {
+                return
+            }
+        }
+    }
+
     // MARK: - Structure
 
     /// A new window in the viewed session, starting in the active pane's directory.

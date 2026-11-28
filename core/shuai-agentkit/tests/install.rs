@@ -440,7 +440,8 @@ fn probe_script_does_not_let_children_eat_the_script_from_stdin() {
         &home.path().join(".shuai/bin/shuai-agent"),
         "cat >/dev/null; echo 'shuai-agent 1.2.3'",
     );
-    let p = parse_probe(&run_probe("sh", home.path(), "/usr/bin:/bin"));
+    let path = format!("{}:/usr/bin:/bin", home.path().join(".local/bin").display());
+    let p = parse_probe(&run_probe("sh", home.path(), &path));
     assert_eq!(p.tmux_version.as_deref(), Some("3.4"));
     assert_eq!(p.agent_version.as_deref(), Some("1.2.3"));
     assert!(!p.uname_s.is_empty());

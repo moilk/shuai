@@ -12,6 +12,7 @@ public final class TerminalView: UITerminalView {
     public var keySink: ((KeyStroke) -> Void)?
     /// Take first responder as soon as the view is in a window.
     public var autoFocus = false
+    public var hasHardwareKeyboard = false
     /// Hardware Option+<char> sends ESC-prefixed Meta (see `OptionAsAlt`). Set by the engine.
     public var altSendsEscape = true
 
@@ -79,6 +80,11 @@ public final class TerminalView: UITerminalView {
         if window != nil, autoFocus {
             DispatchQueue.main.async { [weak self] in _ = self?.acquireProgrammaticFocus() }
         }
+    }
+
+    override public func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        if hasHardwareKeyboard { acquireProgrammaticFocus() }
     }
 
     // MARK: - App shortcuts
