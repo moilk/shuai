@@ -79,7 +79,7 @@ final class LocalTmuxConnection: RemoteConnection, @unchecked Sendable {
 
     /// Starts a tmux client on a pseudo terminal (via `script`) attached to `session`; returns its process.
     func attachPtyClient(session: String) throws -> (Process, Pipe) {
-        let p = process("exec script -q /dev/null tmux attach-session -t '=\(session):'")
+        let p = process("exec env TERM=xterm-256color script -q /dev/null tmux attach-session -t '=\(session):'")
         let stdin = Pipe()
         p.standardInput = stdin
         p.standardOutput = FileHandle.nullDevice
